@@ -969,36 +969,17 @@ function PANEL:ResetSliders()
     self:ApplyLivePreview()
 end
 
--- Reset a playermodel's skin, bodygroups and player color back to the item's
--- DefaultModifications, falling back to hardcoded defaults (skin 0, bodygroups 0,
--- white color). Like ResetSliders, this only updates the controls + live preview;
--- the player still presses "Apply Customization" to persist.
+-- Reset a playermodel's skin, bodygroups and player color to a clean baseline:
+-- skin 0, all bodygroups 0, white color. We intentionally do NOT use the item's
+-- DefaultModifications here — item defaults often ship a tinted (e.g. blue) player
+-- color, whereas "reset" should give the engine-default clean slate. Like
+-- ResetSliders, this only updates the controls + live preview; the player still
+-- presses "Apply Customization" to persist.
 function PANEL:ResetPlayermodel()
     if self.itemType ~= "playermodel" then return end
 
-    -- Layer 3 (hardcoded) defaults, overlaid with layer 2 (item file) when present.
+    -- Hardcoded baseline only.
     local defaults = { skin = 0, bodygroups = {}, playercolor = {255, 255, 255} }
-    if PS and PS.Items and self.itemID then
-        local ITEM = PS.Items[self.itemID]
-        if ITEM and ITEM.DefaultModifications then
-            local dm = ITEM.DefaultModifications
-            if dm.skin then defaults.skin = math.Round(tonumber(dm.skin) or 0) end
-            if dm.bodygroups then
-                for k, v in pairs(dm.bodygroups) do
-                    defaults.bodygroups[tonumber(k) or k] = tonumber(v) or v
-                end
-            end
-            if dm.playercolor then
-                local pc = dm.playercolor
-                -- DefaultModifications may store color as a Vector (0-1) or {r,g,b} (0-255).
-                if type(pc) == "Vector" or (type(pc) == "table" and pc.x) then
-                    defaults.playercolor = { math.floor((pc.x or 1) * 255), math.floor((pc.y or 1) * 255), math.floor((pc.z or 1) * 255) }
-                else
-                    defaults.playercolor = { pc[1] or pc.r or 255, pc[2] or pc.g or 255, pc[3] or pc.b or 255 }
-                end
-            end
-        end
-    end
 
     local ply = LocalPlayer()
 

@@ -111,8 +111,9 @@ Resolution order is **SQL → item default → hardcoded**; the first layer with
 
 Once a player saves a placement, their SQL row takes priority — so **editing `ITEM.DefaultModifications` later will NOT move the item for players who already customized it.** To get back to defaults:
 
-- **Players (accessories only):** the **Reset Values** button in the customization panel (`ResetSliders()`) restores the item's `DefaultModifications`, falling back to the hardcoded defaults; then Apply/Save to persist.
-- **Admins / playermodels:** clear the saved row — e.g. the `ps_clear_items` server console command, or delete the player's row from the relevant customization table.
+- **Accessories:** the **Reset Values** button (`ResetSliders()`) restores the item's `DefaultModifications`, falling back to hardcoded defaults; then Apply/Save to persist.
+- **Playermodels:** the **Reset** button (`ResetPlayermodel()`) resets skin, bodygroups and color to a clean baseline — skin 0, bodygroups 0, white color (intentionally *not* the item default, which often ships a tinted color); then Apply/Save to persist.
+- **Admins:** clear the saved row — e.g. the `ps_clear_items` server console command, or delete the player's row from the relevant customization table.
 
 ## API Reference
 
