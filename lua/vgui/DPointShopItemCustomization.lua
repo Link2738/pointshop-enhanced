@@ -844,14 +844,18 @@ function PANEL:CreateButtons()
     
     y = y + 32
     
-    -- Reset button (accessories only)
-    if self.itemType == "accessory" then
+    -- Reset button (accessories and playermodels)
+    if self.itemType == "accessory" or self.itemType == "playermodel" then
         self.resetButton = self:Add("DButton")
         self.resetButton:SetText("")
         self.resetButton:SetSize(sliderW - 60, 24)
         self.resetButton:SetPos(baseX, y)
         self.resetButton.DoClick = function()
-            self:ResetSliders()
+            if self.itemType == "playermodel" then
+                self:ResetPlayermodel()
+            else
+                self:ResetSliders()
+            end
         end
         self.resetButton.Paint = function(panel, w, h)
             local isHovered = panel:IsHovered()
@@ -963,6 +967,79 @@ function PANEL:ResetSliders()
     
     -- Apply the reset values to the live preview so the model actually updates
     self:ApplyLivePreview()
+end
+
+-- Reset a playermodel's skin, bodygroups and player color back to the item's
+-- DefaultModifications, falling back to hardcoded defaults (skin 0, bodygroups 0,
+-- white color). Like ResetSliders, this only updates the controls + live preview;
+-- the player still presses "Apply Customization" to persist.
+function PANEL:ResetPlayermodel()
+    if self.itemType ~= "playermodel" then return end
+
+    -- Layer 3 (hardcoded) defaults, overlaid with layer 2 (item file) when present.
+    local defaults = { skin = 0, bodygroups = {}, playercolor = {255, 255, 255} }
+    if PS and PS.Items and self.itemID then
+        local ITEM = PS.Items[self.itemID]
+        if ITEM and ITEM.DefaultModifications then
+            local dm = ITEM.DefaultModifications
+            if dm.skin then defaults.skin = math.Round(tonumber(dm.skin) or 0) end
+            if dm.bodygroups then
+                for k, v in pairs(dm.bodygroups) do
+                    defaults.bodygroups[tonumber(k) or k] = tonumber(v) or v
+                end
+            end
+            if dm.playercolor then
+                local pc = dm.playercolor
+                -- DefaultModifications may store color as a Vector (0-1) or {r,g,b} (0-255).
+                if type(pc) == "Vector" or (type(pc) == "table" and pc.x) then
+                    defaults.playercolor = { math.floor((pc.x or 1) * 255), math.floor((pc.y or 1) * 255), math.floor((pc.z or 1) * 255) }
+                else
+                    defaults.playercolor = { pc[1] or pc.r or 255, pc[2] or pc.g or 255, pc[3] or pc.b or 255 }
+                end
+            end
+        end
+    end
+
+    local ply = LocalPlayer()
+
+    -- Skin
+    if self.skinSlider then self.skinSlider:SetValue(defaults.skin) end
+    if IsValid(ply) then ply:SetSkin(defaults.skin) end
+    if PS_SendPreviewUpdate then PS_SendPreviewUpdate(self.itemType, "skin", defaults.skin) end
+
+    -- Bodygroups: every group the panel built gets its default (0 unless overridden).
+    if self.bodygroupButtons then
+        for bgID in pairs(self.bodygroupButtons) do
+            local val = defaults.bodygroups[bgID] or 0
+            self._bodygroupValues[bgID] = val
+            if IsValid(ply) then
+                ply:SetBodygroup(bgID, val)
+                ply:InvalidateBoneCache()
+                ply:SetupBones()
+            end
+            if PS_SendPreviewUpdate then PS_SendPreviewUpdate(self.itemType, "bodygroup", bgID, val) end
+            self:UpdateBodygroupButtonVisuals(bgID)
+        end
+    end
+
+    -- Player color (apply with the same color2-proxy awareness as the live mixer).
+    local r, g, b = defaults.playercolor[1], defaults.playercolor[2], defaults.playercolor[3]
+    if self.colorMixer then self.colorMixer:SetColor(Color(r, g, b)) end
+    if IsValid(ply) then
+        local useColor2 = false
+        if self.itemID and PS.Items and PS.Items[self.itemID] then
+            useColor2 = PS.Items[self.itemID].UseColor2Proxy or false
+        end
+        if useColor2 then
+            ply:SetColor(Color(255, 255, 255, 255))
+            ply:SetPlayerColor(Vector(r / 255, g / 255, b / 255))
+        else
+            ply:SetColor(Color(r, g, b, 255))
+            ply:SetPlayerColor(Vector(1, 1, 1))
+        end
+        ply:SetRenderMode(RENDERMODE_NORMAL)
+    end
+    if PS_SendPreviewUpdate then PS_SendPreviewUpdate(self.itemType, "playercolor", r, g, b) end
 end
 
 -- ============================================================================
