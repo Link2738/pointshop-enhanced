@@ -81,10 +81,16 @@ if SERVER then
         end
     end
 
-    -- Get customization for player by itemID, returns {mods, modelpath}
+    -- Get customization for player by itemID, returns {mods, modelpath}.
+    -- Resolves through 3 layers, highest priority first:
+    --   1. SQL row in ps_playermodel_customization  (per-player override)
+    --   2. ITEM.DefaultModifications                 (designer default in the item file)
+    --   3. hardcoded fallback                        (skin 0, no bodygroups, white color)
+    -- First layer with data wins. NOTE: a saved row beats the item default, so editing
+    -- ITEM.DefaultModifications won't affect players who already customized this model.
     function PS_GetPlayerModelCustomization(ply, itemID)
         local steamid = ply:SteamID()
-        
+
         -- 1. Check saved customization data
         local row = sql.QueryRow("SELECT modelpath, mods FROM ps_playermodel_customization WHERE steamid = " .. sql.SQLStr(steamid) .. " AND itemid = " .. sql.SQLStr(itemID))
         if row and row.mods then

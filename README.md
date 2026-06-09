@@ -92,6 +92,27 @@ ITEM.Bodygroups = {
 for k, v in pairs(BASE) do
     ITEM[k] = v
 end
+```
+
+## Customization Data Model (Placement Resolution)
+
+Both accessories and playermodels resolve their appearance (placement, skin, color, bodygroups) through **three layers**, highest priority first:
+
+1. **SQL — per-player override.** A saved row in `ps_accessory_customization` / `ps_playermodel_customization`: exactly what this player set for this item.
+2. **Item file — designer default.** `ITEM.DefaultModifications` in the item's `.lua`: the intended placement/skin/color shipped with the item.
+3. **Hardcoded fallback — code default.** Sane built-in values so an item with no `DefaultModifications` still renders sensibly and nothing crashes.
+
+Resolution order is **SQL → item default → hardcoded**; the first layer with data wins. This is implemented in:
+
+- `PS_GetAccessoryCustomization(ply, model)` — `lua/pointshop/ps_backend_accessory.lua`
+- `PS_GetPlayerModelCustomization(ply, itemID)` — `lua/autorun/ps_backend_playermodel.lua`
+
+### Gotcha: a saved row beats the item default
+
+Once a player saves a placement, their SQL row takes priority — so **editing `ITEM.DefaultModifications` later will NOT move the item for players who already customized it.** To get back to defaults:
+
+- **Players (accessories only):** the **Reset Values** button in the customization panel (`ResetSliders()`) restores the item's `DefaultModifications`, falling back to the hardcoded defaults; then Apply/Save to persist.
+- **Admins / playermodels:** clear the saved row — e.g. the `ps_clear_items` server console command, or delete the player's row from the relevant customization table.
 
 ## API Reference
 

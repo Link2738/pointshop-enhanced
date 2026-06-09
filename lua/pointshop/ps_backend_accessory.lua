@@ -121,10 +121,16 @@ if SERVER then
         return nil
     end
 
+    -- Resolves an accessory's placement through 3 layers, highest priority first:
+    --   1. SQL row in ps_accessory_customization  (per-player override)
+    --   2. ITEM.DefaultModifications               (designer default in the item file)
+    --   3. hardcoded fallback                      (sane built-in defaults)
+    -- First layer with data wins. NOTE: a saved row beats the item default, so editing
+    -- ITEM.DefaultModifications won't affect players who already customized this item.
     function PS_GetAccessoryCustomization(ply, model)
         if not IsValid(ply) then return nil end
         local steamid = ply:SteamID()
-        
+
         -- 1. Check saved customization data
         local row = sql.QueryRow("SELECT mods FROM ps_accessory_customization WHERE steamid = " .. sql.SQLStr(steamid) .. " AND model = " .. sql.SQLStr(model))
         if row and row.mods and row.mods ~= "" then
