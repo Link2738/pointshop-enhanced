@@ -1,0 +1,8 @@
+# Real item definitions live here locally but are NOT published to this repo —
+# they reference workshop / third-party models and are a server-specific catalog.
+#
+# Tracked instead: __category.lua (category configs) and _example.lua templates.
+# Both start with "_", so they are re-included by the rule below. Anything else
+# (the actual item .lua files) is ignored.
+*.lua
+!_*.lua

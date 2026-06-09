@@ -110,7 +110,9 @@ function PS:LoadItems()
 			local files, _ = file.Find('pointshop/items/' .. category .. '/*.lua', 'LUA')
 			
 			for _, name in pairs(files) do
-				if name ~= '__category.lua' then
+				-- Skip the category definition and any _-prefixed files. The latter are
+				-- templates/examples kept in the repo for documentation and never loaded.
+				if name ~= '__category.lua' and string.sub(name, 1, 1) ~= '_' then
 					if SERVER then AddCSLuaFile('pointshop/items/' .. category .. '/' .. name) end
 					
 					ITEM = {}
