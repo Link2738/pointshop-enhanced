@@ -356,7 +356,8 @@ if SERVER then
                 if mods.skin then ply:SetSkin(mods.skin) end
                 if mods.bodygroups then
                     for k, v in pairs(mods.bodygroups) do
-                        ply:SetBodygroup(k, v)
+                        -- Keys may arrive as strings (JSON-sourced); SetBodygroup needs numbers.
+                        ply:SetBodygroup(tonumber(k) or k, tonumber(v) or v)
                     end
                 end
                 

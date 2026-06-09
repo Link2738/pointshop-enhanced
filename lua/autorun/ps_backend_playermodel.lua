@@ -139,13 +139,19 @@ if SERVER then
     -- Apply customization to player
     local function ApplyPlayerModelToPlayer(ply, modelPath, mods, itemID)
         if not IsValid(ply) or not modelPath then return end
-        
+
+        -- Same team gate as the equip path. Without this, a player could fire a
+        -- customization update for an owned-but-wrong-team model and SetModel
+        -- themselves into it mid-round, bypassing the AllowedTeams restriction.
+        local ITEM = itemID and PS.Items and PS.Items[itemID]
+        if ITEM and PS.CanEquipForTeam and not PS:CanEquipForTeam(ply, ITEM) then return end
+
         ply:SetModel(modelPath)
         if mods then
             if mods.skin then ply:SetSkin(mods.skin) end
             if mods.bodygroups then
                 for k, v in pairs(mods.bodygroups) do
-                    ply:SetBodygroup(k, v)
+                    ply:SetBodygroup(tonumber(k) or k, tonumber(v) or v)
                 end
             end
             if mods.playercolor then

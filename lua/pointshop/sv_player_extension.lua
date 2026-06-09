@@ -392,15 +392,9 @@ function Player:PS_EquipItem(item_id)
 	local CATEGORY = PS:FindCategoryByName(cat_name)
 
 	-- Enforce team restriction from category (e.g. bear models vs victim models)
-	if CATEGORY and CATEGORY.AllowedTeams and #CATEGORY.AllowedTeams > 0 then
-		local teamAllowed = false
-		for _, tid in ipairs(CATEGORY.AllowedTeams) do
-			if self:Team() == tid then teamAllowed = true break end
-		end
-		if not teamAllowed then
-			self:PS_Notify('You\'re not on the right team to equip this item!')
-			return false
-		end
+	if not PS:CanEquipForTeam(self, ITEM) then
+		self:PS_Notify('You\'re not on the right team to equip this item!')
+		return false
 	end
 
 	if CATEGORY and CATEGORY.AllowedEquipped > -1 then

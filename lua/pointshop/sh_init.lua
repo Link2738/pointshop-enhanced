@@ -50,7 +50,25 @@ function PS:FindCategoryByName(cat_name)
 			return cat
 		end
 	end
-	
+
+	return false
+end
+
+-- Single source of truth for the per-category team restriction (e.g. bear models
+-- vs victim models). Returns true when the player's current team may wear the item.
+-- No AllowedTeams on the category = no restriction = allowed.
+function PS:CanEquipForTeam(ply, ITEM)
+	if not IsValid(ply) or not ITEM then return false end
+
+	local CATEGORY = PS:FindCategoryByName(ITEM.Category)
+	if not CATEGORY or not CATEGORY.AllowedTeams or #CATEGORY.AllowedTeams == 0 then
+		return true
+	end
+
+	for _, tid in ipairs(CATEGORY.AllowedTeams) do
+		if ply:Team() == tid then return true end
+	end
+
 	return false
 end
 

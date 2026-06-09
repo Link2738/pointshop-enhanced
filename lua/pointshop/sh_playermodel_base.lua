@@ -9,7 +9,8 @@ function BASE:ApplyModelSettings(ply, modifications)
     end
     if modifications and modifications.bodygroups then
         for k, v in pairs(modifications.bodygroups) do
-            ply:SetBodygroup(k, v)
+            -- Keys come back from JSON as strings; SetBodygroup needs numbers.
+            ply:SetBodygroup(tonumber(k) or k, tonumber(v) or v)
         end
     end
     if modifications and modifications.playercolor then
