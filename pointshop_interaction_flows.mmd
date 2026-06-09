@@ -1,0 +1,65 @@
+sequenceDiagram
+    participant Player
+    participant Menu as DPointShopMenu
+    participant Inspector as DPointShopInspector
+    participant Custom as CustomizationPanel
+    participant Client as Client Extension
+    participant Network as Network Layer
+    participant Server as Server Extension
+    participant Storage as Data Storage
+    
+    Player->>Menu: Open Shop (!shop)
+    Menu->>Menu: Load Categories & Items
+    Menu->>Player: Display Grid (4-col)
+    
+    rect rgb(100, 150, 200)
+        note right of Player: Preview Flow
+        Player->>Menu: Right-click Item → Inspect
+        Menu->>Inspector: Create(itemData)
+        Inspector->>Inspector: Create ClientsideModel
+        Inspector->>Inspector: Setup CalcView Hook
+        Inspector->>Player: Show Preview with Camera
+        Player->>Inspector: Drag/Scroll Camera
+        Inspector->>Player: Rotate/Zoom View
+        Player->>Inspector: Click "Purchase" or "Back"
+        Inspector->>Inspector: Restore Player Model
+        Inspector->>Menu: Show Menu
+    end
+    
+    rect rgb(150, 100, 200)
+        note right of Player: Equip Flow
+        Player->>Menu: Right-click Item → Equip
+        Menu->>Client: PS_EquipItem(itemID)
+        Client->>Network: net.Start("PS_EquipItem")
+        Network->>Server: Receive equip request
+        Server->>Server: Check slot conflicts
+        Server->>Server: Unequip playermodel if TYPE match
+        Server->>Server: OnEquip(player, mods)
+        Server->>Storage: Save equipped state
+        Server->>Network: PS_SendItems()
+        Network->>Client: Update client items
+        Client->>Player: Apply visual changes
+    end
+    
+    rect rgb(200, 150, 100)
+        note right of Player: Customize Flow
+        Player->>Menu: Right-click Item → Customize
+        Menu->>Custom: Create(itemData)
+        Custom->>Custom: Detect TYPE (playermodel/accessory)
+        Custom->>Custom: Load saved customization
+        Custom->>Custom: Create sliders (bodygroups/position)
+        Custom->>Custom: Setup CalcView for preview
+        Custom->>Player: Show customization panel
+        Player->>Custom: Adjust sliders
+        Custom->>Player: Live preview changes
+        Player->>Custom: Click "Apply"
+        Custom->>Network: net.Start("PS_ApplyCustomization")
+        Network->>Server: Receive(itemID, itemType, mods)
+        Server->>Server: Rate limit check (5/10sec)
+        Server->>Server: Sanitize data
+        Server->>Server: Apply changes (SetModel/Bodygroups)
+        Server->>Storage: Save customization
+        Storage->>Storage: PS_[TYPE]_CUSTOMIZATIONS table
+        Server->>Network: Confirm success
+        Network->>Player: Visual update
+    end

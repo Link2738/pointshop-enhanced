@@ -1,0 +1,146 @@
+// PointShop System Architecture Diagram
+graph TB
+    subgraph "Client Side"
+        Menu[DPointShopMenu<br/>Main Shop Interface]
+        Inspector[DPointShopInspector<br/>Preview Panel]
+        CustomPanel[PSItemCustomizationPanel<br/>Unified Customization]
+        ItemPanel[DPointShopItem<br/>Item Display]
+        
+        Menu -->|Select Category| CategoryGrid[Category Grid<br/>Scrollable 4-col]
+        Menu -->|Populate Items| ItemGrid[Item Grid<br/>Scrollable 4-col]
+        ItemGrid -->|Create| ItemPanel
+        
+        ItemPanel -->|Right Click:<br/>Inspect| Inspector
+        ItemPanel -->|Right Click:<br/>Equip| ClientEquip[cl_player_extension<br/>PS_EquipItem]
+        ItemPanel -->|Right Click:<br/>Customize| CustomPanel
+        
+        Inspector -->|Preview Model| ClientModel[ClientsideModel<br/>Preview Entity]
+        Inspector -->|Camera Control| CalcView[CalcView Hook<br/>Spherical Coordinates]
+        
+        CustomPanel -->|Playermodel| PMControls[Bodygroups<br/>Skin<br/>Player Color]
+        CustomPanel -->|Accessory| AccControls[Position XYZ<br/>Rotation<br/>Scale<br/>Color]
+        CustomPanel -->|Apply| NetSend[net.Start<br/>PS_ApplyCustomization]
+    end
+    
+    subgraph "Network Layer"
+        NetSend -->|Send to Server| NetReceive[net.Receive<br/>PS_ApplyCustomization]
+        ClientEquip -->|net.Start| ServerEquip[net.Receive<br/>PS_EquipItem]
+    end
+    
+    subgraph "Server Side"
+        NetReceive -->|Rate Limit Check| RateLimit{Rate Limiter<br/>5 req/10sec}
+        RateLimit -->|Approved| Sanitize[Data Sanitization<br/>Validate values]
+        RateLimit -->|Denied| Notify[PS_Notify<br/>Too many requests]
+        
+        Sanitize -->|Playermodel| PMApply[ApplyModelSettings<br/>SetModel/Skin/Bodygroups]
+        Sanitize -->|Accessory| AccApply[ModifyClientsideModel<br/>Position/Scale/Rotation]
+        
+        PMApply -->|Save| Storage
+        AccApply -->|Save| Storage
+        
+        ServerEquip -->|Check Slot| SlotCheck{Same Slot?}
+        SlotCheck -->|Yes| Holster[PS_HolsterItem<br/>Unequip old item]
+        SlotCheck -->|No| TypeCheck{Playermodel?}
+        TypeCheck -->|Yes| PMCheck[Unequip other<br/>playermodels]
+        TypeCheck -->|No| EquipItem
+        Holster --> EquipItem[PS_EquipItem<br/>Mark equipped]
+        PMCheck --> EquipItem
+        
+        EquipItem -->|OnEquip| ItemBase[Item Base<br/>OnEquip/OnHolster]
+        ItemBase -->|Playermodel| PMBase[sh_playermodel_base<br/>ApplyModelSettings]
+        ItemBase -->|Accessory| AccBase[sh_accessory_base<br/>CreateClientsideModel]
+    end
+    
+    subgraph "Data Storage"
+        Storage[(Unified Backend<br/>PS_PLAYERMODEL_CUSTOMIZATIONS<br/>PS_ACCESSORY_CUSTOMIZATIONS)]
+        Storage -->|Provider| Provider{Storage Provider}
+        Provider -->|JSON| JSON[json.lua]
+        Provider -->|MySQL| MySQL[mysql.lua]
+        Provider -->|FlatFile| FlatFile[flatfile.lua]
+        Provider -->|PData| PData[pdata.lua]
+    end
+    
+    subgraph "Item Types"
+        PMBase -->|Modify| PMCustom[Playermodel Items<br/>TYPE: playermodel<br/>Bodygroups/Skin/Color]
+        AccBase -->|Modify| AccCustom[Accessory Items<br/>TYPE: accessory<br/>Bone/Attachment/Model]
+    end
+    
+    Storage -.->|Load on Join| PlayerData[Player Data<br/>PS_Items table]
+    PlayerData -.->|Send to Client| ClientData[LocalPlayer<br/>PS_Items]
+    ClientData -.->|Populate| Menu
+
+    style Menu fill:#60a0c8
+    style Inspector fill:#60a0c8
+    style CustomPanel fill:#60a0c8
+    style Storage fill:#4a7c59
+    style RateLimit fill:#c86060
+    style Sanitize fill:#c8a060
+
+// ============================================================================
+
+// PointShop User Interaction Flows Diagram
+sequenceDiagram
+    participant Player
+    participant Menu as DPointShopMenu
+    participant Inspector as DPointShopInspector
+    participant Custom as CustomizationPanel
+    participant Client as Client Extension
+    participant Network as Network Layer
+    participant Server as Server Extension
+    participant Storage as Data Storage
+    
+    Player->>Menu: Open Shop (!shop)
+    Menu->>Menu: Load Categories & Items
+    Menu->>Player: Display Grid (4-col)
+    
+    rect rgb(100, 150, 200)
+        note right of Player: Preview Flow
+        Player->>Menu: Right-click Item → Inspect
+        Menu->>Inspector: Create(itemData)
+        Inspector->>Inspector: Create ClientsideModel
+        Inspector->>Inspector: Setup CalcView Hook
+        Inspector->>Player: Show Preview with Camera
+        Player->>Inspector: Drag/Scroll Camera
+        Inspector->>Player: Rotate/Zoom View
+        Player->>Inspector: Click "Purchase" or "Back"
+        Inspector->>Inspector: Restore Player Model
+        Inspector->>Menu: Show Menu
+    end
+    
+    rect rgb(150, 100, 200)
+        note right of Player: Equip Flow
+        Player->>Menu: Right-click Item → Equip
+        Menu->>Client: PS_EquipItem(itemID)
+        Client->>Network: net.Start("PS_EquipItem")
+        Network->>Server: Receive equip request
+        Server->>Server: Check slot conflicts
+        Server->>Server: Unequip playermodel if TYPE match
+        Server->>Server: OnEquip(player, mods)
+        Server->>Storage: Save equipped state
+        Server->>Network: PS_SendItems()
+        Network->>Client: Update client items
+        Client->>Player: Apply visual changes
+    end
+    
+    rect rgb(200, 150, 100)
+        note right of Player: Customize Flow
+        Player->>Menu: Right-click Item → Customize
+        Menu->>Custom: Create(itemData)
+        Custom->>Custom: Detect TYPE (playermodel/accessory)
+        Custom->>Custom: Load saved customization
+        Custom->>Custom: Create sliders (bodygroups/position)
+        Custom->>Custom: Setup CalcView for preview
+        Custom->>Player: Show customization panel
+        Player->>Custom: Adjust sliders
+        Custom->>Player: Live preview changes
+        Player->>Custom: Click "Apply"
+        Custom->>Network: net.Start("PS_ApplyCustomization")
+        Network->>Server: Receive(itemID, itemType, mods)
+        Server->>Server: Rate limit check (5/10sec)
+        Server->>Server: Sanitize data
+        Server->>Server: Apply changes (SetModel/Bodygroups)
+        Server->>Storage: Save customization
+        Storage->>Storage: PS_[TYPE]_CUSTOMIZATIONS table
+        Server->>Network: Confirm success
+        Network->>Player: Visual update
+    end

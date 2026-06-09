@@ -1,0 +1,63 @@
+flowchart TB
+    subgraph Client["CLIENT SIDE"]
+        UI[PointShop Menu]
+        AccPanel[ps_accessory_customization_panel_v2.lua]
+        PMPanel[ps_playermodel_customization_panel.lua]
+        
+        UI -->|User clicks customize| AccPanel
+        UI -->|User clicks customize| PMPanel
+        
+        AccPanel --> Preview[Live Preview System]
+        Preview --> DummyPlayer[Dummy Player Model]
+        Preview --> DummyAcc[Dummy Accessory Model]
+        
+        AccPanel --> Sliders[Sliders: Offset/Scale/Rotation]
+        Sliders -->|Real-time updates| Preview
+        
+        AccPanel -->|Apply button| NetSend1[Net Message: PS_AccessoryCustomization_Update]
+        AccPanel -->|Close X| NetSend2[Net Message: PS_AccessoryCustomization_Closed]
+        
+        NetRecv1[Net Receive: PS_AccessoryCustomization_Update] -->|Other players| Holster[HolsterAndReequip]
+        Holster --> Reapply[Re-apply with new mods]
+        
+        LocalCache[PS_AccessoryCustomizations cache]
+        AccPanel -.->|Saves temp data| LocalCache
+        AccPanel -.->|Loads saved data| LocalCache
+    end
+    
+    subgraph Server["SERVER SIDE"]
+        NetRecv2[Net Receive: Update]
+        NetRecv3[Net Receive: Closed]
+        SQL[(SQLite Database)]
+        
+        NetRecv2 --> Validate[Validate Player & Item]
+        Validate --> SaveSQL[PS_SetAccessoryCustomization]
+        SaveSQL --> SQL
+        SaveSQL --> Broadcast[Broadcast to OTHER clients]
+        Broadcast --> NetSend3[Net Send: Update to all except sender]
+        
+        NetRecv3 --> Notify1[Send notification: Re-equip accessory]
+        NetRecv2 --> Notify2[Send notification: Re-equip accessory]
+    end
+    
+    NetSend1 -->|Send to server| NetRecv2
+    NetSend2 -->|Send to server| NetRecv3
+    NetSend3 -->|Send to clients| NetRecv1
+    
+    subgraph Data["DATA STRUCTURE"]
+        Mods[Modifications Table]
+        Mods --> Scale[scale: 0.1-2.0]
+        Mods --> Rotation[rotation: 0-360°]
+        Mods --> Offset[offset: X,Y,Z -30 to 30]
+        Mods --> Ang[ang: axis rotation -180 to 180°]
+        Mods --> Axis[axis: Right/Up/Forward]
+    end
+    
+    SaveSQL -.->|Stores| Mods
+    NetSend1 -.->|Sends| Mods
+    
+    style Client fill:#1a1a2e
+    style Server fill:#16213e
+    style Data fill:#0f3460
+    style AccPanel fill:#e94560
+    style SQL fill:#533483

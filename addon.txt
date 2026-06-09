@@ -1,0 +1,11 @@
+"AddonInfo"
+{
+	"name"				"PointShop Enhanced Edition"
+	"version"			"2.0"
+	"up_date"			"0"
+	"author_name"		"_Undefined, Excl, Kamshak, jessecar96, Custom Enhanced Edition"
+	"author_email"		""
+	"author_url"		""
+	"info"				"Enhanced edition of PointShop with modern UI, customization system, and data integrity improvements"
+	"override"			"0"
+}
