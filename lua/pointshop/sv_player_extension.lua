@@ -114,15 +114,8 @@ function Player:PS_PlayerInitialSpawn()
 		end)
 	end
 
-	if PS.Config.CheckVersion and PS.BuildOutdated and self:IsAdmin() then
-		timer.Simple(5, function()
-			if !IsValid(self) then return end
-			self:PS_Notify("PointShop is out of date, please tell the server owner!")
-		end)
-	end
-
 	if PS.Config.PointsOverTime then
-		timer.Create('PS_PointsOverTime_' .. self:UniqueID(), PS.Config.PointsOverTimeDelay * 60, 0, function()
+		timer.Create('PS_PointsOverTime_' .. self:SteamID64(), PS.Config.PointsOverTimeDelay * 60, 0, function()
 			if !IsValid(self) then return end
 			self:PS_GivePoints(PS.Config.PointsOverTimeAmount)
 			self:PS_Notify("You've been given ", PS.Config.PointsOverTimeAmount, " ", PS.Config.PointsName, " for playing on the server!")
@@ -133,8 +126,8 @@ end
 function Player:PS_PlayerDisconnected()
 	PS.ClientsideModels[self] = nil
 
-	if timer.Exists('PS_PointsOverTime_' .. self:UniqueID()) then
-		timer.Destroy('PS_PointsOverTime_' .. self:UniqueID())
+	if timer.Exists('PS_PointsOverTime_' .. self:SteamID64()) then
+		timer.Destroy('PS_PointsOverTime_' .. self:SteamID64())
 	end
 end
 
@@ -266,17 +259,19 @@ function Player:PS_BuyItem(item_id)
 	local cat_name = ITEM.Category
 	local CATEGORY = PS:FindCategoryByName(cat_name)
 
-	if CATEGORY.AllowedUserGroups and #CATEGORY.AllowedUserGroups > 0 then
-		if not table.HasValue(CATEGORY.AllowedUserGroups, self:PS_GetUsergroup()) then
-			self:PS_Notify('You\'re not in the right group to buy this item!')
-			return false
+	if CATEGORY then
+		if CATEGORY.AllowedUserGroups and #CATEGORY.AllowedUserGroups > 0 then
+			if not table.HasValue(CATEGORY.AllowedUserGroups, self:PS_GetUsergroup()) then
+				self:PS_Notify('You\'re not in the right group to buy this item!')
+				return false
+			end
 		end
-	end
 
-	if CATEGORY.CanPlayerSee then
-		if not CATEGORY:CanPlayerSee(self) then
-			self:PS_Notify('You\'re not allowed to buy this item!')
-			return false
+		if CATEGORY.CanPlayerSee then
+			if not CATEGORY:CanPlayerSee(self) then
+				self:PS_Notify('You\'re not allowed to buy this item!')
+				return false
+			end
 		end
 	end
 
@@ -453,7 +448,7 @@ function Player:PS_EquipItem(item_id)
 	end
 
 
-	if CATEGORY.SharedCategories then
+	if CATEGORY and CATEGORY.SharedCategories then
 		local ConCatCats = CATEGORY.Name
 		for p, c in pairs( CATEGORY.SharedCategories ) do
 			if p ~= #CATEGORY.SharedCategories then

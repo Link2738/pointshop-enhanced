@@ -41,8 +41,13 @@ net.Receive('PS_HolsterItem', function(length, ply)
 	ply:PS_HolsterItem(net.ReadString())
 end)
 
+-- Reject oversized modify payloads before deserializing. A legit modify is a small
+-- text+color/offset table; anything large is an attempt to make net.ReadTable do
+-- expensive work on attacker-controlled data. ~2 KB is generous for real items.
+local PS_MAX_MODIFY_BITS = 16384
 net.Receive('PS_ModifyItem', function(length, ply)
 	if not PS_RateLimit(ply, 'modify') then return end
+	if length > PS_MAX_MODIFY_BITS then return end
 	ply:PS_ModifyItem(net.ReadString(), net.ReadTable())
 end)
 
@@ -226,59 +231,34 @@ end)
 
 concommand.Add('ps_clear_points', function(ply, cmd, args)
 	if IsValid(ply) then return end -- only allowed from server console
-	
-	for _, ply in pairs(player.GetAll()) do
-		ply:PS_SetPoints(0)
+
+	for _, target in pairs(player.GetAll()) do
+		target:PS_SetPoints(0)
 	end
-	
-	sql.Query("DELETE FROM playerpdata WHERE infoid LIKE '%PS_Points%'")
+
+	-- Persisted data is cleared through the active data provider (pdata/mysql/json/...).
+	if PS.DataProvider.ClearAllPoints then
+		PS.DataProvider:ClearAllPoints()
+	else
+		MsgN("[PointShop] Data provider '" .. tostring(PS.DataProvider.ID) .. "' has no ClearAllPoints(); only online players were reset.")
+	end
 end)
 
 concommand.Add('ps_clear_items', function(ply, cmd, args)
 	if IsValid(ply) then return end -- only allowed from server console
-	
-	for _, ply in pairs(player.GetAll()) do
-		ply.PS_Items = {}
-		ply:PS_SendItems()
+
+	for _, target in pairs(player.GetAll()) do
+		target.PS_Items = {}
+		target:PS_SendItems()
 	end
-	
-	sql.Query("DELETE FROM playerpdata WHERE infoid LIKE '%PS_Items%'")
-end)
 
--- version checker
-
-PS.CurrentBuild = 0
-PS.LatestBuild = 0
-PS.BuildOutdated = false
-
-local function CompareVersions()
-	if PS.CurrentBuild < PS.LatestBuild then
-		MsgN('PointShop is out of date!')
-		MsgN('Local version: ' .. PS.CurrentBuild .. ', Latest version: ' .. PS.LatestBuild)
-
-		PS.BuildOutdated = true
+	-- Persisted data is cleared through the active data provider (pdata/mysql/json/...).
+	if PS.DataProvider.ClearAllItems then
+		PS.DataProvider:ClearAllItems()
 	else
-		MsgN('PointShop is on the latest version.')
+		MsgN("[PointShop] Data provider '" .. tostring(PS.DataProvider.ID) .. "' has no ClearAllItems(); only online players were reset.")
 	end
-end
-
-function PS:CheckVersion()
-	if file.Exists('data/pointshop_build.txt', 'GAME') then
-		PS.CurrentBuild = tonumber(file.Read('data/pointshop_build.txt', 'GAME')) or 0
-	end
-
-	local url = self.Config.Branch .. 'data/pointshop_build.txt'
-	http.Fetch( url,
-		function( content ) -- onSuccess
-			PS.LatestBuild = tonumber( content ) or 0
-			CompareVersions()
-		end,
-		function(failCode) -- onFailure
-			MsgN('PointShop couldn\'t check version.')
-			MsgN(url, ' returned ', failCode)
-		end
-	)
-end
+end)
 
 -- data providers
 

@@ -16,9 +16,6 @@ PS.Config.CommunityName = "My Community"
 
 PS.Config.DataProvider = 'pdata'
 
-PS.Config.Branch = '' -- (Unused) This Enhanced Edition versions independently; no upstream version checking.
-PS.Config.CheckVersion = false -- Disabled: this fork does not phone home to the original PointShop repo.
-
 PS.Config.ShopKey = 'F3' -- Any Uppercase key or blank to disable
 PS.Config.ShopCommand = 'ps_shop' -- Console command to open the shop, set to blank to disable
 PS.Config.ShopChatCommand = '!shop' -- Chat command to open the shop, set to blank to disable

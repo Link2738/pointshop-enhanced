@@ -35,3 +35,12 @@ function PROVIDER:SetData(ply, points, items)
 	ply:SetPData('PS_Points', points)
 	ply:SetPData('PS_Items', util.TableToJSON(items))
 end
+
+-- Bulk wipes used by the ps_clear_points / ps_clear_items server console commands.
+function PROVIDER:ClearAllPoints()
+	sql.Query("DELETE FROM playerpdata WHERE infoid LIKE '%PS_Points%'")
+end
+
+function PROVIDER:ClearAllItems()
+	sql.Query("DELETE FROM playerpdata WHERE infoid LIKE '%PS_Items%'")
+end
