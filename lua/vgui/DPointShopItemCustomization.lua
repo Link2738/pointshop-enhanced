@@ -114,42 +114,27 @@ end
 function PANEL:GetSliderValues()
     if self.itemType == "accessory" then
         -- Accessories: position/scale/rotation data
-        local axis = (self.rotateAxisCombo and self.rotateAxisCombo:GetValue()) or "Right"
-        local rawAxisDeg = self.axisDegSlider and self.axisDegSlider:GetValue()
-        local axisDeg = math.Clamp(tonumber(rawAxisDeg) or -90, -180, 180)
-        
-        if PS and PS.Config and PS.Config.Debug then
-            print("[PS GETVALS] axis=" .. tostring(axis) .. " rawAxisDeg=" .. tostring(rawAxisDeg) .. " (" .. type(rawAxisDeg) .. ") -> axisDeg=" .. tostring(axisDeg))
-        end
-        
-        local angTable = {0, 0, 0}
-        if axis == "Right" then
-            angTable[1] = axisDeg
-        elseif axis == "Up" then
-            angTable[2] = axisDeg
-        elseif axis == "Forward" then
-            angTable[3] = axisDeg
-        end
-
         local result = {
             scale = math.Clamp(self.scaleSlider and self.scaleSlider:GetValue() or 1, 0.1, 2),
-            rotation = math.Clamp(self.rotationSlider and self.rotationSlider:GetValue() or 0, 0, 360),
+            rotation = 0,
             offset = {
                 math.Clamp(self.offsetXSlider and self.offsetXSlider:GetValue() or 0, -30, 30),
                 math.Clamp(self.offsetYSlider and self.offsetYSlider:GetValue() or 0, -30, 30),
                 math.Clamp(self.offsetZSlider and self.offsetZSlider:GetValue() or 0, -30, 30)
             },
-            ang = angTable,
-            axis = axis,
-            axisDeg = axisDeg
+            ang = {
+                math.Clamp(self.pitchSlider and self.pitchSlider:GetValue() or 0, -180, 180),
+                math.Clamp(self.yawSlider and self.yawSlider:GetValue() or 0, -180, 180),
+                math.Clamp(self.rollSlider and self.rollSlider:GetValue() or 0, -180, 180)
+            }
         }
-        
+
         -- Add color if color mixer exists
         if self.accessoryColorMixer then
             local col = self.accessoryColorMixer:GetColor()
             result.color = {r = col.r, g = col.g, b = col.b, a = col.a}
         end
-        
+
         return result
     elseif self.itemType == "playermodel" then
         -- Playermodels: bodygroup/skin/color data
@@ -193,15 +178,6 @@ end
 -- ============================================================================
 
 function PANEL:Init()
-    -- DEBUG: Show which file is loading
-    if PS and PS.Config and PS.Config.Debug then
-        local info = debug.getinfo(1, "S")
-        if info and info.source then
-            print("[PS UNIFIED PANEL] Loading from: " .. info.source)
-            print("[PS UNIFIED PANEL] Version: v2.0_Unified_Feb9_2026")
-        end
-    end
-    
     self:SetTitle("")
     self:SetSize(450, 400)
     self:SetMinWidth(340)
@@ -210,16 +186,23 @@ function PANEL:Init()
     self:MakePopup()
     self:SetMouseInputEnabled(true)
     self:SetKeyBoardInputEnabled(true)
-    
+
     self.orbitRadius = 60
     self.orbitPhi = math.pi / 2
     self.previewEnabled = false
-    
+
     -- Type-specific controls will be created in SetItem()
     self:SetupHooks()
 end
 
+
+function PANEL:Think()
+    -- No gizmo input handling needed
+end
+
 function PANEL:SetupHooks()
+    local panelRef = self
+
     -- Third-person camera hook
     hook.Add("ShouldDrawLocalPlayer", "PSItemCustomizationPanel_ShouldDrawLocalPlayer", function()
         return IsValid(self) and self:IsVisible()
@@ -258,13 +241,13 @@ function PANEL:CreateAccessorySliders()
     local baseX, y = 20, 40
     
     -- Helper function to create slider+box pair
-    local function CreateSliderPair(parent, label, min, max, default, decimals)
+    local function CreateSliderPair(label, min, max, default, decimals)
         if PS and PS.Config and PS.Config.Debug then
-            print(string.format("[PS PANEL DEBUG] CreateSliderPair: %s | min=%s max=%s default=%s", 
+            print(string.format("[PS PANEL DEBUG] CreateSliderPair: %s | min=%s max=%s default=%s",
                 label, tostring(min), tostring(max), tostring(default)))
         end
-        
-        local slider = parent:Add("DNumSlider")
+
+        local slider = self:Add("DNumSlider")
         slider:SetText(label)
         slider:SetDecimals(decimals or 2)
         slider:SetMin(min)
@@ -272,8 +255,8 @@ function PANEL:CreateAccessorySliders()
         slider:SetValue(default)
         slider:SetPos(baseX, y)
         slider:SetSize(sliderW - 60, sliderH)
-        
-        local box = parent:Add("DNumberWang")
+
+        local box = self:Add("DNumberWang")
         box:SetDecimals(decimals or 2)
         box:SetMin(min)
         box:SetMax(max)
@@ -282,7 +265,7 @@ function PANEL:CreateAccessorySliders()
         box:SetPos(baseX + sliderW - 50, y)
         box:SetMouseInputEnabled(true)
         box:SetKeyboardInputEnabled(true)
-        
+
         -- Mouse wheel support
         box.OnMouseWheeled = function(_, delta)
             if not IsValid(box) then return true end
@@ -291,93 +274,79 @@ function PANEL:CreateAccessorySliders()
             if box.OnValueChanged then box.OnValueChanged(box, box:GetValue()) end
             return true
         end
-        
+
         -- Sync box to slider
         box.OnValueChanged = function(_, val)
-            if not IsValid(parent) then return end
-            if parent._resetting or parent._syncing then return end
-            parent._syncing = true
+            if not IsValid(self) then return end
+            if self._resetting or self._syncing then return end
+            self._syncing = true
             local ok, err = pcall(function()
                 local v = tonumber(val) or 0
                 if PS and PS.Config and PS.Config.Debug then
                     print(string.format("[PS SYNC] %s box->slider: val=%s parsed=%s", label, tostring(val), tostring(v)))
                 end
                 slider:SetValue(v)
-                if parent.previewEnabled then parent:ApplyLivePreview() end
+                if self.previewEnabled then self:ApplyLivePreview() end
             end)
-            parent._syncing = false
+            self._syncing = false
             if not ok then print("[PS SYNC ERROR] " .. label .. " box->slider: " .. tostring(err)) end
         end
-        
+
         -- Sync slider to box
         slider.OnValueChanged = function(_, val)
-            if not IsValid(parent) then return end
-            if parent._resetting or parent._syncing then return end
-            parent._syncing = true
+            if not IsValid(self) then return end
+            if self._resetting or self._syncing then return end
+            self._syncing = true
             local ok, err = pcall(function()
                 local v = tonumber(val) or 0
                 if PS and PS.Config and PS.Config.Debug then
                     print(string.format("[PS SYNC] %s slider->box: val=%s parsed=%s", label, tostring(val), tostring(v)))
                 end
                 if box and IsValid(box) and box.SetValue then box:SetValue(v) end
-                if parent.previewEnabled then parent:ApplyLivePreview() end
+                if self.previewEnabled then self:ApplyLivePreview() end
             end)
-            parent._syncing = false
+            self._syncing = false
             if not ok then print("[PS SYNC ERROR] " .. label .. " slider->box: " .. tostring(err)) end
         end
-        
+
         -- Enable preview on interaction
         slider.OnMousePressed = function()
-            if IsValid(parent) then
-                parent.previewEnabled = true
-                parent:ApplyLivePreview()
+            if IsValid(self) then
+                self.previewEnabled = true
+                self:ApplyLivePreview()
             end
         end
-        
+
         y = y + sliderH
         return slider, box
     end
     
     -- Create offset sliders
-    self.offsetXSlider, self.offsetXBox = CreateSliderPair(self, "Offset X", -30, 30, 0, 2)
-    self.offsetYSlider, self.offsetYBox = CreateSliderPair(self, "Offset Y", -30, 30, 0, 2)
-    self.offsetZSlider, self.offsetZBox = CreateSliderPair(self, "Offset Z", -30, 30, 0, 2)
-    
+    self.offsetXSlider, self.offsetXBox = CreateSliderPair("Offset X", -30, 30, 0, 2)
+    self.offsetYSlider, self.offsetYBox = CreateSliderPair("Offset Y", -30, 30, 0, 2)
+    self.offsetZSlider, self.offsetZBox = CreateSliderPair("Offset Z", -30, 30, 0, 2)
+
     y = y + 8
-    
-    -- Axis combo box
-    self.rotateAxisCombo = self:Add("DComboBox")
-    self.rotateAxisCombo:SetPos(baseX, y)
-    self.rotateAxisCombo:SetSize(sliderW - 60, sliderH)
-    self.rotateAxisCombo:SetValue("Right")
-    self.rotateAxisCombo:AddChoice("Right")
-    self.rotateAxisCombo:AddChoice("Up")
-    self.rotateAxisCombo:AddChoice("Forward")
-    self.rotateAxisCombo.OnSelect = function(_, index, value)
-        if IsValid(self) then
-            self.previewEnabled = true
-            self:ApplyLivePreview()
-        end
-    end
-    y = y + sliderH
-    
-    -- Axis rotation slider
-    self.axisDegSlider, self.axisDegBox = CreateSliderPair(self, "Axis Rotation", -180, 180, -90, 1)
-    
+
+    -- Rotation sliders: Pitch, Yaw, Roll
+    self.pitchSlider, self.pitchBox = CreateSliderPair("Pitch", -180, 180, 0, 1)
+    self.yawSlider, self.yawBox = CreateSliderPair("Yaw", -180, 180, 0, 1)
+    self.rollSlider, self.rollBox = CreateSliderPair("Roll", -180, 180, 0, 1)
+
     y = y + 8
-    
+
     -- Scale slider
-    self.scaleSlider, self.scaleBox = CreateSliderPair(self, "Scale", 0.1, 2, 1, 2)
-    
+    self.scaleSlider, self.scaleBox = CreateSliderPair("Scale", 0.1, 2, 1, 2)
+
     y = y + 8
-    
+
     -- Color picker for accessories
     local colorLabel = self:Add("DLabel")
     colorLabel:SetText("Model Color:")
     colorLabel:SetPos(baseX, y)
     colorLabel:SetSize(sliderW - 60, 20)
     y = y + 22
-    
+
     self.accessoryColorMixer = self:Add("DColorMixer")
     self.accessoryColorMixer:SetPos(baseX, y)
     self.accessoryColorMixer:SetSize(sliderW - 60, 150)
@@ -393,36 +362,31 @@ function PANEL:CreateAccessorySliders()
     y = y + 155
     
     y = y + 8
-    
-    -- Legacy yaw rotation
-    self.rotationSlider, self.rotationBox = CreateSliderPair(self, "Legacy Yaw", 0, 360, 0, 0)
-    
-    y = y + 8
-    
+
     -- Camera controls (don't trigger preview)
-    self.cameraRotationSlider, self.cameraRotationBox = CreateSliderPair(self, "Camera Rotation", 0, 360, 0, 1)
+    self.cameraRotationSlider, self.cameraRotationBox = CreateSliderPair("Camera Rotation", 0, 360, 0, 1)
     self.cameraRotationSlider.OnMousePressed = nil
     self.cameraRotationBox.OnValueChanged = function(_, val)
         if not IsValid(self) then return end
         val = tonumber(val) or 0
-        if math.abs((tonumber(self.cameraRotationSlider:GetValue()) or 0) - val) > 1e-6 then 
+        if math.abs((tonumber(self.cameraRotationSlider:GetValue()) or 0) - val) > 1e-6 then
             self.cameraRotationSlider:SetValue(val)
         end
     end
-    
-    self.cameraYSlider, self.cameraYBox = CreateSliderPair(self, "Camera Y", -100, 100, 0, 1)
+
+    self.cameraYSlider, self.cameraYBox = CreateSliderPair("Camera Y", -100, 100, 0, 1)
     self.cameraYSlider.OnMousePressed = nil
     self.cameraYBox.OnValueChanged = function(_, val)
         if not IsValid(self) then return end
         val = tonumber(val) or 0
-        if math.abs((tonumber(self.cameraYSlider:GetValue()) or 0) - val) > 1e-6 then 
+        if math.abs((tonumber(self.cameraYSlider:GetValue()) or 0) - val) > 1e-6 then
             self.cameraYSlider:SetValue(val)
         end
     end
-    
+
     y = y + 8
-    
-    self.cameraZoomSlider, self.cameraZoomBox = CreateSliderPair(self, "Camera Zoom", 20, 300, self.orbitRadius, 0)
+
+    self.cameraZoomSlider, self.cameraZoomBox = CreateSliderPair("Camera Zoom", 20, 300, self.orbitRadius, 0)
     self.cameraZoomSlider.OnMousePressed = nil
     self.cameraZoomBox.OnValueChanged = function(_, val)
         if not IsValid(self) then return end
@@ -446,14 +410,14 @@ end
 function PANEL:CreatePlayermodelControls()
     local baseX, y = 20, 40
     local w = self:GetWide() - 40
-    
+
     -- Color mixer
     local colorLabel = self:Add("DLabel")
     colorLabel:SetText("Player Color")
     colorLabel:SetPos(baseX, y)
     colorLabel:SetSize(w, 20)
     y = y + 20
-    
+
     self.colorMixer = self:Add("DColorMixer")
     self.colorMixer:SetPos(baseX, y)
     self.colorMixer:SetSize(w, 120)
@@ -512,7 +476,7 @@ function PANEL:CreatePlayermodelControls()
         end
     end
     y = y + 130
-    
+
     -- Scrollable area for bodygroups and skin
     local scrollPanel = self:Add("DScrollPanel")
     scrollPanel:SetPos(baseX, y)
@@ -538,7 +502,7 @@ function PANEL:CreatePlayermodelControls()
     self._bodygroupScrollY = scrollY
     
     y = y + 210
-    
+
     -- Camera controls
     self.cameraRotationSlider = self:Add("DNumSlider")
     self.cameraRotationSlider:SetText("Camera Rotation")
@@ -549,7 +513,7 @@ function PANEL:CreatePlayermodelControls()
     self.cameraRotationSlider:SetDecimals(1)
     self.cameraRotationSlider:SetValue(0)
     y = y + 30
-    
+
     self.cameraYSlider = self:Add("DNumSlider")
     self.cameraYSlider:SetText("Camera Y")
     self.cameraYSlider:SetPos(baseX, y)
@@ -559,7 +523,7 @@ function PANEL:CreatePlayermodelControls()
     self.cameraYSlider:SetDecimals(1)
     self.cameraYSlider:SetValue(0)
     y = y + 30
-    
+
     self.cameraZoomSlider = self:Add("DNumSlider")
     self.cameraZoomSlider:SetText("Camera Zoom")
     self.cameraZoomSlider:SetPos(baseX, y)
@@ -860,7 +824,7 @@ function PANEL:CreateButtons()
     local sliderW = math.max(150, self:GetWide() - 90)
     local baseX = 20
     local y = self._controlsEndY or 450
-    
+
     -- Apply button
     self.applyButton = self:Add("DButton")
     self.applyButton:SetText("")
@@ -897,7 +861,7 @@ function PANEL:CreateButtons()
     end
     
     y = y + 32
-    
+
     -- Reset button (accessories and playermodels)
     if self.itemType == "accessory" or self.itemType == "playermodel" then
         self.resetButton = self:Add("DButton")
@@ -936,6 +900,7 @@ function PANEL:CreateButtons()
     local contentHeight = y + 30 -- Add bottom padding
     self:SetTall(contentHeight)
     self:SetPos(10, ScrH() / 2 - contentHeight / 2)
+
 end
 
 function PANEL:ResetSliders()
@@ -997,17 +962,18 @@ function PANEL:ResetSliders()
     -- Apply default values to controls (also sync number boxes directly to avoid missed updates)
     if self.scaleSlider then self.scaleSlider:SetValue(defaults.scale) end
     if self.scaleBox then self.scaleBox:SetValue(defaults.scale) end
-    if self.rotationSlider then self.rotationSlider:SetValue(defaults.rotation) end
-    if self.rotationBox then self.rotationBox:SetValue(defaults.rotation) end
     if self.offsetXSlider then self.offsetXSlider:SetValue(defaults.offsetX) end
     if self.offsetXBox then self.offsetXBox:SetValue(defaults.offsetX) end
     if self.offsetYSlider then self.offsetYSlider:SetValue(defaults.offsetY) end
     if self.offsetYBox then self.offsetYBox:SetValue(defaults.offsetY) end
     if self.offsetZSlider then self.offsetZSlider:SetValue(defaults.offsetZ) end
     if self.offsetZBox then self.offsetZBox:SetValue(defaults.offsetZ) end
-    if self.rotateAxisCombo then self.rotateAxisCombo:SetValue(defaults.axis) end
-    if self.axisDegSlider then self.axisDegSlider:SetValue(defaults.axisDeg) end
-    if self.axisDegBox then self.axisDegBox:SetValue(defaults.axisDeg) end
+    if self.pitchSlider then self.pitchSlider:SetValue(0) end
+    if self.pitchBox then self.pitchBox:SetValue(0) end
+    if self.yawSlider then self.yawSlider:SetValue(0) end
+    if self.yawBox then self.yawBox:SetValue(0) end
+    if self.rollSlider then self.rollSlider:SetValue(0) end
+    if self.rollBox then self.rollBox:SetValue(0) end
     if self.accessoryColorMixer then self.accessoryColorMixer:SetColor(defaults.color) end
     
     -- Re-enable callbacks
@@ -1015,7 +981,7 @@ function PANEL:ResetSliders()
     
     -- Verify values after setting
     if PS and PS.Config and PS.Config.Debug then
-        print("[PS RESET] After set: axisDegSlider=" .. tostring(self.axisDegSlider and self.axisDegSlider:GetValue()) .. " axisDegBox=" .. tostring(self.axisDegBox and self.axisDegBox:GetValue()))
+        print("[PS RESET] After set: pitch=" .. tostring(self.pitchSlider and self.pitchSlider:GetValue()) .. " yaw=" .. tostring(self.yawSlider and self.yawSlider:GetValue()) .. " roll=" .. tostring(self.rollSlider and self.rollSlider:GetValue()))
         print("[PS RESET] After set: _syncing=" .. tostring(self._syncing) .. " _resetting=" .. tostring(self._resetting))
     end
     
@@ -1124,6 +1090,12 @@ function PANEL:EnablePreview()
     end)
 end
 
+-- Gizmo rendering disabled — using sliders instead
+function PANEL:RenderGizmo()
+    -- Gizmos removed in favor of intuitive pitch/yaw/roll sliders
+end
+
+
 -- Removed: No longer using dummy models, preview applies directly to real clientside models
 
 function PANEL:ApplyLivePreview()
@@ -1136,7 +1108,7 @@ function PANEL:ApplyLivePreview()
         -- Accessories: update real accessory modifiers in the customization table (real-time preview)
         local mods = self:GetSliderValues()
         if PS and PS.Config and PS.Config.Debug then
-            print("[PS PREVIEW] ApplyLivePreview: axisDeg=" .. tostring(mods.axisDeg) .. " axis=" .. tostring(mods.axis) .. " rotation=" .. tostring(mods.rotation) .. " scale=" .. tostring(mods.scale))
+            print("[PS PREVIEW] ApplyLivePreview: ang=" .. tostring(mods.ang[1]) .. "/" .. tostring(mods.ang[2]) .. "/" .. tostring(mods.ang[3]) .. " scale=" .. tostring(mods.scale))
         end
         PS_AccessoryCustomizations = PS_AccessoryCustomizations or {}
         PS_AccessoryCustomizations[ply] = PS_AccessoryCustomizations[ply] or {}
@@ -1304,7 +1276,7 @@ function PANEL:SetItem(item)
     self.itemModelPath = item.Model
     self.itemBone = item.Bone
     self._itemSkinCount = item.SkinCount or 0
-    
+
     -- Create type-appropriate controls
     if self.itemType == "accessory" then
         self:CreateAccessorySliders()
@@ -1357,22 +1329,11 @@ function PANEL:SetItem(item)
                     if self.offsetZSlider then self.offsetZSlider:SetValue(mods.offset.z or mods.offset[3] or 0) end
                 end
                 
-                -- Handle rotation/angle data
-                if mods.axis and mods.axisDeg and self.rotateAxisCombo and self.axisDegSlider then
-                    self.rotateAxisCombo:SetValue(mods.axis)
-                    self.axisDegSlider:SetValue(mods.axisDeg)
-                elseif mods.ang and self.rotateAxisCombo and self.axisDegSlider then
-                    local rotX = mods.ang[1] or 0
-                    local rotY = mods.ang[2] or 0
-                    local rotZ = mods.ang[3] or 0
-                    
-                    local maxRot, axis = math.abs(rotX), "Right"
-                    if math.abs(rotY) > maxRot then maxRot, axis = math.abs(rotY), "Up" end
-                    if math.abs(rotZ) > maxRot then maxRot, axis = math.abs(rotZ), "Forward" end
-                    
-                    self.rotateAxisCombo:SetValue(axis)
-                    local deg = (axis == "Right" and rotX) or (axis == "Up" and rotY) or rotZ
-                    self.axisDegSlider:SetValue(deg)
+                -- Handle rotation/angle data — load all three independently
+                if mods.ang then
+                    if self.pitchSlider then self.pitchSlider:SetValue(mods.ang[1] or 0) end
+                    if self.yawSlider then self.yawSlider:SetValue(mods.ang[2] or 0) end
+                    if self.rollSlider then self.rollSlider:SetValue(mods.ang[3] or 0) end
                 end
                 
                 if mods.scale and self.scaleSlider then
@@ -1491,17 +1452,18 @@ function PANEL:SetControlsEnabled(enabled)
     if self.offsetXSlider then table.insert(controls, self.offsetXSlider) end
     if self.offsetYSlider then table.insert(controls, self.offsetYSlider) end
     if self.offsetZSlider then table.insert(controls, self.offsetZSlider) end
-    if self.rotateAxisCombo then table.insert(controls, self.rotateAxisCombo) end
-    if self.axisDegSlider then table.insert(controls, self.axisDegSlider) end
+    if self.pitchSlider then table.insert(controls, self.pitchSlider) end
+    if self.yawSlider then table.insert(controls, self.yawSlider) end
+    if self.rollSlider then table.insert(controls, self.rollSlider) end
     if self.scaleSlider then table.insert(controls, self.scaleSlider) end
-    if self.rotationSlider then table.insert(controls, self.rotationSlider) end
     if self.accessoryColorMixer then table.insert(controls, self.accessoryColorMixer) end
     if self.offsetXBox then table.insert(controls, self.offsetXBox) end
     if self.offsetYBox then table.insert(controls, self.offsetYBox) end
     if self.offsetZBox then table.insert(controls, self.offsetZBox) end
-    if self.axisDegBox then table.insert(controls, self.axisDegBox) end
+    if self.pitchBox then table.insert(controls, self.pitchBox) end
+    if self.yawBox then table.insert(controls, self.yawBox) end
+    if self.rollBox then table.insert(controls, self.rollBox) end
     if self.scaleBox then table.insert(controls, self.scaleBox) end
-    if self.rotationBox then table.insert(controls, self.rotationBox) end
     
     -- Playermodel controls
     if self.colorMixer then table.insert(controls, self.colorMixer) end
@@ -1584,11 +1546,7 @@ function PANEL:OnRemove()
 end
 
 function PANEL:Close()
-    if self.BaseClass and self.BaseClass.Close then
-        self.BaseClass.Close(self)
-    else
-        DFrame.Close(self)
-    end
+    self:Remove()
 end
 
 -- ============================================================================
@@ -1596,43 +1554,33 @@ end
 -- ============================================================================
 
 function PANEL:Paint(w, h)
-    -- Rounded background base
-    draw.RoundedBox(8, 0, 0, w, h, Color(40, 40, 45, 255))
-    
-    -- Gradient overlay (drawn inside rounded area)
-    for i = 8, h - 8 do
-        local alpha = math.min(100, i * 0.15)
-        surface.SetDrawColor(0, 0, 0, alpha)
-        surface.DrawRect(8, i, w - 16, 1)
-    end
-    
-    -- Outer border glow with rounded corners
-    surface.SetDrawColor(60, 120, 180, 100)
-    surface.DrawOutlinedRect(0, 0, w, h)
-    surface.SetDrawColor(60, 120, 180, 50)
-    surface.DrawOutlinedRect(1, 1, w - 2, h - 2)
+    draw.RoundedBox(4, 0, 0, w, h, Color(30, 30, 35, 255))
+    -- Top edge highlight
+    surface.SetDrawColor(60, 120, 180, 80)
+    surface.DrawRect(0, 0, w, 1)
 end
 
 function PANEL:PaintOver(w, h)
     -- Styled status bar at top
     local barHeight = 35
-    
+
     -- Status bar gradient background
     for i = 0, barHeight do
         local alpha = 150 - (i * 1.5)
         surface.SetDrawColor(20, 40, 60, math.max(0, alpha))
         surface.DrawRect(0, i, w, 1)
     end
-    
+
     -- Bottom border of status bar
     surface.SetDrawColor(60, 120, 180, 150)
     surface.DrawRect(10, barHeight, w - 20, 2)
-    
+
     -- Status text with shadow
     local statusText = "Preview enabled. Use controls to customize."
     draw.SimpleText(statusText, "DermaDefault", w/2 + 1, 16, Color(0, 0, 0, 180), TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
     draw.SimpleText(statusText, "DermaDefault", w/2, 15, Color(200, 220, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
 end
+
 
 vgui.Register("PSItemCustomizationPanel", PANEL, "DFrame")
 
@@ -1674,45 +1622,11 @@ if CLIENT then
                                 if v.offsetZSlider then v.offsetZSlider:SetValue(mods.offset.z or mods.offset[3] or 0) end
                             end
                             
-                            -- Handle rotation/angle data
-                            -- Check for axis/axisDeg first (most direct)
-                            if mods.axis and mods.axisDeg and v.rotateAxisCombo and v.axisDegSlider then
-                                v.rotateAxisCombo:SetValue(mods.axis)
-                                v.axisDegSlider:SetValue(mods.axisDeg)
-                            -- Otherwise check for ang table
-                            elseif mods.ang and v.rotateAxisCombo and v.axisDegSlider then
-                                local rotX = mods.ang[1] or 0
-                                local rotY = mods.ang[2] or 0
-                                local rotZ = mods.ang[3] or 0
-                                
-                                -- Determine which axis has the largest rotation
-                                local maxRot, axis = math.abs(rotX), "Right"
-                                if math.abs(rotY) > maxRot then maxRot, axis = math.abs(rotY), "Up" end
-                                if math.abs(rotZ) > maxRot then maxRot, axis = math.abs(rotZ), "Forward" end
-                                
-                                v.rotateAxisCombo:SetValue(axis)
-                                local deg = (axis == "Right" and rotX) or (axis == "Up" and rotY) or rotZ
-                                v.axisDegSlider:SetValue(deg)
-                            -- Legacy: rotation field as table {x,y,z}
-                            elseif mods.rotation and type(mods.rotation) == "table" then
-                                local rotX = mods.rotation.x or mods.rotation[1] or 0
-                                local rotY = mods.rotation.y or mods.rotation[2] or 0
-                                local rotZ = mods.rotation.z or mods.rotation[3] or 0
-                                
-                                if v.rotateAxisCombo and v.axisDegSlider then
-                                    local maxRot, axis = math.abs(rotX), "Right"
-                                    if math.abs(rotY) > maxRot then maxRot, axis = math.abs(rotY), "Up" end
-                                    if math.abs(rotZ) > maxRot then maxRot, axis = math.abs(rotZ), "Forward" end
-                                    
-                                    v.rotateAxisCombo:SetValue(axis)
-                                    local deg = (axis == "Right" and rotX) or (axis == "Up" and rotY) or rotZ
-                                    v.axisDegSlider:SetValue(deg)
-                                end
-                            end
-                            
-                            -- Legacy Yaw: rotation as a scalar number (separate from axis/axisDeg)
-                            if mods.rotation and type(mods.rotation) == "number" and v.rotationSlider then
-                                v.rotationSlider:SetValue(mods.rotation)
+                            -- Handle rotation/angle data — load all three independently
+                            if mods.ang then
+                                if v.pitchSlider then v.pitchSlider:SetValue(mods.ang[1] or 0) end
+                                if v.yawSlider then v.yawSlider:SetValue(mods.ang[2] or 0) end
+                                if v.rollSlider then v.rollSlider:SetValue(mods.ang[3] or 0) end
                             end
                             
                             if mods.scale and v.scaleSlider then
