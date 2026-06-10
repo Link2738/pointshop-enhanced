@@ -516,14 +516,25 @@ if CLIENT then
         end
     end
     
+    -- Throttle tracker for preview updates (prevents spam when dragging sliders)
+    local previewUpdateThrottle = {}
+
     -- Send immediate preview update to server for visual feedback
     function PS_SendPreviewUpdate(itemType, updateType, ...)
         if not itemType or not updateType then return end
-        
+
+        -- Throttle: only send once per 100ms per update type
+        local throttleKey = itemType .. "_" .. updateType
+        local now = RealTime()
+        if previewUpdateThrottle[throttleKey] and (now - previewUpdateThrottle[throttleKey]) < 0.1 then
+            return
+        end
+        previewUpdateThrottle[throttleKey] = now
+
         net.Start("PS_ItemCustomization_PreviewUpdate")
         net.WriteString(itemType)
         net.WriteString(updateType)
-        
+
         if updateType == "bodygroup" then
             local bgID, bgValue = ...
             net.WriteUInt(bgID, 8)
@@ -537,7 +548,7 @@ if CLIENT then
             net.WriteUInt(g, 8)
             net.WriteUInt(b, 8)
         end
-        
+
         net.SendToServer()
     end
     

@@ -154,7 +154,7 @@ function PANEL:GetSliderValues()
     elseif self.itemType == "playermodel" then
         -- Playermodels: bodygroup/skin/color data
         local mods = {
-            skin = self.skinSlider and math.Round(self.skinSlider:GetValue()) or 0,
+            skin = self._skinValue or 0,
             bodygroups = {},
             playercolor = nil
         }
@@ -527,28 +527,11 @@ function PANEL:CreatePlayermodelControls()
     skinLabel:SetPos(5, scrollY)
     skinLabel:SetSize(w - 10, 20)
     scrollY = scrollY + 20
-    
-    self.skinSlider = scrollPanel:Add("DNumSlider")
-    self.skinSlider:SetPos(5, scrollY)
-    self.skinSlider:SetSize(w - 10, 24)
-    self.skinSlider:SetText("")
-    self.skinSlider:SetMin(0)
-    self.skinSlider:SetMax(0)
-    self.skinSlider:SetDecimals(0)
-    self.skinSlider:SetValue(0)
-    self.skinSlider.OnValueChanged = function(_, val)
-        local ply = LocalPlayer()
-        if IsValid(ply) then
-            ply:SetSkin(math.Round(val))
-            
-            -- Send to server for authoritative update
-            if PS_SendPreviewUpdate then
-                PS_SendPreviewUpdate(self.itemType, "skin", math.Round(val))
-            end
-        end
-    end
-    scrollY = scrollY + 30
-    
+
+    -- Skin buttons will be created dynamically in SetItem()
+    self.skinButtons = {}
+    self._skinValue = 0
+
     -- Bodygroup buttons will be created dynamically in SetItem()
     self.bodygroupButtons = {}
     self._bodygroupValues = {}
@@ -600,18 +583,77 @@ function PANEL:CreateBodygroupButtons()
     -- For playermodels, use the real player
     local ent = LocalPlayer()
     if not IsValid(ent) then return end
-    
-    -- Update skin slider max from the entity's actual skin count
-    if self.skinSlider then
-        local skinMax = ent:SkinCount() - 1
-        -- Also check ITEM.SkinCount as a fallback / override
-        if self._itemSkinCount and self._itemSkinCount > 0 then
-            skinMax = math.max(skinMax, self._itemSkinCount - 1)
+
+    -- Clear existing skin buttons
+    if self.skinButtons then
+        for _, btn in pairs(self.skinButtons) do
+            if IsValid(btn) then btn:Remove() end
         end
-        if skinMax < 0 then skinMax = 0 end
-        self.skinSlider:SetMax(skinMax)
     end
-    
+    self.skinButtons = {}
+    self._skinValue = ent:GetSkin() or 0
+
+    -- Create skin buttons
+    local skinMax = ent:SkinCount() - 1
+    if self._itemSkinCount and self._itemSkinCount > 0 then
+        skinMax = math.max(skinMax, self._itemSkinCount - 1)
+    end
+    if skinMax < 0 then skinMax = 0 end
+
+    if skinMax > 0 then
+        local skinLabel = self.bodygroupScroll:Add("DLabel")
+        skinLabel:SetText("Skin")
+        skinLabel:SetPos(5, 0)
+        skinLabel:SetSize(self.bodygroupScroll:GetWide() - 30, 20)
+
+        local w = self.bodygroupScroll:GetWide() - 30
+        local count = skinMax + 1
+        local buttonWidth = (w - 5 * (count - 1)) / count
+
+        for val = 0, skinMax do
+            local btn = self.bodygroupScroll:Add("DButton")
+            btn:SetText(tostring(val))
+            btn:SetPos(5 + (buttonWidth + 5) * val, 20)
+            btn:SetSize(buttonWidth, 25)
+
+            btn.DoClick = function()
+                self._skinValue = val
+                local ply = LocalPlayer()
+                if IsValid(ply) then
+                    ply:SetSkin(val)
+                    if PS_SendPreviewUpdate then
+                        PS_SendPreviewUpdate(self.itemType, "skin", val)
+                    end
+                end
+                self:UpdateSkinButtonVisuals()
+            end
+
+            btn.Paint = function(panel, pw, ph)
+                local isSelected = self._skinValue == val
+                local isHovered = panel:IsHovered()
+                panel._hoverAlpha = panel._hoverAlpha or 0
+                panel._hoverAlpha = Lerp(FrameTime() * 8, panel._hoverAlpha, isHovered and 1 or 0)
+
+                if isSelected then
+                    draw.RoundedBox(4, 0, 0, pw, ph, Color(80, 130, 220, 255))
+                    draw.RoundedBox(4, 0, 0, pw, ph/2, Color(100, 150, 255, 80))
+                    surface.SetDrawColor(100, 150, 255, 50 + panel._hoverAlpha * 50)
+                    surface.DrawOutlinedRect(-1, -1, pw + 2, ph + 2)
+                else
+                    local baseCol = 50 + panel._hoverAlpha * 20
+                    draw.RoundedBox(4, 0, 0, pw, ph, Color(baseCol, baseCol, baseCol + 5, 255))
+                    draw.RoundedBox(4, 0, 0, pw, ph/2, Color(baseCol + 20, baseCol + 20, baseCol + 25, 50))
+                end
+
+                local borderCol = isSelected and Color(120, 170, 255, 200) or Color(100, 100, 110, 150 + panel._hoverAlpha * 100)
+                surface.SetDrawColor(borderCol)
+                surface.DrawOutlinedRect(0, 0, pw, ph)
+            end
+
+            self.skinButtons[val] = btn
+        end
+    end
+
     -- Clear existing bodygroup controls
     if self.bodygroupButtons then
         for _, buttonGroup in pairs(self.bodygroupButtons) do
@@ -622,9 +664,9 @@ function PANEL:CreateBodygroupButtons()
     end
     self.bodygroupButtons = {}
     self._bodygroupValues = {}
-    
-    local scrollY = self._bodygroupScrollY or 60
-    local w = self.bodygroupScroll:GetWide() - 10
+
+    local scrollY = skinMax > 0 and 50 + ((math.floor(skinMax / 4) + 1) * 30) or self._bodygroupScrollY or 60
+    local w = self.bodygroupScroll:GetWide() - 30
     
     -- Create buttons for each bodygroup
     for bgID = 0, ent:GetNumBodyGroups() - 1 do
@@ -732,8 +774,8 @@ function PANEL:CreateBodygroupButtons()
         PS_PendingCustomizationData[pendingKey] = nil
         
         -- Apply skin
-        if mods.skin and self.skinSlider then
-            self.skinSlider:SetValue(mods.skin)
+        if mods.skin then
+            self._skinValue = mods.skin
             local ply = LocalPlayer()
             if IsValid(ply) then
                 ply:SetSkin(mods.skin)
@@ -741,6 +783,7 @@ function PANEL:CreateBodygroupButtons()
                     PS_SendPreviewUpdate(self.itemType, "skin", mods.skin)
                 end
             end
+            self:UpdateSkinButtonVisuals()
         end
         
         -- Apply bodygroups
@@ -789,9 +832,20 @@ end
 
 function PANEL:UpdateBodygroupButtonVisuals(bgID)
     if not self.bodygroupButtons or not self.bodygroupButtons[bgID] then return end
-    
+
     -- Just trigger a repaint - the Paint function checks _bodygroupValues
     for _, btn in pairs(self.bodygroupButtons[bgID]) do
+        if IsValid(btn) then
+            btn:InvalidateLayout(true)
+        end
+    end
+end
+
+function PANEL:UpdateSkinButtonVisuals()
+    if not self.skinButtons then return end
+
+    -- Just trigger a repaint - the Paint function checks _skinValue
+    for _, btn in pairs(self.skinButtons) do
         if IsValid(btn) then
             btn:InvalidateLayout(true)
         end
@@ -984,9 +1038,10 @@ function PANEL:ResetPlayermodel()
     local ply = LocalPlayer()
 
     -- Skin
-    if self.skinSlider then self.skinSlider:SetValue(defaults.skin) end
+    self._skinValue = defaults.skin
     if IsValid(ply) then ply:SetSkin(defaults.skin) end
     if PS_SendPreviewUpdate then PS_SendPreviewUpdate(self.itemType, "skin", defaults.skin) end
+    self:UpdateSkinButtonVisuals()
 
     -- Bodygroups: every group the panel built gets its default (0 unless overridden).
     if self.bodygroupButtons then
@@ -1450,7 +1505,11 @@ function PANEL:SetControlsEnabled(enabled)
     
     -- Playermodel controls
     if self.colorMixer then table.insert(controls, self.colorMixer) end
-    if self.skinSlider then table.insert(controls, self.skinSlider) end
+    if self.skinButtons then
+        for _, btn in pairs(self.skinButtons) do
+            if IsValid(btn) then table.insert(controls, btn) end
+        end
+    end
     if self.bodygroupButtons then
         for _, buttonGroup in pairs(self.bodygroupButtons) do
             for _, btn in pairs(buttonGroup) do
