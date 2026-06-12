@@ -10,6 +10,7 @@
 
 if SERVER then
     util.AddNetworkString("PS_ItemDefaults_Sync")
+    util.AddNetworkString("PS_ItemDefault_Set")
 end
 
 local DATA_PATH = "pointshop/item_defaults.json"
@@ -193,6 +194,34 @@ if SERVER then
     concommand.Add("ps_default_save", function(ply)
         if IsValid(ply) then print("[ps_default_save] Server console only.") return end
         SaveDefaults()
+    end)
+
+    -- ============================================================================
+    -- NET: OWNER PANEL SAVE
+    -- Receives a full mods table from the owner's in-game default editor panel.
+    -- ============================================================================
+    net.Receive("PS_ItemDefault_Set", function(len, ply)
+        local itemID = net.ReadString()
+        local mods   = net.ReadTable()
+        local clear  = net.ReadBool()
+
+        if not IsValid(ply) or not ply:IsAdmin() then return end
+        if not itemID or itemID == "" then return end
+
+        if clear then
+            PS_ItemDefaultOverrides[itemID] = nil
+        else
+            if not mods or not next(mods) then return end
+            if PS_SanitizeCustomizationData then
+                local ITEM = PS and PS.Items and PS.Items[itemID]
+                local itemType = ITEM and ITEM.TYPE or "accessory"
+                mods = PS_SanitizeCustomizationData(mods, itemType)
+            end
+            PS_ItemDefaultOverrides[itemID] = mods
+        end
+
+        SaveDefaults()
+        BroadcastDefaults()
     end)
 end
 

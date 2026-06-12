@@ -896,6 +896,35 @@ function PANEL:CreateButtons()
         y = y + 28
     end
 
+    -- Owner mode: "Clear Default" removes the stored override so the item
+    -- falls back to its Lua DefaultModifications for all players.
+    if self._ownerMode then
+        local clearBtn = self:Add("DButton")
+        clearBtn:SetText("")
+        clearBtn:SetSize(sliderW - 60, 24)
+        clearBtn:SetPos(baseX, y)
+        clearBtn.DoClick = function()
+            net.Start("PS_ItemDefault_Set")
+                net.WriteString(self.itemID)
+                net.WriteTable({})
+                net.WriteBool(true) -- clear flag
+            net.SendToServer()
+            notification.AddLegacy("Default cleared — item will use Lua defaults.", NOTIFY_GENERIC, 4)
+            self:Close()
+        end
+        clearBtn.Paint = function(panel, w, h)
+            panel._hoverAlpha = Lerp(FrameTime() * 10, panel._hoverAlpha or 0, panel:IsHovered() and 1 or 0)
+            local r = 120 + panel._hoverAlpha * 30
+            draw.RoundedBox(4, 0, 0, w, h, Color(r, 40, 40, 255))
+            draw.RoundedBox(4, 0, 0, w, h/2, Color(r + 30, 60, 60, 80))
+            surface.SetDrawColor(180, 80, 80, 200)
+            surface.DrawOutlinedRect(0, 0, w, h)
+            draw.SimpleText("Clear Default", "DermaDefault", w/2 + 1, h/2 + 1, Color(0,0,0,180), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            draw.SimpleText("Clear Default", "DermaDefault", w/2, h/2, Color(255,200,200,255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        end
+        y = y + 28
+    end
+
     -- Discard button: closes without saving and restores the live preview
     self.discardButton = self:Add("DButton")
     self.discardButton:SetText("")
@@ -1267,8 +1296,15 @@ function PANEL:ApplyCustomization()
     -- Cleanup preview (won't restore for playermodels since _applyingChanges is true)
     self:DisablePreview(false)
     
-    -- Send to server via unified backend
-    if PS_ApplyItemCustomization then
+    if self._ownerMode then
+        -- Save as the item's default for all players
+        net.Start("PS_ItemDefault_Set")
+            net.WriteString(self.itemID)
+            net.WriteTable(mods)
+            net.WriteBool(false)
+        net.SendToServer()
+        notification.AddLegacy("Item default saved.", NOTIFY_GENERIC, 3)
+    elseif PS_ApplyItemCustomization then
         PS_ApplyItemCustomization(self.itemID, self.itemType, mods)
     end
 
@@ -1289,9 +1325,67 @@ end
 -- SETTERS / INITIALIZATION
 -- ============================================================================
 
-function PANEL:SetItem(item)
+-- Apply a mods table directly into the panel's sliders/controls.
+-- Works for both accessory and playermodel types based on self.itemType.
+function PANEL:LoadModsIntoSliders(mods)
+    if not mods then return end
+    if self.itemType == "accessory" then
+        if mods.offset then
+            if self.offsetXSlider then self.offsetXSlider:SetValue(mods.offset.x or mods.offset[1] or 0) end
+            if self.offsetYSlider then self.offsetYSlider:SetValue(mods.offset.y or mods.offset[2] or 0) end
+            if self.offsetZSlider then self.offsetZSlider:SetValue(mods.offset.z or mods.offset[3] or 0) end
+        end
+        if mods.offsetX then
+            if self.offsetXSlider then self.offsetXSlider:SetValue(mods.offsetX) end
+            if self.offsetYSlider then self.offsetYSlider:SetValue(mods.offsetY or 0) end
+            if self.offsetZSlider then self.offsetZSlider:SetValue(mods.offsetZ or 0) end
+        end
+        if mods.ang then
+            if self.pitchSlider then self.pitchSlider:SetValue(mods.ang[1] or 0) end
+            if self.yawSlider   then self.yawSlider:SetValue(mods.ang[2] or 0) end
+            if self.rollSlider  then self.rollSlider:SetValue(mods.ang[3] or 0) end
+        end
+        if mods.scale and self.scaleSlider then self.scaleSlider:SetValue(mods.scale) end
+        if mods.color and self.accessoryColorMixer then
+            local col = mods.color
+            self.accessoryColorMixer:SetColor(Color(
+                col.r or col[1] or 255, col.g or col[2] or 255,
+                col.b or col[3] or 255, col.a or col[4] or 255))
+        end
+    elseif self.itemType == "playermodel" then
+        if mods.skin ~= nil then
+            self._skinValue = mods.skin
+            self:UpdateSkinButtonVisuals()
+            local ply = LocalPlayer()
+            if IsValid(ply) then ply:SetSkin(mods.skin) end
+        end
+        if mods.bodygroups and self.bodygroupButtons then
+            self._bodygroupValues = self._bodygroupValues or {}
+            for bgID, val in pairs(mods.bodygroups) do
+                local id = tonumber(bgID) or bgID
+                self._bodygroupValues[id] = val
+                self:UpdateBodygroupButtonVisuals(id)
+                local ply = LocalPlayer()
+                if IsValid(ply) then ply:SetBodygroup(id, val) end
+            end
+        end
+        if mods.playercolor and self.colorMixer then
+            local pc = mods.playercolor
+            self.colorMixer:SetColor(Color(pc[1] or pc.r or 255, pc[2] or pc.g or 255, pc[3] or pc.b or 255))
+        end
+    end
+    timer.Simple(0.05, function()
+        if IsValid(self) and self.previewEnabled then self:ApplyLivePreview() end
+    end)
+end
+
+function PANEL:SetItem(item, ownerMode)
     if not item then return end
 
+    -- ownerMode: admin default editor. Loads from PS_GetItemDefault (owner
+    -- override or Lua defaults); Save sends to PS_ItemDefault_Set instead
+    -- of per-player SQL, bypasses ownership gate.
+    self._ownerMode = ownerMode or false
     self.itemID = item.ID or item.Model or ""
     self.itemType = item.TYPE or "accessory"
     self.itemModelPath = item.Model
@@ -1342,41 +1436,7 @@ function PANEL:SetItem(item)
                 
                 local mods = PS_PendingCustomizationData[pendingKey]
                 PS_PendingCustomizationData[pendingKey] = nil
-                
-                -- Apply to sliders
-                if mods.offset then
-                    if self.offsetXSlider then self.offsetXSlider:SetValue(mods.offset.x or mods.offset[1] or 0) end
-                    if self.offsetYSlider then self.offsetYSlider:SetValue(mods.offset.y or mods.offset[2] or 0) end
-                    if self.offsetZSlider then self.offsetZSlider:SetValue(mods.offset.z or mods.offset[3] or 0) end
-                end
-                
-                -- Handle rotation/angle data — load all three independently
-                if mods.ang then
-                    if self.pitchSlider then self.pitchSlider:SetValue(mods.ang[1] or 0) end
-                    if self.yawSlider then self.yawSlider:SetValue(mods.ang[2] or 0) end
-                    if self.rollSlider then self.rollSlider:SetValue(mods.ang[3] or 0) end
-                end
-                
-                if mods.scale and self.scaleSlider then
-                    self.scaleSlider:SetValue(mods.scale or 1)
-                end
-                
-                -- Load color if present
-                if mods.color and self.accessoryColorMixer then
-                    local col = mods.color
-                    local r = col.r or col[1] or 255
-                    local g = col.g or col[2] or 255
-                    local b = col.b or col[3] or 255
-                    local a = col.a or col[4] or 255
-                    self.accessoryColorMixer:SetColor(Color(r, g, b, a))
-                end
-                
-                -- Apply data to PS_AccessoryCustomizations table immediately
-                timer.Simple(0.05, function()
-                    if IsValid(self) and self.previewEnabled then
-                        self:ApplyLivePreview()
-                    end
-                end)
+                self:LoadModsIntoSliders(mods)
             end
         end)
     end
@@ -1385,19 +1445,32 @@ function PANEL:SetItem(item)
     PS_ActiveCustomizationPanels = PS_ActiveCustomizationPanels or {}
     table.insert(PS_ActiveCustomizationPanels, self)
     
-    -- Request customization from server
-    timer.Simple(0, function()
-        if not IsValid(self) then return end
+    if self._ownerMode then
+        -- Seed directly from the current owner override / Lua defaults — no
+        -- server round-trip needed and no ownership gate to worry about.
+        timer.Simple(0, function()
+            if not IsValid(self) then return end
+            local defaults = PS_GetItemDefault and PS_GetItemDefault(self.itemID)
+            if defaults then
+                self:LoadModsIntoSliders(defaults)
+            end
+            self:SetControlsEnabled(true)
+        end)
+    else
+        -- Request customization from server
+        timer.Simple(0, function()
+            if not IsValid(self) then return end
 
-        if PS and PS.Config and PS.Config.Debug then
-            print(string.format("[PS PANEL DEBUG] Requesting customization: itemID='%s' itemType='%s'",
-                tostring(self.itemID), tostring(self.itemType)))
-        end
+            if PS and PS.Config and PS.Config.Debug then
+                print(string.format("[PS PANEL DEBUG] Requesting customization: itemID='%s' itemType='%s'",
+                    tostring(self.itemID), tostring(self.itemType)))
+            end
 
-        if PS_RequestItemCustomization then
-            PS_RequestItemCustomization(self.itemID, self.itemType)
-        end
-    end)
+            if PS_RequestItemCustomization then
+                PS_RequestItemCustomization(self.itemID, self.itemType)
+            end
+        end)
+    end
     
     -- Timeout fallback: enable controls after 2 seconds if no server response
     timer.Simple(2, function()
@@ -1597,7 +1670,9 @@ function PANEL:PaintOver(w, h)
     surface.DrawRect(10, barHeight, w - 20, 2)
 
     -- Status text with shadow
-    local statusText = "Preview enabled. Use controls to customize."
+    local statusText = self._ownerMode
+        and "Default Editor — changes apply to all players"
+        or  "Preview enabled. Use controls to customize."
     draw.SimpleText(statusText, "DermaDefault", w/2 + 1, 16, Color(0, 0, 0, 180), TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
     draw.SimpleText(statusText, "DermaDefault", w/2, 15, Color(200, 220, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
 end
