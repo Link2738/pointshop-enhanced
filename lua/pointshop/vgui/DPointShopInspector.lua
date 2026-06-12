@@ -244,6 +244,13 @@ function PANEL:Init()
 			CreateStyledConfirmation('Buy Item',
 				'Are you sure you want to buy ' .. self.ItemData.Name .. '?',
 				function()
+					-- Stage inline customization so PS_BuyItem sends it along
+					if self.StagedMods and self.StagedItemID then
+						PS_PendingCustomizationData = PS_PendingCustomizationData or {}
+						local key = (self.ItemData.TYPE or "accessory") .. "_" .. self.ItemData.ID
+						PS_PendingCustomizationData[key] = self.StagedMods
+						self._purchased = true
+					end
 					LocalPlayer():PS_BuyItem(self.ItemData.ID)
 					self:Close()
 				end,
@@ -419,50 +426,13 @@ function PANEL:SetItem(itemData)
 		self.BuyButton:SetText("Cannot Afford")
 	end
 	
-	-- Try-before-you-buy: accessories get a Customize button that opens the
-	-- customization panel in preview-only mode. Staged mods are sent with the
-	-- buy request and applied on first equip.
+	-- Try-before-you-buy: accessories get inline customization sliders.
+	-- They write directly to PS_AccessoryCustomizations so the inspector's
+	-- live preview accessory picks them up per-frame; on Buy the staged mods
+	-- are sent with the purchase and applied on first equip.
 	local isAccessory = itemData.TYPE == "accessory" or itemData.Bone or itemData.Attachment
-	if isAccessory and not IsValid(self.CustomizeButton) then
-		self.ControlPanel:SetTall(505)
-		self.ControlPanel:SetPos(20, ScrH() / 2 - 252)
-		self.BackButton:SetPos(10, 410)
-
-		self.CustomizeButton = vgui.Create("DButton", self.ControlPanel)
-		self.CustomizeButton:SetPos(10, 360)
-		self.CustomizeButton:SetSize(280, 40)
-		self.CustomizeButton:SetText("")
-		self.CustomizeButton:SetFont("DermaLarge")
-		self.CustomizeButton.DoClick = function()
-			if not self.ItemData then return end
-			local item = self.ItemData
-			-- Close first: the Inspector's CalcView hook and preview accessory
-			-- would conflict with the customization panel's own preview.
-			self:Close()
-			local panel = vgui.Create("PSItemCustomizationPanel")
-			panel:SetItem(item, true) -- previewOnly
-			if PS and PS.ToggleMenu then PS:ToggleMenu() end
-		end
-		self.CustomizeButton.Paint = function(s, w, h)
-			local isHovered = s:IsHovered()
-			s._hoverAlpha = s._hoverAlpha or 0
-			s._hoverAlpha = Lerp(FrameTime() * 10, s._hoverAlpha, isHovered and 1 or 0)
-
-			local baseBlue = 90 + s._hoverAlpha * 30
-			draw.RoundedBox(6, 0, 0, w, h, Color(40, 60, baseBlue, 255))
-			draw.RoundedBox(6, 0, 0, w, h/2, Color(60, 80, baseBlue + 40, 100))
-
-			if s._hoverAlpha > 0 then
-				surface.SetDrawColor(100, 140, 220, s._hoverAlpha * 80)
-				surface.DrawOutlinedRect(-1, -1, w + 2, h + 2)
-			end
-
-			surface.SetDrawColor(100, 130, 200, 200)
-			surface.DrawOutlinedRect(0, 0, w, h)
-
-			draw.SimpleText("Customize", "DermaLarge", w/2 + 1, h/2 + 1, Color(0, 0, 0, 200), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-			draw.SimpleText("Customize", "DermaLarge", w/2, h/2, Color(255, 255, 255, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-		end
+	if isAccessory then
+		self:CreateCustomizationSliders(itemData)
 	end
 
 	-- Debug output
@@ -478,6 +448,112 @@ function PANEL:SetItem(itemData)
 			self:ApplyPreview()
 		end
 	end)
+end
+
+-- Build inline accessory customization controls (try-before-you-buy).
+-- Values feed PS_AccessoryCustomizations[LocalPlayer()][itemID] so the
+-- per-frame draw loop (ModifyClientsideModel) renders them immediately.
+function PANEL:CreateCustomizationSliders(itemData)
+	if IsValid(self.CustomizeHeading) then return end -- already built
+
+	local itemID = itemData.ID or itemData.Model
+	self.StagedItemID = itemID
+
+	-- Seed defaults from the item's designer defaults where present
+	local dm = itemData.DefaultModifications or {}
+	local defScale = dm.scale or 1
+	local defOX = dm.offsetX or (dm.offset and (dm.offset[1] or dm.offset.x)) or 0
+	local defOY = dm.offsetY or (dm.offset and (dm.offset[2] or dm.offset.y)) or 0
+	local defOZ = dm.offsetZ or (dm.offset and (dm.offset[3] or dm.offset.z)) or 0
+	local defP = (dm.ang and dm.ang[1]) or 0
+	local defYaw = (dm.ang and dm.ang[2]) or 0
+	local defR = (dm.ang and dm.ang[3]) or 0
+	local defColor = Color(255, 255, 255, 255)
+	if dm.color then
+		defColor = Color(dm.color.r or dm.color[1] or 255, dm.color.g or dm.color[2] or 255,
+			dm.color.b or dm.color[3] or 255, dm.color.a or dm.color[4] or 255)
+	end
+
+	local y = 310
+
+	self.CustomizeHeading = vgui.Create("DLabel", self.ControlPanel)
+	self.CustomizeHeading:SetPos(10, y)
+	self.CustomizeHeading:SetSize(280, 18)
+	self.CustomizeHeading:SetFont("DermaDefaultBold")
+	self.CustomizeHeading:SetTextColor(Color(140, 170, 230))
+	self.CustomizeHeading:SetText("Customize (applies when you buy)")
+	y = y + 22
+
+	local function MakeSlider(label, min, max, default, decimals)
+		local s = vgui.Create("DNumSlider", self.ControlPanel)
+		s:SetPos(10, y)
+		s:SetSize(280, 22)
+		s:SetText(label)
+		s:SetMin(min)
+		s:SetMax(max)
+		s:SetDecimals(decimals or 1)
+		s:SetValue(default)
+		s.Label:SetTextColor(Color(200, 200, 200))
+		s.OnValueChanged = function() self:UpdateStagedMods() end
+		y = y + 26
+		return s
+	end
+
+	self.CustScale   = MakeSlider("Scale", 0.1, 2, defScale, 2)
+	self.CustOffsetX = MakeSlider("Offset X", -30, 30, defOX, 1)
+	self.CustOffsetY = MakeSlider("Offset Y", -30, 30, defOY, 1)
+	self.CustOffsetZ = MakeSlider("Offset Z", -30, 30, defOZ, 1)
+	self.CustPitch   = MakeSlider("Pitch", -180, 180, defP, 0)
+	self.CustYaw     = MakeSlider("Yaw", -180, 180, defYaw, 0)
+	self.CustRoll    = MakeSlider("Roll", -180, 180, defR, 0)
+
+	self.CustColor = vgui.Create("DColorMixer", self.ControlPanel)
+	self.CustColor:SetPos(10, y)
+	self.CustColor:SetSize(280, 110)
+	self.CustColor:SetPalette(false)
+	self.CustColor:SetAlphaBar(false)
+	self.CustColor:SetWangs(true)
+	self.CustColor:SetColor(defColor)
+	self.CustColor.ValueChanged = function() self:UpdateStagedMods() end
+	y = y + 120
+
+	-- Move Buy/Back below the new controls and grow the panel to fit
+	self.BuyButton:SetPos(10, y)
+	self.BackButton:SetPos(10, y + 50)
+	local tall = y + 100
+	self.ControlPanel:SetTall(tall)
+	self.ControlPanel:SetPos(20, math.max(10, (ScrH() - tall) / 2))
+
+	-- Stage the defaults immediately so the preview matches the sliders
+	self:UpdateStagedMods()
+end
+
+function PANEL:UpdateStagedMods()
+	if not self.StagedItemID then return end
+	local ply = LocalPlayer()
+	if not IsValid(ply) then return end
+
+	local col = self.CustColor and self.CustColor:GetColor() or Color(255, 255, 255)
+	local mods = {
+		scale = self.CustScale and self.CustScale:GetValue() or 1,
+		offset = {
+			self.CustOffsetX and self.CustOffsetX:GetValue() or 0,
+			self.CustOffsetY and self.CustOffsetY:GetValue() or 0,
+			self.CustOffsetZ and self.CustOffsetZ:GetValue() or 0,
+		},
+		ang = {
+			self.CustPitch and self.CustPitch:GetValue() or 0,
+			self.CustYaw and self.CustYaw:GetValue() or 0,
+			self.CustRoll and self.CustRoll:GetValue() or 0,
+		},
+		color = { r = col.r, g = col.g, b = col.b, a = 255 },
+	}
+	self.StagedMods = mods
+
+	-- Live preview: the draw loop resolves mods from this table each frame
+	PS_AccessoryCustomizations = PS_AccessoryCustomizations or {}
+	PS_AccessoryCustomizations[ply] = PS_AccessoryCustomizations[ply] or {}
+	PS_AccessoryCustomizations[ply][self.StagedItemID] = mods
 end
 
 function PANEL:ApplyPreview()
@@ -614,6 +690,14 @@ function PANEL:RestorePlayerAppearance()
 	if self.PreviewAccessoryID and ply.PS_RemoveClientsideModel then
 		ply:PS_RemoveClientsideModel(self.PreviewAccessoryID)
 		self.PreviewAccessoryID = nil
+	end
+
+	-- Clear the staged preview mods unless they were just purchased (the
+	-- server's equip broadcast will overwrite the entry in that case)
+	if self.StagedItemID and not self._purchased then
+		if PS_AccessoryCustomizations and PS_AccessoryCustomizations[ply] then
+			PS_AccessoryCustomizations[ply][self.StagedItemID] = nil
+		end
 	end
 	
 	-- Restore original model
