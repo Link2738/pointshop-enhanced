@@ -471,7 +471,7 @@ function PANEL:CreatePlayermodelControls()
             
             -- Send to server for authoritative update
             if PS_SendPreviewUpdate then
-                PS_SendPreviewUpdate(self.itemType, "playercolor", col.r, col.g, col.b)
+                PS_SendPreviewUpdate(self.itemType, self.itemID, "playercolor", col.r, col.g, col.b)
             end
         end
     end
@@ -586,7 +586,7 @@ function PANEL:CreateBodygroupButtons()
                 if IsValid(ply) then
                     ply:SetSkin(val)
                     if PS_SendPreviewUpdate then
-                        PS_SendPreviewUpdate(self.itemType, "skin", val)
+                        PS_SendPreviewUpdate(self.itemType, self.itemID, "skin", val)
                     end
                 end
                 self:UpdateSkinButtonVisuals()
@@ -671,7 +671,7 @@ function PANEL:CreateBodygroupButtons()
                     
                     -- Send to server for authoritative update
                     if PS_SendPreviewUpdate then
-                        PS_SendPreviewUpdate(self.itemType, "bodygroup", bgID, val)
+                        PS_SendPreviewUpdate(self.itemType, self.itemID, "bodygroup", bgID, val)
                     end
                     
                     -- Update button visuals
@@ -744,7 +744,7 @@ function PANEL:CreateBodygroupButtons()
             if IsValid(ply) then
                 ply:SetSkin(mods.skin)
                 if PS_SendPreviewUpdate then
-                    PS_SendPreviewUpdate(self.itemType, "skin", mods.skin)
+                    PS_SendPreviewUpdate(self.itemType, self.itemID, "skin", mods.skin)
                 end
             end
             self:UpdateSkinButtonVisuals()
@@ -760,7 +760,7 @@ function PANEL:CreateBodygroupButtons()
                     ply:InvalidateBoneCache()
                     ply:SetupBones()
                     if PS_SendPreviewUpdate then
-                        PS_SendPreviewUpdate(self.itemType, "bodygroup", bgID, bgValue)
+                        PS_SendPreviewUpdate(self.itemType, self.itemID, "bodygroup", bgID, bgValue)
                     end
                 end
                 self:UpdateBodygroupButtonVisuals(bgID)
@@ -783,7 +783,7 @@ function PANEL:CreateBodygroupButtons()
                     (pc[3] or pc.b or 255) / 255
                 ))
                 if PS_SendPreviewUpdate then
-                    PS_SendPreviewUpdate(self.itemType, "playercolor", 
+                    PS_SendPreviewUpdate(self.itemType, self.itemID, "playercolor",
                         pc[1] or pc.r or 255,
                         pc[2] or pc.g or 255,
                         pc[3] or pc.b or 255
@@ -1006,7 +1006,7 @@ function PANEL:ResetPlayermodel()
     -- Skin
     self._skinValue = defaults.skin
     if IsValid(ply) then ply:SetSkin(defaults.skin) end
-    if PS_SendPreviewUpdate then PS_SendPreviewUpdate(self.itemType, "skin", defaults.skin) end
+    if PS_SendPreviewUpdate then PS_SendPreviewUpdate(self.itemType, self.itemID, "skin", defaults.skin) end
     self:UpdateSkinButtonVisuals()
 
     -- Bodygroups: every group the panel built gets its default (0 unless overridden).
@@ -1019,7 +1019,7 @@ function PANEL:ResetPlayermodel()
                 ply:InvalidateBoneCache()
                 ply:SetupBones()
             end
-            if PS_SendPreviewUpdate then PS_SendPreviewUpdate(self.itemType, "bodygroup", bgID, val) end
+            if PS_SendPreviewUpdate then PS_SendPreviewUpdate(self.itemType, self.itemID, "bodygroup", bgID, val) end
             self:UpdateBodygroupButtonVisuals(bgID)
         end
     end
@@ -1041,7 +1041,7 @@ function PANEL:ResetPlayermodel()
         end
         ply:SetRenderMode(RENDERMODE_NORMAL)
     end
-    if PS_SendPreviewUpdate then PS_SendPreviewUpdate(self.itemType, "playercolor", r, g, b) end
+    if PS_SendPreviewUpdate then PS_SendPreviewUpdate(self.itemType, self.itemID, "playercolor", r, g, b) end
 end
 
 -- ============================================================================
@@ -1694,7 +1694,7 @@ if CLIENT then
                                 if IsValid(ply) then
                                     ply:SetSkin(mods.skin)
                                     if PS_SendPreviewUpdate then
-                                        PS_SendPreviewUpdate(itemType, "skin", mods.skin)
+                                        PS_SendPreviewUpdate(itemType, itemID, "skin", mods.skin)
                                     end
                                 end
                                 if PS and PS.Config and PS.Config.Debug then
@@ -1717,7 +1717,7 @@ if CLIENT then
                                             ply:SetupBones()
                                             
                                             if PS_SendPreviewUpdate then
-                                                PS_SendPreviewUpdate(itemType, "bodygroup", bgID, bgValue)
+                                                PS_SendPreviewUpdate(itemType, itemID, "bodygroup", bgID, bgValue)
                                             end
                                         end
                                         v:UpdateBodygroupButtonVisuals(bgID)
@@ -1751,7 +1751,7 @@ if CLIENT then
                                         (pc[3] or pc.b or 255) / 255
                                     ))
                                     if PS_SendPreviewUpdate then
-                                        PS_SendPreviewUpdate(itemType, "playercolor",
+                                        PS_SendPreviewUpdate(itemType, itemID, "playercolor",
                                             pc[1] or pc.r or 255,
                                             pc[2] or pc.g or 255,
                                             pc[3] or pc.b or 255

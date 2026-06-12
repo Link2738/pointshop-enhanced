@@ -34,25 +34,10 @@ function Player:PS_PlayerSpawn()
 					end
 				end
 
-				-- If modifiers are empty, try loading saved customization (SQL/provider)
+				-- If modifiers are empty, load saved customization from unified storage
 				if (not item.Modifiers) or (type(item.Modifiers) == "table" and next(item.Modifiers) == nil) then
-					-- Determine item type to load correct customization backend
-					local isPlayermodel = ITEM.TYPE == "playermodel" or (ITEM.Bodygroups ~= nil) or (ITEM.ApplyModelSettings ~= nil)
-					local isAccessory = ITEM.Attachment or ITEM.Bone or ITEM.TYPE == "accessory"
-					
-					-- Load accessory customizations (only for accessories)
-					if isAccessory and ITEM.Model and PS_GetAccessoryCustomization then
-						local saved = PS_GetAccessoryCustomization(self, ITEM.Model)
-						if saved and type(saved) == "table" and next(saved) ~= nil then
-							self.PS_Items[item_id].Modifiers = saved
-							if PS and PS.SavePlayerItem then
-								pcall(function() PS:SavePlayerItem(self, item_id, self.PS_Items[item_id]) end)
-							end
-						end
-					end
-					-- Load playermodel customizations (only for playermodels)
-					if isPlayermodel and PS_GetPlayerModelCustomization then
-						local saved = PS_GetPlayerModelCustomization(self, item_id)
+					if PS_GetCustomization then
+						local saved = PS_GetCustomization(self, item_id)
 						if saved and type(saved) == "table" and next(saved) ~= nil then
 							self.PS_Items[item_id].Modifiers = saved
 							if PS and PS.SavePlayerItem then
@@ -233,26 +218,35 @@ function Player:PS_BuyItem(item_id)
 	local ITEM = PS.Items[item_id]
 	if not ITEM then return false end
 
+	-- Guard against duplicate buy messages arriving before this call completes
+	if self._PS_Purchasing then return false end
+	self._PS_Purchasing = true
+
+	local function finish(result)
+		self._PS_Purchasing = nil
+		return result
+	end
+
 	-- Prevent buying items the player already owns
 	if self:PS_HasItem(item_id) then
 		self:PS_Notify('You already own this item!')
-		return false
+		return finish(false)
 	end
 
 	local points = math.max(0, PS.Config.CalculateBuyPrice(self, ITEM))
 
-	if not self:PS_HasPoints(points) then return false end
-	if not self:PS_CanPerformAction(item_id) then return end
+	if not self:PS_HasPoints(points) then return finish(false) end
+	if not self:PS_CanPerformAction(item_id) then return finish(false) end
 
 	if ITEM.AdminOnly and not self:IsAdmin() then
 		self:PS_Notify('This item is Admin only!')
-		return false
+		return finish(false)
 	end
 
 	if ITEM.AllowedUserGroups and #ITEM.AllowedUserGroups > 0 then
 		if not table.HasValue(ITEM.AllowedUserGroups, self:PS_GetUsergroup()) then
 			self:PS_Notify('You\'re not in the right group to buy this item!')
-			return false
+			return finish(false)
 		end
 	end
 
@@ -263,14 +257,14 @@ function Player:PS_BuyItem(item_id)
 		if CATEGORY.AllowedUserGroups and #CATEGORY.AllowedUserGroups > 0 then
 			if not table.HasValue(CATEGORY.AllowedUserGroups, self:PS_GetUsergroup()) then
 				self:PS_Notify('You\'re not in the right group to buy this item!')
-				return false
+				return finish(false)
 			end
 		end
 
 		if CATEGORY.CanPlayerSee then
 			if not CATEGORY:CanPlayerSee(self) then
 				self:PS_Notify('You\'re not allowed to buy this item!')
-				return false
+				return finish(false)
 			end
 		end
 	end
@@ -285,7 +279,7 @@ function Player:PS_BuyItem(item_id)
 
 		if not allowed then
 			self:PS_Notify(message or 'You\'re not allowed to buy this item!')
-			return false
+			return finish(false)
 		end
 	end
 
@@ -294,16 +288,17 @@ function Player:PS_BuyItem(item_id)
 	self:PS_Notify('Bought ', ITEM.Name, ' for ', points, ' ', PS.Config.PointsName)
 
 	ITEM:OnBuy(self)
-	
+
 	hook.Call( "PS_ItemPurchased", nil, self, item_id )
 
 	if ITEM.SingleUse then
 		self:PS_Notify('Single use item. You\'ll have to buy this item again next time!')
-		return
+		return finish(true)
 	end
 
 	self:PS_GiveItem(item_id)
 	self:PS_EquipItem(item_id)
+	finish(true)
 end
 
 function Player:PS_SellItem(item_id)

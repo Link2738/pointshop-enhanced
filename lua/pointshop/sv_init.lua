@@ -22,23 +22,27 @@ local function PS_RateLimit(ply, action)
 end
 
 net.Receive('PS_BuyItem', function(length, ply)
+	local item_id = net.ReadString()
 	if not PS_RateLimit(ply, 'buy') then return end
-	ply:PS_BuyItem(net.ReadString())
+	ply:PS_BuyItem(item_id)
 end)
 
 net.Receive('PS_SellItem', function(length, ply)
+	local item_id = net.ReadString()
 	if not PS_RateLimit(ply, 'sell') then return end
-	ply:PS_SellItem(net.ReadString())
+	ply:PS_SellItem(item_id)
 end)
 
 net.Receive('PS_EquipItem', function(length, ply)
+	local item_id = net.ReadString()
 	if not PS_RateLimit(ply, 'equip') then return end
-	ply:PS_EquipItem(net.ReadString())
+	ply:PS_EquipItem(item_id)
 end)
 
 net.Receive('PS_HolsterItem', function(length, ply)
+	local item_id = net.ReadString()
 	if not PS_RateLimit(ply, 'holster') then return end
-	ply:PS_HolsterItem(net.ReadString())
+	ply:PS_HolsterItem(item_id)
 end)
 
 -- Reject oversized modify payloads before deserializing. A legit modify is a small
@@ -46,9 +50,11 @@ end)
 -- expensive work on attacker-controlled data. ~2 KB is generous for real items.
 local PS_MAX_MODIFY_BITS = 16384
 net.Receive('PS_ModifyItem', function(length, ply)
+	local item_id = net.ReadString()
+	local mods = net.ReadTable()
 	if not PS_RateLimit(ply, 'modify') then return end
 	if length > PS_MAX_MODIFY_BITS then return end
-	ply:PS_ModifyItem(net.ReadString(), net.ReadTable())
+	ply:PS_ModifyItem(item_id, mods)
 end)
 
 -- player to player

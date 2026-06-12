@@ -79,31 +79,23 @@ function BASE:ApplyModelSettings(ply, modifications)
     end
 end
 
+local function applyAndPersist(base, ply, itemID, modifications)
+    local mods = (PS_GetCustomization and PS_GetCustomization(ply, itemID)) or modifications or {}
+    if PS_SetCustomization then PS_SetCustomization(ply, itemID, mods) end
+    base:ApplyModelSettings(ply, mods)
+end
+
 function BASE:OnEquip(ply, modifications)
     if not ply._OldModel then
         ply._OldModel = ply:GetModel()
     end
-    
-    -- Track active PointShop playermodel so gamemode ModelFix allows it
     ply._PS_ActivePlayerModel = self.Model
-    
     local itemID = self.ID or self.Model
-    local modelPath = self.Model
-    
     if SERVER then
         if PS and PS.Config and PS.Config.Debug then
-            print(string.format("[PS Playermodel] OnEquip for %s - itemID: %s, model: %s", ply:Nick(), itemID, modelPath))
+            print(string.format("[PS Playermodel] OnEquip for %s - itemID: %s, model: %s", ply:Nick(), itemID, self.Model))
         end
-        
-        local custom, savedModelPath = PS_GetPlayerModelCustomization(ply, itemID)
-        modifications = custom or modifications or {}
-        
-        if PS and PS.Config and PS.Config.Debug then
-            print(string.format("[PS Playermodel] Loaded mods: %s", util.TableToJSON(modifications or {})))
-        end
-        
-        PS_SetPlayerModelCustomization(ply, itemID, modelPath, modifications)
-        self:ApplyModelSettings(ply, modifications)
+        applyAndPersist(self, ply, itemID, modifications)
     end
 end
 
@@ -137,15 +129,8 @@ end
 
 function BASE:OnModify(ply, modifications)
     if not self.Bodygroups then return end
-    
-    local itemID = self.ID or self.Model
-    local modelPath = self.Model
-    
     if SERVER then
-        local custom, savedModelPath = PS_GetPlayerModelCustomization(ply, itemID)
-        modifications = custom or modifications or {}
-        PS_SetPlayerModelCustomization(ply, itemID, modelPath, modifications)
-        self:ApplyModelSettings(ply, modifications)
+        applyAndPersist(self, ply, self.ID or self.Model, modifications)
     end
 end
 

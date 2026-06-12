@@ -25,23 +25,6 @@ end
 if CLIENT then
     PS_AccessoryCustomizations = PS_AccessoryCustomizations or {}
 
-    local function resolve_model_path_client(id_or_model)
-        if not id_or_model then return id_or_model end
-        if string.find(id_or_model, "/") then return id_or_model end
-        if PS_GetModelPathForItem then return PS_GetModelPathForItem(id_or_model) or id_or_model end
-        if PS and PS.Items and PS.Items[id_or_model] and PS.Items[id_or_model].Model then return PS.Items[id_or_model].Model end
-        if PS and PS.Items then
-            for k,it in pairs(PS.Items) do
-                if it then
-                    if tostring(it.ID) == tostring(id_or_model) or tostring(it.UniqueID) == tostring(id_or_model) or tostring(k) == tostring(id_or_model) then
-                        if it.Model then return it.Model end
-                    end
-                end
-            end
-        end
-        return id_or_model
-    end
-
     function PS_RequestApplyAccessoryCustomization(itemID, mods)
         -- Send the canonical itemID to the server (server resolves to a model path)
         if PS_SendAccessoryCustomization then
@@ -66,13 +49,11 @@ if CLIENT then
         PrintTable(PS_AccessoryCustomizations)
     end)
 
-    function PS_GetAccessoryCustomization(ply, modelPath)
+    -- Client-side lookup keyed by itemID (matches the broadcast key post-migration)
+    function PS_GetCustomization(ply, itemID)
         PS_AccessoryCustomizations = PS_AccessoryCustomizations or {}
-        if not ply or not modelPath then return nil end
-        if PS_AccessoryCustomizations[ply] then
-            return PS_AccessoryCustomizations[ply][modelPath]
-        end
-        return nil
+        if not ply or not itemID then return nil end
+        return PS_AccessoryCustomizations[ply] and PS_AccessoryCustomizations[ply][itemID] or nil
     end
 
     function BASE:Modify(ply, modifications)
@@ -89,27 +70,23 @@ function BASE:OnEquip(ply, modifications)
         local mods = nil
         -- Treat an empty table the same as nil so we fall through to stored/default data.
         -- PointShop passes modifications = {} for brand-new items that have never been
-        -- customised, which would otherwise skip PS_GetAccessoryCustomization entirely.
+        -- customised, which would otherwise skip PS_GetCustomization entirely.
         if modifications ~= nil and type(modifications) == "table" and next(modifications) ~= nil then
             mods = modifications
-        elseif PS_GetAccessoryCustomization then
-            mods = PS_GetAccessoryCustomization(ply, self.Model)
+        elseif PS_GetCustomization then
+            mods = PS_GetCustomization(ply, self.ID)
         end
         -- Only persist/broadcast when we actually have customization data to avoid
         -- overwriting stored data with an empty table.
         if mods then
-            -- Apply settings locally first so the player's appearance updates immediately
             self:ApplyAccessorySettings(ply, mods)
-            -- Persist using the provider function if available; otherwise run the apply hook as a fallback
-            if PS_SetAccessoryCustomization then
-                PS_SetAccessoryCustomization(ply, self.Model, mods)
-            else
-                hook.Run("PS_AccessoryCustomization_Apply", ply, self.Model, mods)
+            if PS_SetCustomization then
+                PS_SetCustomization(ply, self.ID, mods)
             end
-            -- Broadcast to clients so they can apply the clientsidemodel modifications for this player
+            -- Broadcast with itemID as key so clients update their lookup table correctly
             net.Start("PS_AccessoryCustomization_Update")
                 net.WriteEntity(ply)
-                net.WriteString(self.Model)
+                net.WriteString(self.ID)
                 net.WriteTable(mods)
             net.Broadcast()
         end
@@ -124,8 +101,8 @@ function BASE:OnHolster(ply)
 end
 
 function BASE:ModifyClientsideModel(ply, model, pos, ang, modifications)
-    if not modifications and PS_GetAccessoryCustomization then
-        modifications = PS_GetAccessoryCustomization(ply, self.Model)
+    if not modifications and PS_GetCustomization then
+        modifications = PS_GetCustomization(ply, self.ID)
     end
     local scale = modifications and modifications.scale or 1
     model:SetModelScale(scale, 0)
@@ -198,27 +175,14 @@ end
 
 function BASE:OnModify(ply, modifications)
     if SERVER then
-        local custom = PS_GetAccessoryCustomization(ply, self.Model)
-        -- Prefer explicit `modifications` when provided; otherwise use stored `custom`.
-        -- Do not default to an empty table, as that would overwrite stored data.
-        local modsToSave = nil
-        if modifications ~= nil then
-            modsToSave = modifications
-        elseif custom ~= nil then
-            modsToSave = custom
-        end
+        local custom = PS_GetCustomization and PS_GetCustomization(ply, self.ID)
+        local modsToSave = modifications ~= nil and modifications or custom
         if modsToSave then
-            -- Apply locally first
             self:ApplyAccessorySettings(ply, modsToSave)
-            if PS_SetAccessoryCustomization then
-                PS_SetAccessoryCustomization(ply, self.Model, modsToSave)
-            else
-                hook.Run("PS_AccessoryCustomization_Apply", ply, self.Model, modsToSave)
-            end
-            -- Broadcast customization to ALL clients so everyone sees the update
+            if PS_SetCustomization then PS_SetCustomization(ply, self.ID, modsToSave) end
             net.Start("PS_AccessoryCustomization_Update")
                 net.WriteEntity(ply)
-                net.WriteString(self.Model)
+                net.WriteString(self.ID)
                 net.WriteTable(modsToSave)
             net.Broadcast()
         end
@@ -265,11 +229,8 @@ function BASE:HolsterAndReequip(ply)
             -- Try to obtain server-authoritative modifications to pass into OnEquip so
             -- the client recreates the clientsided model using authoritative data.
             local mods = nil
-            -- Prefer provider/getter when available
-            if PS_GetAccessoryCustomization then
-                pcall(function()
-                    mods = PS_GetAccessoryCustomization(ply, self.Model)
-                end)
+            if PS_GetCustomization then
+                pcall(function() mods = PS_GetCustomization(ply, self.ID) end)
             end
             -- Fallback to player's PS_Items if net.Receive populated it
             if not mods and ply and ply.PS_Items and self.ID and ply.PS_Items[self.ID] and ply.PS_Items[self.ID].Modifiers then

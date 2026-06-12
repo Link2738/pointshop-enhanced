@@ -1,12 +1,17 @@
 -- Unified Item Customization Backend
--- Wrapper system that routes to accessory or playermodel backends based on item type
+-- Net handlers, sanitization, and rate limiting for all item customization.
+-- Storage is handled by ps_backend_storage.lua (PS_GetCustomization / PS_SetCustomization).
 
 if SERVER then
-    -- Register unified network messages
+    -- Unified customization messages
     util.AddNetworkString("PS_ItemCustomization_Update")
     util.AddNetworkString("PS_ItemCustomization_Request")
     util.AddNetworkString("PS_ItemCustomization_Closed")
     util.AddNetworkString("PS_ItemCustomization_PreviewUpdate")
+    -- Accessory broadcast (consumed by ps_client_accessory.lua)
+    util.AddNetworkString("PS_AccessoryCustomization_Update")
+    -- Playermodel color broadcast (consumed by ps_backend_playermodel.lua client section → now inline)
+    util.AddNetworkString("PS_PlayerModelColor_Broadcast")
     
     -- Rate limiting tracking
     local PS_CustomizationRateLimits = {}
@@ -167,305 +172,179 @@ if SERVER then
     -- SERVER WRAPPER FUNCTIONS
     -- ============================================================================
     
-    -- Get customization for any item type
-    function PS_GetItemCustomization(ply, itemID, itemType)
-        if not IsValid(ply) or not itemID or not itemType then return nil end
-        
-        if itemType == "accessory" then
-            -- Convert itemID to model path for accessory backend SQL lookup
-            -- itemID can be item.ID (string like "headcrabhat") or item.Model if ID doesn't exist
-            local modelPath = itemID
-            if PS.Items and PS.Items[itemID] and PS.Items[itemID].Model then
-                modelPath = PS.Items[itemID].Model
-            end
-            if PS_GetAccessoryCustomization then
-                return PS_GetAccessoryCustomization(ply, modelPath)
-            end
-        elseif itemType == "playermodel" then
-            -- Route to playermodel backend
-            if PS_GetPlayerModelCustomization then
-                return PS_GetPlayerModelCustomization(ply, itemID)
-            end
-        elseif itemType == "trail" then
-            -- Trail mods are stored in PS_Items Modifiers
-            if ply.PS_Items and ply.PS_Items[itemID] then
-                return ply.PS_Items[itemID].Modifiers or nil
-            end
-        end
-        
-        return nil
-    end
-    
-    -- Set customization for any item type
-    function PS_SetItemCustomization(ply, itemID, itemType, mods)
-        if not IsValid(ply) or not itemID or not itemType or not mods then return false end
-        
-        if itemType == "accessory" then
-            -- Convert itemID to model path for accessory backend SQL storage
-            -- itemID can be item.ID (string like "headcrabhat") or item.Model if ID doesn't exist
-            local modelPath = itemID
-            if PS.Items and PS.Items[itemID] and PS.Items[itemID].Model then
-                modelPath = PS.Items[itemID].Model
-            end
-            if PS_SetAccessoryCustomization then
-                PS_SetAccessoryCustomization(ply, modelPath, mods)
-                
-                -- Also persist to PS_Items table (old system did this)
-                if ply.PS_Items and ply.PS_Items[itemID] then
-                    ply.PS_Items[itemID].Modifiers = mods or {}
-                    if PS and PS.SavePlayerItem then
-                        pcall(function()
-                            PS:SavePlayerItem(ply, itemID, ply.PS_Items[itemID])
-                        end)
-                    end
-                end
-                
-                return true
-            end
-        elseif itemType == "playermodel" then
-            -- Route to playermodel backend
-            -- Need to get model path from item definition
-            local modelPath = itemID  -- Fallback
-            if PS.Items and PS.Items[itemID] and PS.Items[itemID].Model then
-                modelPath = PS.Items[itemID].Model
-            end
-            
-            if PS_SetPlayerModelCustomization then
-                PS_SetPlayerModelCustomization(ply, itemID, modelPath, mods)
-                return true
-            end
-        elseif itemType == "trail" then
-            -- Save trail mods via PS_ModifyItem which calls OnModify and saves to SQL
-            if ply.PS_Items and ply.PS_Items[itemID] then
-                ply:PS_ModifyItem(itemID, mods)
-                return true
-            end
-            return false
-        end
-        
-        return false
-    end
-    
     -- ============================================================================
     -- UNIFIED NETWORK RECEIVERS
     -- ============================================================================
-    
+
     -- Receive: Request customization data
     net.Receive("PS_ItemCustomization_Request", function(len, ply)
         if not IsValid(ply) then return end
-        
+
         -- Light rate limit for requests (less strict than updates)
         local steamid = ply:SteamID()
         local now = CurTime()
-        if PS_CustomizationRateLimits[steamid .. "_request"] and 
+        if PS_CustomizationRateLimits[steamid .. "_request"] and
            (now - PS_CustomizationRateLimits[steamid .. "_request"]) < 0.1 then
             return
         end
         PS_CustomizationRateLimits[steamid .. "_request"] = now
-        
-        local itemID = net.ReadString()
+
+        local itemID   = net.ReadString()
         local itemType = net.ReadString()
-        
-        local mods = PS_GetItemCustomization(ply, itemID, itemType)
-        
-        -- Send back to client
+
+        local mods = PS_GetCustomization and PS_GetCustomization(ply, itemID) or {}
+
         net.Start("PS_ItemCustomization_Update")
-        net.WriteString(itemID)
-        net.WriteString(itemType)
-        net.WriteTable(mods or {})
+            net.WriteString(itemID)
+            net.WriteString(itemType)
+            net.WriteTable(mods or {})
         net.Send(ply)
-        
+
         if PS and PS.Config and PS.Config.Debug then
-            print(string.format("[PS UNIFIED] Sent customization to %s: type=%s id=%s", 
+            print(string.format("[PS UNIFIED] Sent customization to %s: type=%s id=%s",
                 ply:Nick(), itemType, itemID))
         end
     end)
-    
+
     -- Receive: Apply customization
     net.Receive("PS_ItemCustomization_Update", function(len, ply)
         if not IsValid(ply) then return end
-        
-        -- Check data size (prevent resource exhaustion)
-        if len > 65536 then  -- 64KB limit
-            print(string.format("[PS SECURITY] Blocked oversized customization packet from %s (%d bytes)", 
+
+        if len > 65536 then
+            print(string.format("[PS SECURITY] Blocked oversized customization packet from %s (%d bytes)",
                 ply:Nick(), len))
             return
         end
-        
-        -- Check rate limit
+
         if not CheckRateLimit(ply) then
             if PS and PS.Config and PS.Config.Debug then
                 print(string.format("[PS SECURITY] Rate limited customization from %s", ply:Nick()))
             end
             return
         end
-        
-        local itemID = net.ReadString()
+
+        local itemID   = net.ReadString()
         local itemType = net.ReadString()
-        local rawMods = net.ReadTable()
-        
-        -- Validate item type
+        local rawMods  = net.ReadTable()
+
         if itemType ~= "accessory" and itemType ~= "playermodel" and itemType ~= "trail" then
             print(string.format("[PS SECURITY] Invalid item type from %s: %s", ply:Nick(), tostring(itemType)))
             return
         end
-        
-        -- Check ownership
+
         if not PlayerOwnsItem(ply, itemID) then
-            print(string.format("[PS SECURITY] Player %s tried to customize item they don't own: %s", 
+            print(string.format("[PS SECURITY] Player %s tried to customize item they don't own: %s",
                 ply:Nick(), itemID))
             return
         end
-        
-        -- Sanitize data
+
         local mods = SanitizeCustomizationData(rawMods, itemType)
-        
-        -- Ensure sanitization didn't remove everything (possible attack)
+
         if next(rawMods) ~= nil and next(mods) == nil then
             print(string.format("[PS SECURITY] All customization data was invalid from %s", ply:Nick()))
             return
         end
-        
-        -- Save to appropriate backend
-        local success = PS_SetItemCustomization(ply, itemID, itemType, mods)
-        
-        if success then
-            if itemType == "accessory" then
-                -- Broadcast to OTHER clients using old accessory format (includes player entity)
-                -- This ensures PS_AccessoryCustomizations table is updated for all clients
-                local modelPath = itemID
-                if PS.Items and PS.Items[itemID] and PS.Items[itemID].Model then
-                    modelPath = PS.Items[itemID].Model
+
+        if itemType == "accessory" then
+            PS_SetCustomization(ply, itemID, mods)
+
+            if ply.PS_Items and ply.PS_Items[itemID] then
+                ply.PS_Items[itemID].Modifiers = mods
+                if PS and PS.SavePlayerItem then
+                    pcall(function() PS:SavePlayerItem(ply, itemID, ply.PS_Items[itemID]) end)
                 end
-                
-                net.Start("PS_AccessoryCustomization_Update")
+            end
+
+            -- Broadcast with itemID as key (client table is now keyed by itemID)
+            net.Start("PS_AccessoryCustomization_Update")
                 net.WriteEntity(ply)
-                net.WriteString(modelPath)
+                net.WriteString(itemID)
                 net.WriteTable(mods)
-                net.Broadcast()  -- Broadcast to ALL clients (including sender for consistency)
-                
-                if PS and PS.Notify then
-                    PS:Notify(ply, "Accessory customization saved and applied.")
-                end
-            elseif itemType == "playermodel" then
-                -- Force model reload FIRST to ensure bodygroups update
-                -- (SetModel resets colors, so we must do this before applying color)
-                ply:SetModel(ply:GetModel())
-                
-                -- Apply to player immediately
-                if mods.skin then ply:SetSkin(mods.skin) end
-                if mods.bodygroups then
-                    for k, v in pairs(mods.bodygroups) do
-                        -- Keys may arrive as strings (JSON-sourced); SetBodygroup needs numbers.
-                        ply:SetBodygroup(tonumber(k) or k, tonumber(v) or v)
-                    end
-                end
-                
-                -- Apply player color with proper method based on UseColor2Proxy
-                if mods.playercolor then
-                    local pc = mods.playercolor
-                    local r, g, b
-                    
-                    if PS and PS.Config and PS.Config.Debug then
-                        print(string.format("[PS UNIFIED] Received playercolor from client:"))
-                        PrintTable(pc)
-                    end
-                    
-                    -- Handle Vector format (normalized 0-1) - convert to RGB 0-255
-                    if type(pc) == "Vector" or (type(pc) == "table" and pc.x) then
-                        r = math.floor((pc.x or 1) * 255)
-                        g = math.floor((pc.y or 1) * 255)
-                        b = math.floor((pc.z or 1) * 255)
-                    -- Handle table format (RGB 0-255)
-                    else
-                        r = (pc[1] or pc.r or 255)
-                        g = (pc[2] or pc.g or 255)
-                        b = (pc[3] or pc.b or 255)
-                    end
-                    
-                    if PS and PS.Config and PS.Config.Debug then
-                        print(string.format("[PS UNIFIED] Converted to RGB: R=%d G=%d B=%d", r, g, b))
-                    end
-                    
-                    -- Check if item uses color2 proxy
-                    local useColor2 = false
-                    if itemID and PS.Items and PS.Items[itemID] then
-                        useColor2 = PS.Items[itemID].UseColor2Proxy or false
-                        
-                        if PS and PS.Config and PS.Config.Debug then
-                            print(string.format("[PS UNIFIED] Item found: %s, UseColor2Proxy=%s", itemID, tostring(PS.Items[itemID].UseColor2Proxy)))
-                        end
-                    else
-                        if PS and PS.Config and PS.Config.Debug then
-                            print(string.format("[PS UNIFIED] WARNING: Item not found for itemID=%s", tostring(itemID)))
-                        end
-                    end
-                    
-                    print(string.format("[PS COLOR DEBUG] UNIFIED apply -> player=%s R=%d G=%d B=%d useColor2=%s itemID=%s", ply:Nick(), r, g, b, tostring(useColor2), tostring(itemID)))
-                    if useColor2 then
-                        -- Use color2 proxy for models with VMT color2 support
-                        print(string.format("[PS COLOR DEBUG] UNIFIED Calling SetPlayerColor(%.3f, %.3f, %.3f)", r/255, g/255, b/255))
-                        ply:SetPlayerColor(Vector(r/255, g/255, b/255))
-                        -- Reset render modulation so it doesn't interfere
-                        print("[PS COLOR DEBUG] UNIFIED Resetting SetColor to white (was color2 path)")
-                        ply:SetColor(Color(255, 255, 255, 255))
-                        ply:SetRenderMode(RENDERMODE_NORMAL)
-                    else
-                        -- Use render color modulation for models without color2 proxy
-                        print(string.format("[PS COLOR DEBUG] UNIFIED Calling SetColor(%d, %d, %d)", r, g, b))
-                        ply:SetColor(Color(r, g, b, 255))
-                        ply:SetRenderMode(RENDERMODE_NORMAL)
-                        -- Reset player color so it doesn't interfere
-                        print("[PS COLOR DEBUG] UNIFIED Resetting SetPlayerColor to white (was modulation path)")
-                        ply:SetPlayerColor(Vector(1, 1, 1))
-                    end
-                    print(string.format("[PS COLOR DEBUG] UNIFIED After apply -> GetColor=%s GetPlayerColor=%s", tostring(ply:GetColor()), tostring(ply:GetPlayerColor())))
-                    
-                    -- Store and broadcast color
-                    ply.PS_PlayerColor = Color(r, g, b, 255)
-                    ply.PS_UseColor2Proxy = useColor2
-                    
-                    -- Broadcast color to all clients
-                    net.Start("PS_PlayerModelColor_Broadcast")
-                        net.WriteEntity(ply)
-                        net.WriteUInt(r, 8)
-                        net.WriteUInt(g, 8)
-                        net.WriteUInt(b, 8)
-                        net.WriteBool(useColor2)
-                    net.Broadcast()
-                end
-                
-                if PS and PS.Notify then
-                    PS:Notify(ply, "Player model customization saved.")
-                end
-            elseif itemType == "trail" then
-                -- Trail was already re-applied by PS_SetItemCustomization -> ply:PS_ModifyItem
-                if PS and PS.Notify then
-                    PS:Notify(ply, "Trail color saved.")
+            net.Broadcast()
+
+            if PS and PS.Notify then PS:Notify(ply, "Accessory customization saved and applied.") end
+
+        elseif itemType == "playermodel" then
+            PS_SetCustomization(ply, itemID, mods)
+
+            ply:SetModel(ply:GetModel())
+            if mods.skin then ply:SetSkin(mods.skin) end
+            if mods.bodygroups then
+                for k, v in pairs(mods.bodygroups) do
+                    ply:SetBodygroup(tonumber(k) or k, tonumber(v) or v)
                 end
             end
-            
-            if PS and PS.Config and PS.Config.Debug then
-                print(string.format("[PS UNIFIED] Saved customization from %s: type=%s id=%s", 
-                    ply:Nick(), itemType, itemID))
-                PrintTable(mods)
+
+            if mods.playercolor then
+                local pc = mods.playercolor
+                local r, g, b
+                if type(pc) == "Vector" or (type(pc) == "table" and pc.x) then
+                    r = math.floor((pc.x or 1) * 255)
+                    g = math.floor((pc.y or 1) * 255)
+                    b = math.floor((pc.z or 1) * 255)
+                else
+                    r = pc[1] or pc.r or 255
+                    g = pc[2] or pc.g or 255
+                    b = pc[3] or pc.b or 255
+                end
+
+                local useColor2 = PS.Items and PS.Items[itemID] and PS.Items[itemID].UseColor2Proxy or false
+                if useColor2 then
+                    ply:SetPlayerColor(Vector(r/255, g/255, b/255))
+                    ply:SetColor(Color(255, 255, 255, 255))
+                else
+                    ply:SetColor(Color(r, g, b, 255))
+                    ply:SetPlayerColor(Vector(1, 1, 1))
+                end
+                ply:SetRenderMode(RENDERMODE_NORMAL)
+                ply.PS_PlayerColor   = Color(r, g, b, 255)
+                ply.PS_UseColor2Proxy = useColor2
+
+                net.Start("PS_PlayerModelColor_Broadcast")
+                    net.WriteEntity(ply)
+                    net.WriteUInt(r, 8)
+                    net.WriteUInt(g, 8)
+                    net.WriteUInt(b, 8)
+                    net.WriteBool(useColor2)
+                net.Broadcast()
             end
-        else
-            ErrorNoHalt(string.format("[PS UNIFIED] Failed to save customization: type=%s id=%s\n", 
-                itemType, itemID))
+
+            if PS and PS.Notify then PS:Notify(ply, "Player model customization saved.") end
+
+        elseif itemType == "trail" then
+            -- PS_ModifyItem calls OnModify and persists via the provider
+            if ply.PS_Items and ply.PS_Items[itemID] then
+                ply:PS_ModifyItem(itemID, mods)
+            end
+            if PS and PS.Notify then PS:Notify(ply, "Trail color saved.") end
+        end
+
+        if PS and PS.Config and PS.Config.Debug then
+            print(string.format("[PS UNIFIED] Saved customization from %s: type=%s id=%s",
+                ply:Nick(), itemType, itemID))
+            PrintTable(mods)
         end
     end)
     
     -- Receive: Preview update (for immediate visual feedback)
     net.Receive("PS_ItemCustomization_PreviewUpdate", function(len, ply)
         if not IsValid(ply) then return end
-        
+
         -- Size limit for preview updates (1KB)
         if len > 1024 then return end
-        
+
         local itemType = net.ReadString()
         local updateType = net.ReadString() -- "bodygroup", "skin", "playercolor"
-        
+        local itemID = net.ReadString()
+
+        -- Ownership check: must own the item being previewed
+        if not PlayerOwnsItem(ply, itemID) then return end
+
+        -- Team gate: same check applied on the save path
+        if PS and PS.Items and PS.Items[itemID] then
+            if not PS:CanEquipForTeam(ply, PS.Items[itemID]) then return end
+        end
+
         -- Validate and sanitize preview updates
         if updateType == "bodygroup" then
             local bgID = net.ReadUInt(8)
@@ -520,8 +399,9 @@ if CLIENT then
     local previewUpdateThrottle = {}
 
     -- Send immediate preview update to server for visual feedback
-    function PS_SendPreviewUpdate(itemType, updateType, ...)
-        if not itemType or not updateType then return end
+    -- itemID is required so the server can verify ownership and team restrictions
+    function PS_SendPreviewUpdate(itemType, itemID, updateType, ...)
+        if not itemType or not itemID or not updateType then return end
 
         -- Throttle: only send once per 100ms per update type
         local throttleKey = itemType .. "_" .. updateType
@@ -534,6 +414,7 @@ if CLIENT then
         net.Start("PS_ItemCustomization_PreviewUpdate")
         net.WriteString(itemType)
         net.WriteString(updateType)
+        net.WriteString(itemID)
 
         if updateType == "bodygroup" then
             local bgID, bgValue = ...
