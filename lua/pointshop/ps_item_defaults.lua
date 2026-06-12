@@ -19,6 +19,23 @@ local DATA_PATH = "pointshop/item_defaults.json"
 PS_ItemDefaultOverrides = PS_ItemDefaultOverrides or {}
 
 -- ============================================================================
+-- SHARED GATE
+-- ============================================================================
+
+-- Returns true only if the player is listed in PS.Config.ItemDefaultOwners.
+-- Checked on both client (to hide the menu entry) and server (to reject the net message).
+function PS_IsItemDefaultOwner(ply)
+    if not IsValid(ply) then return false end
+    local owners = PS and PS.Config and PS.Config.ItemDefaultOwners
+    if not owners then return false end
+    local sid = ply:SteamID()
+    for _, s in ipairs(owners) do
+        if s == sid then return true end
+    end
+    return false
+end
+
+-- ============================================================================
 -- SHARED HELPER
 -- ============================================================================
 
@@ -205,7 +222,7 @@ if SERVER then
         local mods   = net.ReadTable()
         local clear  = net.ReadBool()
 
-        if not IsValid(ply) or not ply:IsAdmin() then return end
+        if not PS_IsItemDefaultOwner(ply) then return end
         if not itemID or itemID == "" then return end
 
         if clear then
