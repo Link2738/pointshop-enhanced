@@ -193,56 +193,10 @@ function PANEL:Init()
 
     -- Type-specific controls will be created in SetItem()
     self:SetupHooks()
-
-    -- Gear button for owner default editor — only visible if the local
-    -- player is in PS.Config.ItemDefaultOwners.
-    if PS_IsItemDefaultOwner and PS_IsItemDefaultOwner(LocalPlayer()) then
-        self._gearBtn = self:Add("DButton")
-        self._gearBtn:SetSize(22, 22)
-        self._gearBtn:SetText("⚙")
-        self._gearBtn:SetFont("DermaDefaultBold")
-        self._gearBtn:SetTooltip("Toggle Default Editor")
-        self._gearBtn.DoClick = function()
-            self:ToggleOwnerMode()
-        end
-        self._gearBtn.Paint = function(s, w, h)
-            s._hoverAlpha = Lerp(FrameTime() * 12, s._hoverAlpha or 0, s:IsHovered() and 1 or 0)
-            if self._ownerMode then
-                draw.RoundedBox(3, 0, 0, w, h, Color(180, 140, 30, 200 + s._hoverAlpha * 55))
-            elseif s._hoverAlpha > 0 then
-                draw.RoundedBox(3, 0, 0, w, h, Color(60, 60, 70, s._hoverAlpha * 180))
-            end
-            draw.SimpleText("⚙", "DermaDefaultBold", w/2, h/2,
-                self._ownerMode and Color(255, 230, 80) or Color(180, 180, 200),
-                TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-        end
-    end
 end
 
 
 function PANEL:Think()
-    -- Keep gear button anchored to top-right of title bar
-    if IsValid(self._gearBtn) then
-        self._gearBtn:SetPos(self:GetWide() - 48, 1)
-    end
-end
-
--- Toggle between personal customization and owner default editor in-place.
--- Reloads the sliders with the appropriate data source.
-function PANEL:ToggleOwnerMode()
-    self._ownerMode = not self._ownerMode
-    if self._ownerMode then
-        -- Load owner defaults into sliders
-        local defaults = PS_GetItemDefault and PS_GetItemDefault(self.itemID)
-        if defaults then
-            self:LoadModsIntoSliders(defaults)
-        end
-    else
-        -- Reload the player's own saved customization from the server
-        if PS_RequestItemCustomization then
-            PS_RequestItemCustomization(self.itemID, self.itemType)
-        end
-    end
 end
 
 function PANEL:SetupHooks()
@@ -941,31 +895,72 @@ function PANEL:CreateButtons()
         y = y + 28
     end
 
-    -- Owner mode: "Clear Default" removes the stored override so the item
-    -- falls back to its Lua DefaultModifications for all players.
-    if self._ownerMode then
-        local clearBtn = self:Add("DButton")
-        clearBtn:SetText("")
-        clearBtn:SetSize(sliderW - 60, 24)
-        clearBtn:SetPos(baseX, y)
-        clearBtn.DoClick = function()
+    -- Owner default sub-panel: only shown to players in PS.Config.ItemDefaultOwners.
+    -- Saves the current slider values as the item's default for all players without
+    -- leaving or reloading the panel.
+    if PS_IsItemDefaultOwner and PS_IsItemDefaultOwner(LocalPlayer()) then
+        y = y + 6
+        local divider = self:Add("DPanel")
+        divider:SetPos(baseX, y)
+        divider:SetSize(sliderW - 60, 1)
+        divider.Paint = function(s, w, h)
+            surface.SetDrawColor(180, 140, 30, 120)
+            surface.DrawRect(0, 0, w, h)
+        end
+        y = y + 8
+
+        local ownerLabel = self:Add("DLabel")
+        ownerLabel:SetPos(baseX, y)
+        ownerLabel:SetSize(sliderW - 60, 16)
+        ownerLabel:SetFont("DermaDefault")
+        ownerLabel:SetTextColor(Color(180, 140, 30))
+        ownerLabel:SetText("Server Default")
+        y = y + 20
+
+        local saveDefaultBtn = self:Add("DButton")
+        saveDefaultBtn:SetText("")
+        saveDefaultBtn:SetSize(sliderW - 60, 24)
+        saveDefaultBtn:SetPos(baseX, y)
+        saveDefaultBtn.DoClick = function()
+            local mods = self:GetSliderValues()
+            net.Start("PS_ItemDefault_Set")
+                net.WriteString(self.itemID)
+                net.WriteTable(mods)
+                net.WriteBool(false)
+            net.SendToServer()
+            notification.AddLegacy("Saved as item default.", NOTIFY_GENERIC, 3)
+        end
+        saveDefaultBtn.Paint = function(s, w, h)
+            s._hoverAlpha = Lerp(FrameTime() * 10, s._hoverAlpha or 0, s:IsHovered() and 1 or 0)
+            local base = 100 + s._hoverAlpha * 25
+            draw.RoundedBox(4, 0, 0, w, h, Color(base, base * 0.75, 20, 255))
+            surface.SetDrawColor(180, 140, 30, 200)
+            surface.DrawOutlinedRect(0, 0, w, h)
+            draw.SimpleText("Save as Default", "DermaDefault", w/2 + 1, h/2 + 1, Color(0,0,0,180), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            draw.SimpleText("Save as Default", "DermaDefault", w/2, h/2, Color(255, 230, 150), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        end
+        y = y + 28
+
+        local clearDefaultBtn = self:Add("DButton")
+        clearDefaultBtn:SetText("")
+        clearDefaultBtn:SetSize(sliderW - 60, 24)
+        clearDefaultBtn:SetPos(baseX, y)
+        clearDefaultBtn.DoClick = function()
             net.Start("PS_ItemDefault_Set")
                 net.WriteString(self.itemID)
                 net.WriteTable({})
-                net.WriteBool(true) -- clear flag
+                net.WriteBool(true)
             net.SendToServer()
-            notification.AddLegacy("Default cleared — item will use Lua defaults.", NOTIFY_GENERIC, 4)
-            self:Close()
+            notification.AddLegacy("Default cleared.", NOTIFY_GENERIC, 3)
         end
-        clearBtn.Paint = function(panel, w, h)
-            panel._hoverAlpha = Lerp(FrameTime() * 10, panel._hoverAlpha or 0, panel:IsHovered() and 1 or 0)
-            local r = 120 + panel._hoverAlpha * 30
-            draw.RoundedBox(4, 0, 0, w, h, Color(r, 40, 40, 255))
-            draw.RoundedBox(4, 0, 0, w, h/2, Color(r + 30, 60, 60, 80))
-            surface.SetDrawColor(180, 80, 80, 200)
+        clearDefaultBtn.Paint = function(s, w, h)
+            s._hoverAlpha = Lerp(FrameTime() * 10, s._hoverAlpha or 0, s:IsHovered() and 1 or 0)
+            local r = 100 + s._hoverAlpha * 25
+            draw.RoundedBox(4, 0, 0, w, h, Color(r, 35, 35, 255))
+            surface.SetDrawColor(160, 70, 70, 200)
             surface.DrawOutlinedRect(0, 0, w, h)
             draw.SimpleText("Clear Default", "DermaDefault", w/2 + 1, h/2 + 1, Color(0,0,0,180), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-            draw.SimpleText("Clear Default", "DermaDefault", w/2, h/2, Color(255,200,200,255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            draw.SimpleText("Clear Default", "DermaDefault", w/2, h/2, Color(255, 180, 180), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
         end
         y = y + 28
     end
@@ -1341,15 +1336,7 @@ function PANEL:ApplyCustomization()
     -- Cleanup preview (won't restore for playermodels since _applyingChanges is true)
     self:DisablePreview(false)
     
-    if self._ownerMode then
-        -- Save as the item's default for all players
-        net.Start("PS_ItemDefault_Set")
-            net.WriteString(self.itemID)
-            net.WriteTable(mods)
-            net.WriteBool(false)
-        net.SendToServer()
-        notification.AddLegacy("Item default saved.", NOTIFY_GENERIC, 3)
-    elseif PS_ApplyItemCustomization then
+    if PS_ApplyItemCustomization then
         PS_ApplyItemCustomization(self.itemID, self.itemType, mods)
     end
 
@@ -1424,13 +1411,9 @@ function PANEL:LoadModsIntoSliders(mods)
     end)
 end
 
-function PANEL:SetItem(item, ownerMode)
+function PANEL:SetItem(item)
     if not item then return end
 
-    -- ownerMode: admin default editor. Loads from PS_GetItemDefault (owner
-    -- override or Lua defaults); Save sends to PS_ItemDefault_Set instead
-    -- of per-player SQL, bypasses ownership gate.
-    self._ownerMode = ownerMode or false
     self.itemID = item.ID or item.Model or ""
     self.itemType = item.TYPE or "accessory"
     self.itemModelPath = item.Model
@@ -1490,32 +1473,19 @@ function PANEL:SetItem(item, ownerMode)
     PS_ActiveCustomizationPanels = PS_ActiveCustomizationPanels or {}
     table.insert(PS_ActiveCustomizationPanels, self)
     
-    if self._ownerMode then
-        -- Seed directly from the current owner override / Lua defaults — no
-        -- server round-trip needed and no ownership gate to worry about.
-        timer.Simple(0, function()
-            if not IsValid(self) then return end
-            local defaults = PS_GetItemDefault and PS_GetItemDefault(self.itemID)
-            if defaults then
-                self:LoadModsIntoSliders(defaults)
-            end
-            self:SetControlsEnabled(true)
-        end)
-    else
-        -- Request customization from server
-        timer.Simple(0, function()
-            if not IsValid(self) then return end
+    -- Request customization from server
+    timer.Simple(0, function()
+        if not IsValid(self) then return end
 
-            if PS and PS.Config and PS.Config.Debug then
-                print(string.format("[PS PANEL DEBUG] Requesting customization: itemID='%s' itemType='%s'",
-                    tostring(self.itemID), tostring(self.itemType)))
-            end
+        if PS and PS.Config and PS.Config.Debug then
+            print(string.format("[PS PANEL DEBUG] Requesting customization: itemID='%s' itemType='%s'",
+                tostring(self.itemID), tostring(self.itemType)))
+        end
 
-            if PS_RequestItemCustomization then
-                PS_RequestItemCustomization(self.itemID, self.itemType)
-            end
-        end)
-    end
+        if PS_RequestItemCustomization then
+            PS_RequestItemCustomization(self.itemID, self.itemType)
+        end
+    end)
     
     -- Timeout fallback: enable controls after 2 seconds if no server response
     timer.Simple(2, function()
@@ -1715,9 +1685,7 @@ function PANEL:PaintOver(w, h)
     surface.DrawRect(10, barHeight, w - 20, 2)
 
     -- Status text with shadow
-    local statusText = self._ownerMode
-        and "Default Editor — changes apply to all players"
-        or  "Preview enabled. Use controls to customize."
+    local statusText = "Preview enabled. Use controls to customize."
     draw.SimpleText(statusText, "DermaDefault", w/2 + 1, 16, Color(0, 0, 0, 180), TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
     draw.SimpleText(statusText, "DermaDefault", w/2, 15, Color(200, 220, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
 end
