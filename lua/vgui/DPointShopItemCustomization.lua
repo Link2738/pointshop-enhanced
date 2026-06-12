@@ -856,8 +856,8 @@ function PANEL:CreateButtons()
         surface.DrawOutlinedRect(0, 0, w, h)
         
         -- Text with shadow
-        draw.SimpleText("Apply Customization", "DermaDefaultBold", w/2 + 1, h/2 + 1, Color(0, 0, 0, 200), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-        draw.SimpleText("Apply Customization", "DermaDefaultBold", w/2, h/2, Color(255, 255, 255, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        draw.SimpleText("Save & Close", "DermaDefaultBold", w/2 + 1, h/2 + 1, Color(0, 0, 0, 200), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        draw.SimpleText("Save & Close", "DermaDefaultBold", w/2, h/2, Color(255, 255, 255, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
     end
     
     y = y + 32
@@ -895,7 +895,29 @@ function PANEL:CreateButtons()
         end
         y = y + 28
     end
-    
+
+    -- Discard button: closes without saving and restores the live preview
+    self.discardButton = self:Add("DButton")
+    self.discardButton:SetText("")
+    self.discardButton:SetSize(sliderW - 60, 24)
+    self.discardButton:SetPos(baseX, y)
+    self.discardButton.DoClick = function()
+        self:Close()
+    end
+    self.discardButton.Paint = function(panel, w, h)
+        local isHovered = panel:IsHovered()
+        panel._hoverAlpha = panel._hoverAlpha or 0
+        panel._hoverAlpha = Lerp(FrameTime() * 10, panel._hoverAlpha, isHovered and 1 or 0)
+        local baseGray = 65 + panel._hoverAlpha * 15
+        draw.RoundedBox(4, 0, 0, w, h, Color(baseGray, baseGray, baseGray, 255))
+        draw.RoundedBox(4, 0, 0, w, h/2, Color(baseGray + 15, baseGray + 15, baseGray + 15, 80))
+        surface.SetDrawColor(120, 120, 120, 200)
+        surface.DrawOutlinedRect(0, 0, w, h)
+        draw.SimpleText("Discard Changes", "DermaDefault", w/2 + 1, h/2 + 1, Color(0, 0, 0, 180), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        draw.SimpleText("Discard Changes", "DermaDefault", w/2, h/2, Color(220, 220, 220, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    end
+    y = y + 28
+
     -- Auto-size panel based on content height
     local contentHeight = y + 30 -- Add bottom padding
     self:SetTall(contentHeight)
@@ -937,13 +959,18 @@ function PANEL:ResetSliders()
                 print("[PS RESET]   dm.axisDeg=" .. tostring(dm.axisDeg) .. " dm.axis=" .. tostring(dm.axis) .. " dm.scale=" .. tostring(dm.scale) .. " dm.rotation=" .. tostring(dm.rotation))
             end
             defaults.scale = dm.scale or defaults.scale
-            defaults.offsetX = dm.offsetX or defaults.offsetX
-            defaults.offsetY = dm.offsetY or defaults.offsetY
-            defaults.offsetZ = dm.offsetZ or defaults.offsetZ
+            defaults.offsetX = dm.offsetX or (dm.offset and (dm.offset[1] or dm.offset.x)) or defaults.offsetX
+            defaults.offsetY = dm.offsetY or (dm.offset and (dm.offset[2] or dm.offset.y)) or defaults.offsetY
+            defaults.offsetZ = dm.offsetZ or (dm.offset and (dm.offset[3] or dm.offset.z)) or defaults.offsetZ
             defaults.rotation = dm.rotation or defaults.rotation
             defaults.axis = dm.axis or defaults.axis
             defaults.axisDeg = dm.axisDeg or defaults.axisDeg
             defaults.color = dm.color or defaults.color
+            if dm.ang then
+                defaults.pitch = dm.ang[1] or 0
+                defaults.yaw   = dm.ang[2] or 0
+                defaults.roll  = dm.ang[3] or 0
+            end
         else
             if PS and PS.Config and PS.Config.Debug then
                 print("[PS RESET] No DefaultModifications found for " .. tostring(self.itemID) .. " (ITEM exists=" .. tostring(ITEM ~= nil) .. ")")
@@ -968,12 +995,12 @@ function PANEL:ResetSliders()
     if self.offsetYBox then self.offsetYBox:SetValue(defaults.offsetY) end
     if self.offsetZSlider then self.offsetZSlider:SetValue(defaults.offsetZ) end
     if self.offsetZBox then self.offsetZBox:SetValue(defaults.offsetZ) end
-    if self.pitchSlider then self.pitchSlider:SetValue(0) end
-    if self.pitchBox then self.pitchBox:SetValue(0) end
-    if self.yawSlider then self.yawSlider:SetValue(0) end
-    if self.yawBox then self.yawBox:SetValue(0) end
-    if self.rollSlider then self.rollSlider:SetValue(0) end
-    if self.rollBox then self.rollBox:SetValue(0) end
+    if self.pitchSlider then self.pitchSlider:SetValue(defaults.pitch or 0) end
+    if self.pitchBox then self.pitchBox:SetValue(defaults.pitch or 0) end
+    if self.yawSlider then self.yawSlider:SetValue(defaults.yaw or 0) end
+    if self.yawBox then self.yawBox:SetValue(defaults.yaw or 0) end
+    if self.rollSlider then self.rollSlider:SetValue(defaults.roll or 0) end
+    if self.rollBox then self.rollBox:SetValue(defaults.roll or 0) end
     if self.accessoryColorMixer then self.accessoryColorMixer:SetColor(defaults.color) end
     
     -- Re-enable callbacks
@@ -998,8 +1025,17 @@ end
 function PANEL:ResetPlayermodel()
     if self.itemType ~= "playermodel" then return end
 
-    -- Hardcoded baseline only.
+    -- Start from the item's designer defaults, fall back to engine baseline.
     local defaults = { skin = 0, bodygroups = {}, playercolor = {255, 255, 255} }
+    if PS and PS.Items and self.itemID then
+        local ITEM = PS.Items[self.itemID]
+        local dm = ITEM and ITEM.DefaultModifications
+        if dm then
+            if dm.skin then defaults.skin = dm.skin end
+            if dm.bodygroups then defaults.bodygroups = dm.bodygroups end
+            if dm.playercolor then defaults.playercolor = dm.playercolor end
+        end
+    end
 
     local ply = LocalPlayer()
 
