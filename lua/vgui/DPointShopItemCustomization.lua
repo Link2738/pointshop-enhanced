@@ -1246,18 +1246,33 @@ function PANEL:ApplyCustomization()
     -- Cleanup preview (won't restore for playermodels since _applyingChanges is true)
     self:DisablePreview(false)
     
-    -- Send to server via unified backend
-    if PS_ApplyItemCustomization then
+    if self._previewOnly then
+        -- Unowned item: stage mods locally for PS_BuyItem to send on purchase.
+        -- Key format matches the pending-data loader in SetItem.
+        PS_PendingCustomizationData = PS_PendingCustomizationData or {}
+        PS_PendingCustomizationData[self.itemType .. "_" .. self.itemID] = mods
+        notification.AddLegacy("Customization saved — it will apply when you buy this item.", NOTIFY_GENERIC, 5)
+    elseif PS_ApplyItemCustomization then
+        -- Send to server via unified backend
         PS_ApplyItemCustomization(self.itemID, self.itemType, mods)
     end
-    
+
     self:Close()
 end
 
 function PANEL:OnClose()
     -- Cleanup preview (will restore original state if changes weren't applied)
     self:DisablePreview(false)
-    
+
+    -- Remove the temporary preview model created for try-before-you-buy
+    if self._previewModelAdded then
+        local ply = LocalPlayer()
+        if IsValid(ply) and ply.PS_RemoveClientsideModel then
+            ply:PS_RemoveClientsideModel(self.itemID)
+        end
+        self._previewModelAdded = nil
+    end
+
     -- Notify server that panel was closed
     if PS_NotifyItemCustomizationClosed then
         PS_NotifyItemCustomizationClosed(self.itemType)
@@ -1268,9 +1283,13 @@ end
 -- SETTERS / INITIALIZATION
 -- ============================================================================
 
-function PANEL:SetItem(item)
+function PANEL:SetItem(item, previewOnly)
     if not item then return end
-    
+
+    -- previewOnly: try-before-you-buy mode for unowned items. Changes are
+    -- staged in PS_PendingCustomizationData instead of being sent to the
+    -- server, and picked up by PS_BuyItem if the player purchases.
+    self._previewOnly = previewOnly or false
     self.itemID = item.ID or item.Model or ""
     self.itemType = item.TYPE or "accessory"
     self.itemModelPath = item.Model
@@ -1364,19 +1383,28 @@ function PANEL:SetItem(item)
     PS_ActiveCustomizationPanels = PS_ActiveCustomizationPanels or {}
     table.insert(PS_ActiveCustomizationPanels, self)
     
-    -- Request customization from server
-    timer.Simple(0, function()
-        if not IsValid(self) then return end
-        
-        if PS and PS.Config and PS.Config.Debug then
-            print(string.format("[PS PANEL DEBUG] Requesting customization: itemID='%s' itemType='%s'", 
-                tostring(self.itemID), tostring(self.itemType)))
-        end
-        
-        if PS_RequestItemCustomization then
-            PS_RequestItemCustomization(self.itemID, self.itemType)
-        end
-    end)
+    -- Request customization from server (skipped in previewOnly: the player
+    -- doesn't own the item, so there's no saved row and the request path is
+    -- ownership-gated — start from defaults/pending data instead)
+    if self._previewOnly then
+        self._dataReceived = true
+        timer.Simple(0, function()
+            if IsValid(self) then self:SetControlsEnabled(true) end
+        end)
+    else
+        timer.Simple(0, function()
+            if not IsValid(self) then return end
+
+            if PS and PS.Config and PS.Config.Debug then
+                print(string.format("[PS PANEL DEBUG] Requesting customization: itemID='%s' itemType='%s'",
+                    tostring(self.itemID), tostring(self.itemType)))
+            end
+
+            if PS_RequestItemCustomization then
+                PS_RequestItemCustomization(self.itemID, self.itemType)
+            end
+        end)
+    end
     
     -- Timeout fallback: enable controls after 2 seconds if no server response
     timer.Simple(2, function()
@@ -1389,6 +1417,16 @@ function PANEL:SetItem(item)
         end
     end)
     
+    -- previewOnly accessories aren't equipped, so no clientside model exists
+    -- yet — create one for the live preview (removed again in OnClose)
+    if self._previewOnly and self.itemType == "accessory" then
+        local ply = LocalPlayer()
+        if IsValid(ply) and ply.PS_AddClientsideModel then
+            ply:PS_AddClientsideModel(self.itemID)
+            self._previewModelAdded = true
+        end
+    end
+
     -- Enable preview after brief delay
     timer.Simple(0.2, function()
         if not IsValid(self) then return end

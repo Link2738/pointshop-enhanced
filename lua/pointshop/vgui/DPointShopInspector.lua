@@ -419,6 +419,52 @@ function PANEL:SetItem(itemData)
 		self.BuyButton:SetText("Cannot Afford")
 	end
 	
+	-- Try-before-you-buy: accessories get a Customize button that opens the
+	-- customization panel in preview-only mode. Staged mods are sent with the
+	-- buy request and applied on first equip.
+	local isAccessory = itemData.TYPE == "accessory" or itemData.Bone or itemData.Attachment
+	if isAccessory and not IsValid(self.CustomizeButton) then
+		self.ControlPanel:SetTall(505)
+		self.ControlPanel:SetPos(20, ScrH() / 2 - 252)
+		self.BackButton:SetPos(10, 410)
+
+		self.CustomizeButton = vgui.Create("DButton", self.ControlPanel)
+		self.CustomizeButton:SetPos(10, 360)
+		self.CustomizeButton:SetSize(280, 40)
+		self.CustomizeButton:SetText("")
+		self.CustomizeButton:SetFont("DermaLarge")
+		self.CustomizeButton.DoClick = function()
+			if not self.ItemData then return end
+			local item = self.ItemData
+			-- Close first: the Inspector's CalcView hook and preview accessory
+			-- would conflict with the customization panel's own preview.
+			self:Close()
+			local panel = vgui.Create("PSItemCustomizationPanel")
+			panel:SetItem(item, true) -- previewOnly
+			if PS and PS.ToggleMenu then PS:ToggleMenu() end
+		end
+		self.CustomizeButton.Paint = function(s, w, h)
+			local isHovered = s:IsHovered()
+			s._hoverAlpha = s._hoverAlpha or 0
+			s._hoverAlpha = Lerp(FrameTime() * 10, s._hoverAlpha, isHovered and 1 or 0)
+
+			local baseBlue = 90 + s._hoverAlpha * 30
+			draw.RoundedBox(6, 0, 0, w, h, Color(40, 60, baseBlue, 255))
+			draw.RoundedBox(6, 0, 0, w, h/2, Color(60, 80, baseBlue + 40, 100))
+
+			if s._hoverAlpha > 0 then
+				surface.SetDrawColor(100, 140, 220, s._hoverAlpha * 80)
+				surface.DrawOutlinedRect(-1, -1, w + 2, h + 2)
+			end
+
+			surface.SetDrawColor(100, 130, 200, 200)
+			surface.DrawOutlinedRect(0, 0, w, h)
+
+			draw.SimpleText("Customize", "DermaLarge", w/2 + 1, h/2 + 1, Color(0, 0, 0, 200), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+			draw.SimpleText("Customize", "DermaLarge", w/2, h/2, Color(255, 255, 255, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		end
+	end
+
 	-- Debug output
 	ps_dbg("[Inspector] Item:", itemData.Name)
 	ps_dbg("[Inspector] Model:", itemData.Model)

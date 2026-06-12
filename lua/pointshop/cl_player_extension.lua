@@ -20,10 +20,19 @@ end
 function Player:PS_BuyItem(item_id)
 	if self:PS_HasItem(item_id) then return false end
 	if not self:PS_HasPoints(PS.Config.CalculateBuyPrice(self, PS.Items[item_id])) then return false end
-	
+
+	-- Include any try-before-you-buy customization staged from the Inspector
+	local ITEM = PS.Items[item_id]
+	local pendingKey = (ITEM and ITEM.TYPE or "accessory") .. "_" .. item_id
+	local pending = PS_PendingCustomizationData and PS_PendingCustomizationData[pendingKey]
+
 	net.Start('PS_BuyItem')
 		net.WriteString(item_id)
+		net.WriteBool(pending ~= nil)
+		if pending then net.WriteTable(pending) end
 	net.SendToServer()
+
+	if pending then PS_PendingCustomizationData[pendingKey] = nil end
 end
 
 function Player:PS_SellItem(item_id)

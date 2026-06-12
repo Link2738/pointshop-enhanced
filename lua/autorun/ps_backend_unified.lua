@@ -20,7 +20,8 @@ if SERVER then
     local MAX_VIOLATIONS = 10  -- kick after this many violations
     
     -- Server-side sanitization function (mirrors client-side for security)
-    local function SanitizeCustomizationData(mods, itemType)
+    -- Global so other server code (e.g. PS_BuyItem's initial-mods path) can reuse it.
+    function PS_SanitizeCustomizationData(mods, itemType)
         if not mods or type(mods) ~= "table" then return {} end
         
         local sanitized = {}
@@ -238,7 +239,7 @@ if SERVER then
             return
         end
 
-        local mods = SanitizeCustomizationData(rawMods, itemType)
+        local mods = PS_SanitizeCustomizationData(rawMods, itemType)
 
         if next(rawMods) ~= nil and next(mods) == nil then
             print(string.format("[PS SECURITY] All customization data was invalid from %s", ply:Nick()))

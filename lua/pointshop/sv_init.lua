@@ -23,8 +23,9 @@ end
 
 net.Receive('PS_BuyItem', function(length, ply)
 	local item_id = net.ReadString()
+	local initial_mods = net.ReadBool() and net.ReadTable() or nil
 	if not PS_RateLimit(ply, 'buy') then return end
-	ply:PS_BuyItem(item_id)
+	ply:PS_BuyItem(item_id, initial_mods)
 end)
 
 net.Receive('PS_SellItem', function(length, ply)
