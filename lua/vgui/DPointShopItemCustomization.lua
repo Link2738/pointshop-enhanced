@@ -949,36 +949,24 @@ function PANEL:ResetSliders()
         color = Color(255, 255, 255, 255)
     }
     
-    -- Check if item has DefaultModifications defined
-    if PS and PS.Items and self.itemID then
-        local ITEM = PS.Items[self.itemID]
-        if ITEM and ITEM.DefaultModifications then
-            local dm = ITEM.DefaultModifications
-            if PS and PS.Config and PS.Config.Debug then
-                print("[PS RESET] Found DefaultModifications for " .. tostring(self.itemID))
-                print("[PS RESET]   dm.axisDeg=" .. tostring(dm.axisDeg) .. " dm.axis=" .. tostring(dm.axis) .. " dm.scale=" .. tostring(dm.scale) .. " dm.rotation=" .. tostring(dm.rotation))
-            end
-            defaults.scale = dm.scale or defaults.scale
-            defaults.offsetX = dm.offsetX or (dm.offset and (dm.offset[1] or dm.offset.x)) or defaults.offsetX
-            defaults.offsetY = dm.offsetY or (dm.offset and (dm.offset[2] or dm.offset.y)) or defaults.offsetY
-            defaults.offsetZ = dm.offsetZ or (dm.offset and (dm.offset[3] or dm.offset.z)) or defaults.offsetZ
-            defaults.rotation = dm.rotation or defaults.rotation
-            defaults.axis = dm.axis or defaults.axis
-            defaults.axisDeg = dm.axisDeg or defaults.axisDeg
-            defaults.color = dm.color or defaults.color
-            if dm.ang then
-                defaults.pitch = dm.ang[1] or 0
-                defaults.yaw   = dm.ang[2] or 0
-                defaults.roll  = dm.ang[3] or 0
-            end
-        else
-            if PS and PS.Config and PS.Config.Debug then
-                print("[PS RESET] No DefaultModifications found for " .. tostring(self.itemID) .. " (ITEM exists=" .. tostring(ITEM ~= nil) .. ")")
-            end
-        end
-    else
+    -- Resolve via owner overrides → ITEM.DefaultModifications
+    local dm = PS_GetItemDefault and PS_GetItemDefault(self.itemID)
+    if dm then
         if PS and PS.Config and PS.Config.Debug then
-            print("[PS RESET] Cannot lookup item: PS=" .. tostring(PS ~= nil) .. " PS.Items=" .. tostring(PS and PS.Items ~= nil) .. " itemID=" .. tostring(self.itemID))
+            print("[PS RESET] Found defaults for " .. tostring(self.itemID))
+        end
+        defaults.scale    = dm.scale    or defaults.scale
+        defaults.offsetX  = dm.offsetX  or (dm.offset and (dm.offset[1] or dm.offset.x)) or defaults.offsetX
+        defaults.offsetY  = dm.offsetY  or (dm.offset and (dm.offset[2] or dm.offset.y)) or defaults.offsetY
+        defaults.offsetZ  = dm.offsetZ  or (dm.offset and (dm.offset[3] or dm.offset.z)) or defaults.offsetZ
+        defaults.rotation = dm.rotation or defaults.rotation
+        defaults.axis     = dm.axis     or defaults.axis
+        defaults.axisDeg  = dm.axisDeg  or defaults.axisDeg
+        defaults.color    = dm.color    or defaults.color
+        if dm.ang then
+            defaults.pitch = dm.ang[1] or 0
+            defaults.yaw   = dm.ang[2] or 0
+            defaults.roll  = dm.ang[3] or 0
         end
     end
     
@@ -1025,16 +1013,13 @@ end
 function PANEL:ResetPlayermodel()
     if self.itemType ~= "playermodel" then return end
 
-    -- Start from the item's designer defaults, fall back to engine baseline.
+    -- Start from owner overrides → Lua DefaultModifications, fall back to engine baseline.
     local defaults = { skin = 0, bodygroups = {}, playercolor = {255, 255, 255} }
-    if PS and PS.Items and self.itemID then
-        local ITEM = PS.Items[self.itemID]
-        local dm = ITEM and ITEM.DefaultModifications
-        if dm then
-            if dm.skin then defaults.skin = dm.skin end
-            if dm.bodygroups then defaults.bodygroups = dm.bodygroups end
-            if dm.playercolor then defaults.playercolor = dm.playercolor end
-        end
+    local dm = PS_GetItemDefault and PS_GetItemDefault(self.itemID)
+    if dm then
+        if dm.skin       then defaults.skin        = dm.skin        end
+        if dm.bodygroups then defaults.bodygroups  = dm.bodygroups  end
+        if dm.playercolor then defaults.playercolor = dm.playercolor end
     end
 
     local ply = LocalPlayer()

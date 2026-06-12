@@ -459,8 +459,8 @@ function PANEL:CreateCustomizationSliders(itemData)
 	local itemID = itemData.ID or itemData.Model
 	self.StagedItemID = itemID
 
-	-- Seed defaults from the item's designer defaults where present
-	local dm = itemData.DefaultModifications or {}
+	-- Seed defaults from owner overrides → Lua DefaultModifications
+	local dm = (PS_GetItemDefault and PS_GetItemDefault(itemID)) or itemData.DefaultModifications or {}
 	local defScale = dm.scale or 1
 	local defOX = dm.offsetX or (dm.offset and (dm.offset[1] or dm.offset.x)) or 0
 	local defOY = dm.offsetY or (dm.offset and (dm.offset[2] or dm.offset.y)) or 0

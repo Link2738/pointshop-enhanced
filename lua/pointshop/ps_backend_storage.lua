@@ -33,11 +33,14 @@ function PS_GetCustomization(ply, itemID)
         if ok and tbl then return tbl end
     end
 
+    -- Layer 2: owner override (data file) or item's Lua DefaultModifications
+    if PS_GetItemDefault then
+        local d = PS_GetItemDefault(itemID)
+        if d then return d end
+    end
+
     local ITEM = PS and PS.Items and PS.Items[itemID]
     if ITEM then
-        if ITEM.DefaultModifications then
-            return table.Copy(ITEM.DefaultModifications)
-        end
         if ITEM.Attachment or ITEM.Bone or ITEM.TYPE == "accessory" then
             return {
                 scale = 1, offsetX = 0, offsetY = 0, offsetZ = 0,
