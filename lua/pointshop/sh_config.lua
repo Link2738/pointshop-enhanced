@@ -35,14 +35,6 @@ PS.Config.DisplayPreviewInMenu = true -- Can players see the preview of their it
 PS.Config.PointsName = 'Points' -- What are the points called?
 PS.Config.SortItemsBy = 'Name' -- How are items sorted? Set to 'Price' to sort by price.
 
--- SteamIDs of players allowed to edit item defaults in-game.
--- This is intentionally separate from admin/superadmin — it should only
--- include server owners / operators who are trusted to change what
--- everyone else sees as a starting point.
-PS.Config.ItemDefaultOwners = {
-    -- "STEAM_0:1:XXXXXXXX",
-}
-
 -- Edit below if you know what you're doing
 
 PS.Config.CalculateBuyPrice = function(ply, item)

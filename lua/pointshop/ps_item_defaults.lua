@@ -22,17 +22,11 @@ PS_ItemDefaultOverrides = PS_ItemDefaultOverrides or {}
 -- SHARED GATE
 -- ============================================================================
 
--- Returns true only if the player is listed in PS.Config.ItemDefaultOwners.
--- Checked on both client (to hide the menu entry) and server (to reject the net message).
+-- Returns true if the player holds the ULX "owner" group.
+-- Checked on both client (to hide the sub-panel) and server (to reject the net message).
 function PS_IsItemDefaultOwner(ply)
     if not IsValid(ply) then return false end
-    local owners = PS and PS.Config and PS.Config.ItemDefaultOwners
-    if not owners then return false end
-    local sid = ply:SteamID()
-    for _, s in ipairs(owners) do
-        if s == sid then return true end
-    end
-    return false
+    return ply:PS_GetUsergroup() == "owner"
 end
 
 -- ============================================================================
