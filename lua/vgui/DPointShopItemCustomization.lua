@@ -197,6 +197,12 @@ end
 
 
 function PANEL:Think()
+    local isOwner = PS_IsItemDefaultOwner and PS_IsItemDefaultOwner(LocalPlayer())
+    local show = isOwner == true
+    if IsValid(self._ownerDivider)    then self._ownerDivider:SetVisible(show) end
+    if IsValid(self._ownerLabel)      then self._ownerLabel:SetVisible(show) end
+    if IsValid(self._saveDefaultBtn)  then self._saveDefaultBtn:SetVisible(show) end
+    if IsValid(self._clearDefaultBtn) then self._clearDefaultBtn:SetVisible(show) end
 end
 
 function PANEL:SetupHooks()
@@ -895,75 +901,72 @@ function PANEL:CreateButtons()
         y = y + 28
     end
 
-    -- Owner default sub-panel: only shown to players in PS.Config.ItemDefaultOwners.
-    -- Saves the current slider values as the item's default for all players without
-    -- leaving or reloading the panel.
-    if PS_IsItemDefaultOwner and PS_IsItemDefaultOwner(LocalPlayer()) then
-        y = y + 6
-        local divider = self:Add("DPanel")
-        divider:SetPos(baseX, y)
-        divider:SetSize(sliderW - 60, 1)
-        divider.Paint = function(s, w, h)
-            surface.SetDrawColor(180, 140, 30, 120)
-            surface.DrawRect(0, 0, w, h)
-        end
-        y = y + 8
-
-        local ownerLabel = self:Add("DLabel")
-        ownerLabel:SetPos(baseX, y)
-        ownerLabel:SetSize(sliderW - 60, 16)
-        ownerLabel:SetFont("DermaDefault")
-        ownerLabel:SetTextColor(Color(180, 140, 30))
-        ownerLabel:SetText("Server Default")
-        y = y + 20
-
-        local saveDefaultBtn = self:Add("DButton")
-        saveDefaultBtn:SetText("")
-        saveDefaultBtn:SetSize(sliderW - 60, 24)
-        saveDefaultBtn:SetPos(baseX, y)
-        saveDefaultBtn.DoClick = function()
-            local mods = self:GetSliderValues()
-            net.Start("PS_ItemDefault_Set")
-                net.WriteString(self.itemID)
-                net.WriteTable(mods)
-                net.WriteBool(false)
-            net.SendToServer()
-            notification.AddLegacy("Saved as item default.", NOTIFY_GENERIC, 3)
-        end
-        saveDefaultBtn.Paint = function(s, w, h)
-            s._hoverAlpha = Lerp(FrameTime() * 10, s._hoverAlpha or 0, s:IsHovered() and 1 or 0)
-            local base = 100 + s._hoverAlpha * 25
-            draw.RoundedBox(4, 0, 0, w, h, Color(base, base * 0.75, 20, 255))
-            surface.SetDrawColor(180, 140, 30, 200)
-            surface.DrawOutlinedRect(0, 0, w, h)
-            draw.SimpleText("Save as Default", "DermaDefault", w/2 + 1, h/2 + 1, Color(0,0,0,180), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-            draw.SimpleText("Save as Default", "DermaDefault", w/2, h/2, Color(255, 230, 150), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-        end
-        y = y + 28
-
-        local clearDefaultBtn = self:Add("DButton")
-        clearDefaultBtn:SetText("")
-        clearDefaultBtn:SetSize(sliderW - 60, 24)
-        clearDefaultBtn:SetPos(baseX, y)
-        clearDefaultBtn.DoClick = function()
-            net.Start("PS_ItemDefault_Set")
-                net.WriteString(self.itemID)
-                net.WriteTable({})
-                net.WriteBool(true)
-            net.SendToServer()
-            notification.AddLegacy("Default cleared.", NOTIFY_GENERIC, 3)
-        end
-        clearDefaultBtn.Paint = function(s, w, h)
-            s._hoverAlpha = Lerp(FrameTime() * 10, s._hoverAlpha or 0, s:IsHovered() and 1 or 0)
-            local r = 100 + s._hoverAlpha * 25
-            draw.RoundedBox(4, 0, 0, w, h, Color(r, 35, 35, 255))
-            surface.SetDrawColor(160, 70, 70, 200)
-            surface.DrawOutlinedRect(0, 0, w, h)
-            draw.SimpleText("Clear Default", "DermaDefault", w/2 + 1, h/2 + 1, Color(0,0,0,180), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-            draw.SimpleText("Clear Default", "DermaDefault", w/2, h/2, Color(255, 180, 180), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-        end
-        y = y + 28
+    -- Owner default sub-panel. Always created; visibility toggled in Think
+    -- so it reacts to ULX group sync happening after panel open.
+    y = y + 6
+    self._ownerDivider = self:Add("DPanel")
+    self._ownerDivider:SetPos(baseX, y)
+    self._ownerDivider:SetSize(sliderW - 60, 1)
+    self._ownerDivider.Paint = function(s, w, h)
+        surface.SetDrawColor(180, 140, 30, 120)
+        surface.DrawRect(0, 0, w, h)
     end
+    y = y + 8
+
+    self._ownerLabel = self:Add("DLabel")
+    self._ownerLabel:SetPos(baseX, y)
+    self._ownerLabel:SetSize(sliderW - 60, 16)
+    self._ownerLabel:SetFont("DermaDefault")
+    self._ownerLabel:SetTextColor(Color(180, 140, 30))
+    self._ownerLabel:SetText("Server Default")
+    y = y + 20
+
+    self._saveDefaultBtn = self:Add("DButton")
+    self._saveDefaultBtn:SetText("")
+    self._saveDefaultBtn:SetSize(sliderW - 60, 24)
+    self._saveDefaultBtn:SetPos(baseX, y)
+    self._saveDefaultBtn.DoClick = function()
+        local mods = self:GetSliderValues()
+        net.Start("PS_ItemDefault_Set")
+            net.WriteString(self.itemID)
+            net.WriteTable(mods)
+            net.WriteBool(false)
+        net.SendToServer()
+        notification.AddLegacy("Saved as item default.", NOTIFY_GENERIC, 3)
+    end
+    self._saveDefaultBtn.Paint = function(s, w, h)
+        s._hoverAlpha = Lerp(FrameTime() * 10, s._hoverAlpha or 0, s:IsHovered() and 1 or 0)
+        local base = 100 + s._hoverAlpha * 25
+        draw.RoundedBox(4, 0, 0, w, h, Color(base, base * 0.75, 20, 255))
+        surface.SetDrawColor(180, 140, 30, 200)
+        surface.DrawOutlinedRect(0, 0, w, h)
+        draw.SimpleText("Save as Default", "DermaDefault", w/2 + 1, h/2 + 1, Color(0,0,0,180), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        draw.SimpleText("Save as Default", "DermaDefault", w/2, h/2, Color(255, 230, 150), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    end
+    y = y + 28
+
+    self._clearDefaultBtn = self:Add("DButton")
+    self._clearDefaultBtn:SetText("")
+    self._clearDefaultBtn:SetSize(sliderW - 60, 24)
+    self._clearDefaultBtn:SetPos(baseX, y)
+    self._clearDefaultBtn.DoClick = function()
+        net.Start("PS_ItemDefault_Set")
+            net.WriteString(self.itemID)
+            net.WriteTable({})
+            net.WriteBool(true)
+        net.SendToServer()
+        notification.AddLegacy("Default cleared.", NOTIFY_GENERIC, 3)
+    end
+    self._clearDefaultBtn.Paint = function(s, w, h)
+        s._hoverAlpha = Lerp(FrameTime() * 10, s._hoverAlpha or 0, s:IsHovered() and 1 or 0)
+        local r = 100 + s._hoverAlpha * 25
+        draw.RoundedBox(4, 0, 0, w, h, Color(r, 35, 35, 255))
+        surface.SetDrawColor(160, 70, 70, 200)
+        surface.DrawOutlinedRect(0, 0, w, h)
+        draw.SimpleText("Clear Default", "DermaDefault", w/2 + 1, h/2 + 1, Color(0,0,0,180), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        draw.SimpleText("Clear Default", "DermaDefault", w/2, h/2, Color(255, 180, 180), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+    end
+    y = y + 28
 
     -- Discard button: closes without saving and restores the live preview
     self.discardButton = self:Add("DButton")
