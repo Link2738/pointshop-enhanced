@@ -203,14 +203,6 @@ function PANEL:DoClick()
 			end)
 		end
 
-		if PS_IsItemDefaultOwner and PS_IsItemDefaultOwner(LocalPlayer()) and (self.Data.TYPE == "accessory" or self.Data.TYPE == "playermodel") then
-			AddSpacer()
-			AddMenuButton("Edit Default...", Color(180, 140, 40), function()
-				local panel = vgui.Create("PSItemCustomizationPanel")
-				panel:SetItem(self.Data, true) -- ownerMode
-				if PS and PS.ToggleMenu then PS:ToggleMenu() end
-			end)
-		end
 	end
 
 	menu:SetTall(yPos + 5)

@@ -193,11 +193,56 @@ function PANEL:Init()
 
     -- Type-specific controls will be created in SetItem()
     self:SetupHooks()
+
+    -- Gear button for owner default editor — only visible if the local
+    -- player is in PS.Config.ItemDefaultOwners.
+    if PS_IsItemDefaultOwner and PS_IsItemDefaultOwner(LocalPlayer()) then
+        self._gearBtn = self:Add("DButton")
+        self._gearBtn:SetSize(22, 22)
+        self._gearBtn:SetText("⚙")
+        self._gearBtn:SetFont("DermaDefaultBold")
+        self._gearBtn:SetTooltip("Toggle Default Editor")
+        self._gearBtn.DoClick = function()
+            self:ToggleOwnerMode()
+        end
+        self._gearBtn.Paint = function(s, w, h)
+            s._hoverAlpha = Lerp(FrameTime() * 12, s._hoverAlpha or 0, s:IsHovered() and 1 or 0)
+            if self._ownerMode then
+                draw.RoundedBox(3, 0, 0, w, h, Color(180, 140, 30, 200 + s._hoverAlpha * 55))
+            elseif s._hoverAlpha > 0 then
+                draw.RoundedBox(3, 0, 0, w, h, Color(60, 60, 70, s._hoverAlpha * 180))
+            end
+            draw.SimpleText("⚙", "DermaDefaultBold", w/2, h/2,
+                self._ownerMode and Color(255, 230, 80) or Color(180, 180, 200),
+                TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        end
+    end
 end
 
 
 function PANEL:Think()
-    -- No gizmo input handling needed
+    -- Keep gear button anchored to top-right of title bar
+    if IsValid(self._gearBtn) then
+        self._gearBtn:SetPos(self:GetWide() - 48, 1)
+    end
+end
+
+-- Toggle between personal customization and owner default editor in-place.
+-- Reloads the sliders with the appropriate data source.
+function PANEL:ToggleOwnerMode()
+    self._ownerMode = not self._ownerMode
+    if self._ownerMode then
+        -- Load owner defaults into sliders
+        local defaults = PS_GetItemDefault and PS_GetItemDefault(self.itemID)
+        if defaults then
+            self:LoadModsIntoSliders(defaults)
+        end
+    else
+        -- Reload the player's own saved customization from the server
+        if PS_RequestItemCustomization then
+            PS_RequestItemCustomization(self.itemID, self.itemType)
+        end
+    end
 end
 
 function PANEL:SetupHooks()
