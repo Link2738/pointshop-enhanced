@@ -197,12 +197,6 @@ end
 
 
 function PANEL:Think()
-    local isOwner = PS_IsItemDefaultOwner and PS_IsItemDefaultOwner(LocalPlayer())
-    local show = isOwner == true
-    if IsValid(self._ownerDivider)    then self._ownerDivider:SetVisible(show) end
-    if IsValid(self._ownerLabel)      then self._ownerLabel:SetVisible(show) end
-    if IsValid(self._saveDefaultBtn)  then self._saveDefaultBtn:SetVisible(show) end
-    if IsValid(self._clearDefaultBtn) then self._clearDefaultBtn:SetVisible(show) end
 end
 
 function PANEL:SetupHooks()
@@ -901,8 +895,7 @@ function PANEL:CreateButtons()
         y = y + 28
     end
 
-    -- Owner default sub-panel. Always created; visibility toggled in Think
-    -- so it reacts to ULX group sync happening after panel open.
+    -- Owner default sub-panel. Always visible — server gate rejects non-owners.
     y = y + 6
     self._ownerDivider = self:Add("DPanel")
     self._ownerDivider:SetPos(baseX, y)

@@ -205,6 +205,24 @@ function PANEL:DoClick()
 
 	end
 
+	if PS_IsItemDefaultOwner and PS_IsItemDefaultOwner(LocalPlayer()) then
+		AddSpacer()
+		AddMenuButton("Edit Default...", Color(160, 120, 30), function()
+			local panel = vgui.Create("PSItemCustomizationPanel")
+			panel:SetItem(self.Data)
+		end)
+	end
+
+	if PS_IsItemDefaultOwner and PS_IsItemDefaultOwner(LocalPlayer()) then
+		AddSpacer()
+		AddMenuButton("Edit Default...", Color(160, 120, 30), function()
+			if IsValid(PS._OwnerDefaultsPanel) then PS._OwnerDefaultsPanel:Remove() end
+			local panel = vgui.Create("PSOwnerDefaultsPanel")
+			panel:SetItem(self.Data)
+			PS._OwnerDefaultsPanel = panel
+		end)
+	end
+
 	menu:SetTall(yPos + 5)
 	PS._ItemPopupMenu = menu
 
