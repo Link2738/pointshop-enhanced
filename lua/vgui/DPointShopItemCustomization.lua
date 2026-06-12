@@ -1069,8 +1069,8 @@ function PANEL:EnablePreview()
         -- For accessories: store original modifiers from the customization table
         PS_AccessoryCustomizations = PS_AccessoryCustomizations or {}
         PS_AccessoryCustomizations[ply] = PS_AccessoryCustomizations[ply] or {}
-        if self.itemModelPath then
-            self._originalModifiers = table.Copy(PS_AccessoryCustomizations[ply][self.itemModelPath] or {})
+        if self.itemID then
+            self._originalModifiers = table.Copy(PS_AccessoryCustomizations[ply][self.itemID] or {})
         end
     elseif self.itemType == "playermodel" then
         -- For playermodels: store original values
@@ -1112,8 +1112,8 @@ function PANEL:ApplyLivePreview()
         end
         PS_AccessoryCustomizations = PS_AccessoryCustomizations or {}
         PS_AccessoryCustomizations[ply] = PS_AccessoryCustomizations[ply] or {}
-        if self.itemModelPath then
-            PS_AccessoryCustomizations[ply][self.itemModelPath] = mods
+        if self.itemID then
+            PS_AccessoryCustomizations[ply][self.itemID] = mods
             
             -- Apply color to the clientside model immediately if it exists
             if mods.color and PS and PS.ClientsideModels and PS.ClientsideModels[ply] then
@@ -1173,10 +1173,10 @@ function PANEL:DisablePreview(restoreAccessories)
     
     if self.itemType == "accessory" then
         -- Restore original accessory modifiers (unless we're applying changes)
-        if not self._applyingChanges and self.itemModelPath and self._originalModifiers then
+        if not self._applyingChanges and self.itemID and self._originalModifiers then
             PS_AccessoryCustomizations = PS_AccessoryCustomizations or {}
             PS_AccessoryCustomizations[ply] = PS_AccessoryCustomizations[ply] or {}
-            PS_AccessoryCustomizations[ply][self.itemModelPath] = self._originalModifiers
+            PS_AccessoryCustomizations[ply][self.itemID] = self._originalModifiers
         end
     elseif self.itemType == "playermodel" then
         -- Restore original player state (unless we're applying changes)
