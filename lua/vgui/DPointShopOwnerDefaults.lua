@@ -292,6 +292,20 @@ function PANEL:SetItem(item)
     self:SetTall(y + 10)
     self:SetPos(ScrW() - self:GetWide() - 10, ScrH() / 2 - self:GetTall() / 2)
 
+    -- Ensure the item has a clientside model regardless of ownership
+    local ply = LocalPlayer()
+    if IsValid(ply) then
+        PS_AccessoryCustomizations = PS_AccessoryCustomizations or {}
+        PS_AccessoryCustomizations[ply] = PS_AccessoryCustomizations[ply] or {}
+        PS_AccessoryCustomizations[ply][self.itemID] = PS_GetItemDefault and PS_GetItemDefault(self.itemID) or {}
+        local existing = PS.ClientsideModels and PS.ClientsideModels[ply] and PS.ClientsideModels[ply][self.itemID]
+        self._ownedBeforeOpen = ply:PS_HasItem and ply:PS_HasItem(self.itemID)
+        if not (existing and IsValid(existing)) then
+            ply:PS_AddClientsideModel(self.itemID)
+            self._addedPreviewModel = true
+        end
+    end
+
     -- Apply current slider state as initial live preview
     timer.Simple(0.05, function()
         if IsValid(self) then self:ApplyLivePreview() end
@@ -333,6 +347,13 @@ function PANEL:OnClose()
     hook.Remove("ShouldDrawLocalPlayer", "PSOwnerDefaults_DrawSelf")
     hook.Remove("CalcView", "PSOwnerDefaults_CalcView")
     self:RestoreOriginal()
+    -- Remove preview model if we added it and the player doesn't own/equip the item
+    if self._addedPreviewModel and not self._ownedBeforeOpen then
+        local ply = LocalPlayer()
+        if IsValid(ply) then
+            ply:PS_RemoveClientsideModel(self.itemID)
+        end
+    end
 end
 
 -- ============================================================================
