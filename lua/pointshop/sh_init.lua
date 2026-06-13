@@ -144,8 +144,10 @@ function PS:LoadItems()
 						return model, pos, ang
 					end
 					
+					ITEM.__luaFile = 'pointshop/items/' .. category .. '/' .. name
+
 					include('pointshop/items/' .. category .. '/' .. name)
-					
+
 					if not ITEM.Name then
 						ErrorNoHalt("[POINTSHOP] Item missing name: " .. category .. '/' .. name .. "\n")
 						continue

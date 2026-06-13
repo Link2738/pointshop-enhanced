@@ -213,6 +213,39 @@ function PANEL:DoClick()
 			panel:SetItem(self.Data)
 			PS._OwnerDefaultsPanel = panel
 		end)
+
+		AddSpacer()
+		local isQueued = PS_RemovalQueue and PS_RemovalQueue[self.Data.ID]
+		if isQueued then
+			AddMenuButton("✓ Unmark Removal", Color(80, 140, 80), function()
+				PS_MarkItemForRemoval(self.Data.ID, true)
+			end)
+		else
+			AddMenuButton("Mark for Removal", Color(160, 50, 50), function()
+				-- Confirm before marking
+				local confirm = vgui.Create("DFrame")
+				confirm:SetTitle("Mark for Removal")
+				confirm:SetSize(300, 100)
+				confirm:Center()
+				confirm:MakePopup()
+
+				local lbl = confirm:Add("DLabel")
+				lbl:SetPos(10, 30); lbl:SetSize(280, 20)
+				lbl:SetText("Mark \"" .. self.Data.Name .. "\" for removal?")
+				lbl:SetContentAlignment(5)
+
+				local yes = confirm:Add("DButton")
+				yes:SetPos(10, 60); yes:SetSize(130, 28); yes:SetText("Yes, mark it")
+				yes.DoClick = function()
+					PS_MarkItemForRemoval(self.Data.ID, false)
+					confirm:Remove()
+				end
+
+				local no = confirm:Add("DButton")
+				no:SetPos(155, 60); no:SetSize(130, 28); no:SetText("Cancel")
+				no.DoClick = function() confirm:Remove() end
+			end)
+		end
 	end
 
 	menu:SetTall(yPos + 5)
