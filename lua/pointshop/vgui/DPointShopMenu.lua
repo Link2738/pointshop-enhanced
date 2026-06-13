@@ -423,6 +423,9 @@ function PANEL:PopulateItems()
 	end
 
 	table.sort(items, function(a, b)
+		local aQueued = PS_RemovalQueue and PS_RemovalQueue[a.ID] ~= nil
+		local bQueued = PS_RemovalQueue and PS_RemovalQueue[b.ID] ~= nil
+		if aQueued ~= bQueued then return not aQueued end  -- queued items sink to bottom
 		local aOwned = LocalPlayer():PS_HasItem(a.ID)
 		local bOwned = LocalPlayer():PS_HasItem(b.ID)
 		if aOwned ~= bOwned then return bOwned end

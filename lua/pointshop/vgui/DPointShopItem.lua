@@ -335,9 +335,13 @@ function PANEL:Paint(w, h)
 	-- Base background
 	draw.RoundedBox(6, 0, 0, w, h, COL_BG)
 
+	local isQueued = PS_RemovalQueue and PS_RemovalQueue[self.Data.ID] ~= nil
+
 	-- State-based border
 	local bc
-	if isEquipped then
+	if isQueued then
+		bc = Color(180, 40, 40)
+	elseif isEquipped then
 		bc = COL_EQUIPPED
 	elseif isOwned then
 		bc = COL_OWNED
@@ -350,6 +354,11 @@ function PANEL:Paint(w, h)
 		surface.DrawOutlinedRect(-1, -1, w + 2, h + 2)
 		surface.SetDrawColor(bc)
 		surface.DrawOutlinedRect(0, 0, w, h)
+		if isQueued then
+			-- Second inner border for emphasis
+			surface.SetDrawColor(180, 40, 40, 120)
+			surface.DrawOutlinedRect(2, 2, w - 4, h - 4)
+		end
 	else
 		surface.SetDrawColor(COL_BORDER_DEF)
 		surface.DrawOutlinedRect(0, 0, w, h)
@@ -376,6 +385,23 @@ function PANEL:PaintOver()
 	-- Item name
 	draw.SimpleText(self.Data.Name, "PS_ItemText", w/2 + 1, h - LABEL_H/2 + 1, Color(0, 0, 0, 180), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 	draw.SimpleText(self.Data.Name, "PS_ItemText", w/2,     h - LABEL_H/2,     Color(255, 255, 255),  TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+
+	local isQueued = PS_RemovalQueue and PS_RemovalQueue[self.Data.ID] ~= nil
+
+	-- Red diagonal stamp for queued items
+	if isQueued then
+		surface.SetFont("PS_ItemText")
+		cam.Start2D()
+			local cx, cy = w / 2, h / 2 - 10
+			local ang = -25
+			render.SetScissorRect(1, 1, w - 1, h - 1 - LABEL_H, true)
+			surface.SetDrawColor(180, 40, 40, 60)
+			surface.DrawRect(0, 0, w, h - LABEL_H)
+			render.SetScissorRect(0, 0, 0, 0, false)
+			draw.SimpleText("REMOVAL", "PS_CategoryButton", cx + 1, cy + 1, Color(0, 0, 0, 120), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+			draw.SimpleText("REMOVAL", "PS_CategoryButton", cx, cy, Color(220, 80, 80, 200), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		cam.End2D()
+	end
 
 	-- Status badge pill (top-right)
 	local badgeText, badgeCol
