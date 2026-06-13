@@ -280,7 +280,8 @@ hook.Add('PostPlayerDraw', 'PS_PostPlayerDraw', function(ply)
             pos = attach.Pos
             ang = attach.Ang
         else
-            local bone_id = ply:LookupBone(ITEM.Bone)
+            local boneOverride = PS_ItemDefaultOverrides and PS_ItemDefaultOverrides[item_id] and PS_ItemDefaultOverrides[item_id].bone
+            local bone_id = ply:LookupBone(boneOverride or ITEM.Bone)
             if not bone_id then continue end
             pos, ang = ply:GetBonePosition(bone_id)
         end

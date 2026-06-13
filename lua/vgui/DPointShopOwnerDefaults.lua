@@ -178,6 +178,46 @@ function PANEL:SetItem(item)
         Spacer()
         SectionTitle("Scale")
         Slider("Scale", "scale", 0.1, 2, 2):SetValue(seed("scale", 1))
+        Spacer()
+
+        -- Bone selector
+        SectionTitle("Bone")
+        local bones = {
+            { label = "Head",            bone = "ValveBiped.Bip01_Head1"      },
+            { label = "Spine 4 (chest)", bone = "ValveBiped.Bip01_Spine4"     },
+            { label = "Spine 2",         bone = "ValveBiped.Bip01_Spine2"     },
+            { label = "Spine",           bone = "ValveBiped.Bip01_Spine"      },
+            { label = "Pelvis",          bone = "ValveBiped.Bip01_Pelvis"     },
+            { label = "Right Hand",      bone = "ValveBiped.Bip01_R_Hand"     },
+            { label = "Left Hand",       bone = "ValveBiped.Bip01_L_Hand"     },
+            { label = "Right Forearm",   bone = "ValveBiped.Bip01_R_Forearm"  },
+            { label = "Left Forearm",    bone = "ValveBiped.Bip01_L_Forearm"  },
+            { label = "Right Upper Arm", bone = "ValveBiped.Bip01_R_UpperArm" },
+            { label = "Left Upper Arm",  bone = "ValveBiped.Bip01_L_UpperArm" },
+            { label = "Right Foot",      bone = "ValveBiped.Bip01_R_Foot"     },
+            { label = "Left Foot",       bone = "ValveBiped.Bip01_L_Foot"     },
+        }
+
+        -- Current bone: owner override → item Lua default
+        local itemDef    = PS and PS.Items and PS.Items[self.itemID]
+        local currentBone = defaults.bone or (itemDef and itemDef.Bone) or "ValveBiped.Bip01_Head1"
+
+        local combo = self:Add("DComboBox")
+        combo:SetPos(baseX, y); combo:SetSize(w, 24); combo:SetValue(currentBone)
+        for _, entry in ipairs(bones) do
+            combo:AddChoice(entry.label .. "  (" .. entry.bone .. ")", entry.bone)
+            if entry.bone == currentBone then
+                combo:SetValue(entry.label .. "  (" .. entry.bone .. ")")
+            end
+        end
+        combo.OnSelect = function(_, _, _, boneStr)
+            self._selectedBone = boneStr
+        end
+        self._selectedBone = currentBone
+        self._boneCombo    = combo
+        track(combo)
+        y = y + 28
+
     elseif self.itemType == "playermodel" then
         SectionTitle("Skin")
         Slider("Skin", "skin", 0, 63, 0):SetValue(seed("skin", 0))
@@ -277,6 +317,7 @@ function PANEL:CollectMods()
                 sl.roll  and sl.roll:GetValue()   or 0,
             },
             scale = sl.scale and sl.scale:GetValue() or 1,
+            bone  = self._selectedBone or nil,
         }
     elseif self.itemType == "playermodel" then
         return { skin = sl.skin and math.Round(sl.skin:GetValue()) or 0 }

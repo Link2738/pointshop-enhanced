@@ -69,7 +69,29 @@ if SERVER then
                     a = math.Clamp(tonumber(mods.color.a or mods.color[4]) or 255, 0, 255)
                 }
             end
-            
+
+            -- Bone override: whitelist known ValveBiped bones only
+            if mods.bone and type(mods.bone) == "string" then
+                local validBones = {
+                    ["ValveBiped.Bip01_Head1"]  = true,
+                    ["ValveBiped.Bip01_Spine4"] = true,
+                    ["ValveBiped.Bip01_Spine2"] = true,
+                    ["ValveBiped.Bip01_Spine"]  = true,
+                    ["ValveBiped.Bip01_Pelvis"] = true,
+                    ["ValveBiped.Bip01_R_Hand"] = true,
+                    ["ValveBiped.Bip01_L_Hand"] = true,
+                    ["ValveBiped.Bip01_R_Forearm"] = true,
+                    ["ValveBiped.Bip01_L_Forearm"] = true,
+                    ["ValveBiped.Bip01_R_UpperArm"] = true,
+                    ["ValveBiped.Bip01_L_UpperArm"] = true,
+                    ["ValveBiped.Bip01_R_Foot"]  = true,
+                    ["ValveBiped.Bip01_L_Foot"]  = true,
+                }
+                if validBones[mods.bone] then
+                    sanitized.bone = mods.bone
+                end
+            end
+
         elseif itemType == "playermodel" then
             -- Sanitize playermodel data
             if mods.skin then
