@@ -299,7 +299,7 @@ function PANEL:SetItem(item)
         PS_AccessoryCustomizations[ply] = PS_AccessoryCustomizations[ply] or {}
         PS_AccessoryCustomizations[ply][self.itemID] = PS_GetItemDefault and PS_GetItemDefault(self.itemID) or {}
         local existing = PS.ClientsideModels and PS.ClientsideModels[ply] and PS.ClientsideModels[ply][self.itemID]
-        self._ownedBeforeOpen = ply:PS_HasItem and ply:PS_HasItem(self.itemID)
+        self._ownedBeforeOpen = ply.PS_HasItem and ply:PS_HasItem(self.itemID)
         if not (existing and IsValid(existing)) then
             ply:PS_AddClientsideModel(self.itemID)
             self._addedPreviewModel = true
