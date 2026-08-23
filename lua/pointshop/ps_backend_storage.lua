@@ -80,6 +80,55 @@ function PS_SetCustomization(ply, itemID, mods)
 end
 
 -- ============================================================================
+-- ONE-SHOT LEGACY SWEEP
+--
+-- Customization rows outlive the items they belong to. When an item is deleted from the
+-- server its rows stay in ps_customization forever: PS.Items[id] is nil, so the item can
+-- never be equipped, never read, and never cleaned up by anything on the read path.
+--
+-- They're pure dead weight — they can't render, can't be migrated (nothing reads them),
+-- and they accumulate every time the roster changes.
+-- ============================================================================
+
+local function PurgeOrphanRows()
+    -- PS.Items must be populated, otherwise every row looks orphaned and we'd wipe the
+    -- table. Bail rather than risk it.
+    if not PS or not PS.Items or table.Count(PS.Items) == 0 then
+        MsgN("[PS MIGRATE] Skipping orphan purge — PS.Items is empty (items not loaded yet).")
+        return
+    end
+
+    local rows = sql.Query("SELECT DISTINCT item_id FROM ps_customization")
+    if not rows then return end   -- nil = empty table or error; nothing to do either way
+
+    local purged, items = 0, {}
+    for _, row in ipairs(rows) do
+        local id = row.item_id
+        if id and not PS.Items[id] then
+            local res = sql.Query("SELECT COUNT(*) AS n FROM ps_customization WHERE item_id = " .. sql.SQLStr(id))
+            local n = tonumber(res and res[1] and res[1].n) or 0
+            sql.Query("DELETE FROM ps_customization WHERE item_id = " .. sql.SQLStr(id))
+            purged = purged + n
+            items[#items + 1] = id
+        end
+    end
+
+    if purged > 0 then
+        MsgN(string.format("[PS MIGRATE] Purged %d customization row(s) for %d deleted item(s): %s",
+            purged, #items, table.concat(items, ", ")))
+    end
+end
+
+-- Deferred to InitPostEntity: PS:Initialize runs from the autorun, so PS.Items is
+-- populated by the time this fires. Initialize itself is too early.
+hook.Add("InitPostEntity", "PS_PurgeOrphanCustomization", PurgeOrphanRows)
+
+concommand.Add("ps_purge_orphans", function(ply)
+    if IsValid(ply) then print("[ps_purge_orphans] Server console only.") return end
+    PurgeOrphanRows()
+end)
+
+-- ============================================================================
 -- LATE-JOIN SYNC
 -- Send equipped accessories' customizations to a newly joining player so they
 -- see existing players' cosmetics immediately.
