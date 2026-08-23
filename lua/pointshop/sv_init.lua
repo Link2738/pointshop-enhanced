@@ -21,40 +21,50 @@ local function PS_RateLimit(ply, action)
 	return true
 end
 
+-- Payload ceilings, checked BEFORE any net.Read* call.
+--
+-- net.ReadTable is the expensive part — it walks attacker-controlled data and allocates
+-- as it goes. A size check placed after it has already paid the cost it was meant to
+-- avoid, which is exactly what these handlers used to do. `length` is available on entry,
+-- so the guard belongs first.
+--
+-- A legit modify is a small text/colour/offset table; anything larger is an attempt to
+-- make the server do work. 2 KB is generous for real items.
+local PS_MAX_MODIFY_BITS = 16384   -- ~2 KB
+local PS_MAX_BUY_BITS    = 16384   -- buy carries optional try-before-you-buy mods
+local PS_MAX_PLAIN_BITS  = 2048    -- handlers that only carry an item id string
+
 net.Receive('PS_BuyItem', function(length, ply)
+	if length > PS_MAX_BUY_BITS then return end
+	if not PS_RateLimit(ply, 'buy') then return end
 	local item_id = net.ReadString()
 	local initial_mods = net.ReadBool() and net.ReadTable() or nil
-	if not PS_RateLimit(ply, 'buy') then return end
 	ply:PS_BuyItem(item_id, initial_mods)
 end)
 
 net.Receive('PS_SellItem', function(length, ply)
-	local item_id = net.ReadString()
+	if length > PS_MAX_PLAIN_BITS then return end
 	if not PS_RateLimit(ply, 'sell') then return end
-	ply:PS_SellItem(item_id)
+	ply:PS_SellItem(net.ReadString())
 end)
 
 net.Receive('PS_EquipItem', function(length, ply)
-	local item_id = net.ReadString()
+	if length > PS_MAX_PLAIN_BITS then return end
 	if not PS_RateLimit(ply, 'equip') then return end
-	ply:PS_EquipItem(item_id)
+	ply:PS_EquipItem(net.ReadString())
 end)
 
 net.Receive('PS_HolsterItem', function(length, ply)
-	local item_id = net.ReadString()
+	if length > PS_MAX_PLAIN_BITS then return end
 	if not PS_RateLimit(ply, 'holster') then return end
-	ply:PS_HolsterItem(item_id)
+	ply:PS_HolsterItem(net.ReadString())
 end)
 
--- Reject oversized modify payloads before deserializing. A legit modify is a small
--- text+color/offset table; anything large is an attempt to make net.ReadTable do
--- expensive work on attacker-controlled data. ~2 KB is generous for real items.
-local PS_MAX_MODIFY_BITS = 16384
 net.Receive('PS_ModifyItem', function(length, ply)
+	if length > PS_MAX_MODIFY_BITS then return end
+	if not PS_RateLimit(ply, 'modify') then return end
 	local item_id = net.ReadString()
 	local mods = net.ReadTable()
-	if not PS_RateLimit(ply, 'modify') then return end
-	if length > PS_MAX_MODIFY_BITS then return end
 	ply:PS_ModifyItem(item_id, mods)
 end)
 
@@ -223,7 +233,20 @@ util.AddNetworkString('PS_AdminItemsResponse')
 
 -- Admin request: fetch another player's items (not synced to other clients by default)
 net.Receive('PS_AdminRequestItems', function(len, ply)
-	if not (IsValid(ply) and ply:IsAdmin()) then return end
+	if not IsValid(ply) then return end
+
+	-- Respects the same config gate as every other admin handler; this one used to check
+	-- IsAdmin() alone, so it stayed open even with the admin tab disabled.
+	if not PS.Config.AdminCanAccessAdminTab and not PS.Config.SuperAdminCanAccessAdminTab then return end
+	local admin_allowed = PS.Config.AdminCanAccessAdminTab and ply:IsAdmin()
+	local super_allowed = PS.Config.SuperAdminCanAccessAdminTab and ply:IsSuperAdmin()
+	if not (admin_allowed or super_allowed) then return end
+
+	-- Rate limited: the response serialises a player's entire inventory.
+	ply._PS_LastAdminReq = ply._PS_LastAdminReq or 0
+	if CurTime() - ply._PS_LastAdminReq < 0.5 then return end
+	ply._PS_LastAdminReq = CurTime()
+
 	local target = net.ReadEntity()
 	if not IsValid(target) then return end
 	net.Start('PS_AdminItemsResponse')
@@ -275,6 +298,8 @@ end)
 -- console commands
 
 concommand.Add(PS.Config.ShopCommand, function(ply, cmd, args)
+	-- Run from the server console, ply is NULL — there's no menu to toggle.
+	if not IsValid(ply) then return end
 	ply:PS_ToggleMenu()
 end)
 

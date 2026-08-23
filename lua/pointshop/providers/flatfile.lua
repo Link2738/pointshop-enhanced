@@ -45,19 +45,23 @@ function PROVIDER:SaveItem( ply, item_id, data)
 	self:GiveItem(ply, item_id, data)
 end
 
+-- Both operate on `items` as read back from disk, NOT on ply.PS_Items. Using the
+-- in-memory table meant that if it wasn't populated yet — an equip landing before the
+-- load callback returns — the save wrote an inventory containing only that one item and
+-- destroyed the rest.
 function PROVIDER:GiveItem( ply, item_id, data)
 	self:GetData(ply, function(points, items)
-		local tmp = table.Copy(ply.PS_Items)
-		tmp[item_id] = data
-		self:SetData(ply, points, tmp)
+		items = items or {}
+		items[item_id] = data
+		self:SetData(ply, points, items)
 	end)
 end
 
 function PROVIDER:TakeItem( ply, item_id )
 	self:GetData(ply, function(points, items)
-		local tmp = table.Copy(ply.PS_Items)
-		tmp[item_id] = nil
-		self:SetData(ply, points, tmp)
+		items = items or {}
+		items[item_id] = nil
+		self:SetData(ply, points, items)
 	end)
 end
 

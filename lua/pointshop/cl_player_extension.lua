@@ -72,30 +72,56 @@ end
 -- clientside models
 -- Universal model coloring function
 -- Universal player model coloring function
+-- Both of these take a copy of the incoming colour rather than using it directly.
+-- The alpha fixup below used to write into the caller's table, and callers pass
+-- mods.color straight in — so applying a colour quietly rewrote the stored
+-- customization data as a side effect.
+--
+-- The colour is also stashed on the entity as a plain field instead of installing a
+-- closure over GetPlayerColor. The old version replaced the method on every call, so
+-- each apply allocated a fresh closure that permanently shadowed the real method and
+-- kept its captured colour alive.
+local function CopyColor(c)
+	if not c then return Color(255, 255, 255, 255) end
+	local a = c.a or 255
+	if a == 0 then a = 255 end
+	return Color(c.r or 255, c.g or 255, c.b or 255, a)
+end
+
+local function StorePlayerColor(ent, col)
+	ent.PS_AppliedColor = Vector(col.r / 255, col.g / 255, col.b / 255)
+	if not ent.PS_GetPlayerColorHooked then
+		ent.PS_GetPlayerColorHooked = true
+		ent.GetPlayerColor = function(self)
+			return self.PS_AppliedColor or Vector(1, 1, 1)
+		end
+	end
+end
+
 function PS:ApplyColorToPlayerModel(ply, color)
 	if not IsValid(ply) or not ply.SetColor then return end
-	if not color then color = Color(255,255,255,255) end
-	ply:SetColor(color)
-	ply.GetPlayerColor = function() return Vector(color.r/255, color.g/255, color.b/255) end
+	local col = CopyColor(color)
+	ply:SetColor(col)
+	StorePlayerColor(ply, col)
 end
+
 function PS:ApplyColorToModel(model, color, useColor2Proxy)
 	if not IsValid(model) then return end
-	if not color then color = Color(255,255,255,255) end
-	if color.a == 0 then color.a = 255 end
-	
+	local col = CopyColor(color)
+
 	if useColor2Proxy and model.SetColor2 then
-		model:SetColor2(Vector(color.r/255, color.g/255, color.b/255))
-		model:SetColor(Color(255, 255, 255, color.a))
+		model:SetColor2(Vector(col.r/255, col.g/255, col.b/255))
+		model:SetColor(Color(255, 255, 255, col.a))
 	else
-		if color.a < 255 then
+		if col.a < 255 then
 			model:SetRenderMode(RENDERMODE_TRANSCOLOR)
 		else
 			model:SetRenderMode(RENDERMODE_NORMAL)
 		end
-		model:SetColor(color)
+		model:SetColor(col)
 	end
-	
-	model.GetPlayerColor = function() return Vector(color.r/255, color.g/255, color.b/255) end
+
+	StorePlayerColor(model, col)
 end
 
 function Player:PS_AddClientsideModel(item_id)
@@ -145,6 +171,17 @@ function Player:PS_AddClientsideModel(item_id)
 		end
 	end
 	local mdl = ClientsideModel(ITEM.Model, RENDERGROUP_OPAQUE)
+	-- ClientsideModel returns NULL when the model isn't present on this client — the
+	-- missing-FastDL-content case. Calling :SetNoDraw on that throws and takes out the
+	-- rest of the handler, so the player ends up with no accessories at all rather than
+	-- just missing the one broken model.
+	if not IsValid(mdl) then
+		if PS and PS.Config and PS.Config.Debug then
+			print("[PS] ClientsideModel failed for " .. tostring(ITEM.Model) .. " (missing content?)")
+		end
+		return false
+	end
+
 	mdl:SetNoDraw(true)
 	mdl.PS_Modifications = modifications -- Store modifications on the model
 	if not PS.ClientsideModels[self] then PS.ClientsideModels[self] = {} end

@@ -15,9 +15,19 @@ PS_RemovalQueue = PS_RemovalQueue or {}
 -- SHARED
 -- ============================================================================
 
+-- Groups allowed to mark items for removal. A table rather than a hardcoded string so
+-- renaming the ULX group doesn't silently lock everyone out of the feature — but the
+-- default stays owner-only.
+--
+-- Deliberately NOT falling back to ply:IsSuperAdmin(): that's a privilege check, and
+-- other ranks commonly inherit superadmin in ULX, so it would widen this below owner.
+-- This feature deletes item files and purges saved data; it stays owner-gated. Add
+-- groups here explicitly if you want more.
+PS_RemovalQueueGroups = PS_RemovalQueueGroups or { owner = true }
+
 function PS_IsRemovalQueueAdmin(ply)
     if not IsValid(ply) then return false end
-    return ply:PS_GetUsergroup() == "owner"
+    return PS_RemovalQueueGroups[ply:PS_GetUsergroup()] == true
 end
 
 -- ============================================================================
@@ -41,17 +51,38 @@ if SERVER then
         file.Write(DATA_PATH, util.TableToJSON(PS_RemovalQueue, true))
     end
 
+    -- Sent only to players who can actually use the removal UI.
+    --
+    -- This used to go to everyone, including on join. The payload carries markedBy
+    -- SteamIDs and server-side Lua file paths, so every player on the server received a
+    -- list of who marked what and where those files live on disk — for a feature they
+    -- can't even open.
     local function Broadcast(target)
+        if target then
+            if not PS_IsRemovalQueueAdmin(target) then return end
+            net.Start("PS_RemovalQueue_Sync")
+                net.WriteTable(PS_RemovalQueue)
+            net.Send(target)
+            return
+        end
+
+        local recipients = {}
+        for _, p in ipairs(player.GetAll()) do
+            if PS_IsRemovalQueueAdmin(p) then recipients[#recipients + 1] = p end
+        end
+        if #recipients == 0 then return end
+
         net.Start("PS_RemovalQueue_Sync")
             net.WriteTable(PS_RemovalQueue)
-        if target then net.Send(target) else net.Broadcast() end
+        net.Send(recipients)
     end
 
     hook.Add("Initialize", "PS_LoadRemovalQueue", Load)
 
     hook.Add("PlayerInitialSpawn", "PS_SyncRemovalQueueOnJoin", function(ply)
         timer.Simple(1, function()
-            if IsValid(ply) then Broadcast(ply) end
+            -- Broadcast() re-checks, but bail early so non-admins never even reach it.
+            if IsValid(ply) and PS_IsRemovalQueueAdmin(ply) then Broadcast(ply) end
         end)
     end)
 

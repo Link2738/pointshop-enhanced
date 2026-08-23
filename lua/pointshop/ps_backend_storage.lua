@@ -20,14 +20,43 @@ end
 --   1. SQL row   (per-player override)
 --   2. ITEM.DefaultModifications  (designer default shipped with the item file)
 --   3. type-appropriate zero fallback (accessory or playermodel)
+-- Per-player row cache, keyed [steamid][itemID].
+--
+-- sql.QueryRow is synchronous, and the late-join sync reads once per other player per
+-- equipped accessory — 30 players with 8 accessories is ~240 blocking queries inside one
+-- timer callback, which is a visible hitch on every join. Rows only change through
+-- PS_SetCustomization, so the cache is authoritative as long as that invalidates.
+local customizationCache = {}
+
+hook.Add("PlayerDisconnected", "PS_ClearCustomizationCache", function(ply)
+    if IsValid(ply) then customizationCache[ply:SteamID()] = nil end
+end)
+
 function PS_GetCustomization(ply, itemID)
     if not IsValid(ply) or not itemID then return nil end
     local steamid = ply:SteamID()
+
+    local byPlayer = customizationCache[steamid]
+    if byPlayer then
+        local hit = byPlayer[itemID]
+        -- `false` is the cached "no row exists" marker, so it has to be distinguished
+        -- from a plain miss (nil) or every absent row re-queries on every read.
+        if hit ~= nil then
+            if hit == false then
+                -- fall through to the default layers below
+            else
+                return hit
+            end
+        end
+    end
 
     local row = sql.QueryRow(
         "SELECT mods FROM ps_customization WHERE steamid = " .. sql.SQLStr(steamid) ..
         " AND item_id = " .. sql.SQLStr(itemID)
     )
+
+    customizationCache[steamid] = customizationCache[steamid] or {}
+
     if row and row.mods and row.mods ~= "" then
         local ok, tbl = pcall(util.JSONToTable, row.mods)
         if ok and tbl then
@@ -41,9 +70,13 @@ function PS_GetCustomization(ply, itemID)
                     print(string.format("[PS MIGRATE] upgraded legacy row: %s / %s", steamid, tostring(itemID)))
                 end
             end
+            customizationCache[steamid][itemID] = normalized
             return normalized
         end
     end
+
+    -- No stored row. Cached as `false` so the miss isn't re-queried on every read.
+    customizationCache[steamid][itemID] = false
 
     -- Layer 2: owner override (data file) or item's Lua DefaultModifications
     if PS_GetItemDefault then
@@ -77,6 +110,11 @@ function PS_SetCustomization(ply, itemID, mods)
         "INSERT OR REPLACE INTO ps_customization (steamid, item_id, mods) VALUES (" ..
         sql.SQLStr(steamid) .. ", " .. sql.SQLStr(itemID) .. ", " .. sql.SQLStr(mods_json) .. ")"
     )
+
+    -- Keep the read cache in step. This is the only path that writes rows, so updating
+    -- here is what makes the cache safe to trust.
+    customizationCache[steamid] = customizationCache[steamid] or {}
+    customizationCache[steamid][itemID] = mods
 end
 
 -- ============================================================================
@@ -114,6 +152,9 @@ local function PurgeOrphanRows()
     end
 
     if purged > 0 then
+        -- Rows were deleted underneath the read cache; drop it wholesale rather than
+        -- trying to evict selectively.
+        customizationCache = {}
         MsgN(string.format("[PS MIGRATE] Purged %d customization row(s) for %d deleted item(s): %s",
             purged, #items, table.concat(items, ", ")))
     end
@@ -188,11 +229,27 @@ end)
 
 net.Receive("PS_Customization_PING", function(len, ply)
     if not IsValid(ply) then return end
+
+    -- Rate limited: every call runs a synchronous COUNT(*) against the table, so
+    -- unthrottled this is a one-client server stall. It's a diagnostic command, so a
+    -- long cooldown costs nothing.
+    ply._PS_LastPing = ply._PS_LastPing or 0
+    if CurTime() - ply._PS_LastPing < 2 then return end
+    ply._PS_LastPing = CurTime()
+
     local steamid = ply:SteamID()
     local rows = sql.Query("SELECT COUNT(*) as n FROM ps_customization WHERE steamid = " .. sql.SQLStr(steamid))
     local count = (rows and rows[1] and rows[1].n) or 0
+
+    -- sql.LastError() is deliberately not sent: it exposes server internals (schema,
+    -- file paths) to any client that asks. Failures are logged server-side instead.
+    local err = sql.LastError()
+    if err and err ~= "" then
+        MsgN("[PS SQL] PING query error for " .. steamid .. ": " .. tostring(err))
+    end
+
     net.Start("PS_Customization_PONG")
         net.WriteInt(tonumber(count) or 0, 16)
-        net.WriteString(tostring(sql.LastError() or ""))
+        net.WriteBool(err ~= nil and err ~= "")
     net.Send(ply)
 end)

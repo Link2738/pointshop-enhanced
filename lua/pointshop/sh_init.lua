@@ -283,7 +283,11 @@ function PS:LoadItems()
 					ITEM = {}
 					
 					ITEM.__index = ITEM
-					ITEM.ID = string.gsub(string.lower(name), '.lua', '')
+					-- '%.lua$' not '.lua': in a Lua pattern '.' matches ANY character and
+					-- gsub is global, so 'valuable.lua' became 'vble' and 'bluaitem.lua'
+					-- became 'item'. IDs are the database key, so a mangled one silently
+					-- orphans that item's saved data.
+					ITEM.ID = string.gsub(string.lower(name), '%.lua$', '')
 					ITEM.Category = CATEGORY.Name
 					ITEM.Price = 0
 					
@@ -344,7 +348,10 @@ function PS:LoadItems()
 				
 				for prop, val in pairs(item) do
 					if type(val) == "function" and not non_hooks[prop] then
-						hook.Add(prop, 'PS_Item_' .. item.Name .. '_' .. prop, function(...)
+						-- Keyed on ID, not Name: IDs are unique (they're the filename), display
+					-- names are not. Two items sharing a name silently overwrote each
+					-- other's hooks, so only the last one loaded actually ran.
+					hook.Add(prop, 'PS_Item_' .. item.ID .. '_' .. prop, function(...)
 							for _, ply in pairs(player.GetAll()) do
 								if ply:PS_HasItemEquipped(item.ID) then
 									item[prop](item, ply, ply.PS_Items[item.ID].Modifiers, unpack({...}))

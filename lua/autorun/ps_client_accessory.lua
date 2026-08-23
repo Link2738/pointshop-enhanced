@@ -51,8 +51,11 @@ if CLIENT then
     end)
 
     net.Receive("PS_Customization_PONG", function()
-        local count   = net.ReadInt(16)
-        local lastErr = net.ReadString()
-        print("[ps_customization_ping] rows=", count, " sql.LastError=", lastErr)
+        local count    = net.ReadInt(16)
+        local hadError = net.ReadBool()
+        -- The error text itself stays server-side (it leaks schema and paths); the
+        -- client only learns whether one occurred, and the detail is in the server log.
+        print("[ps_customization_ping] rows=", count,
+            hadError and " (server reported a SQL error — see server console)" or "")
     end)
 end

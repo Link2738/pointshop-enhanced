@@ -24,9 +24,17 @@ PS_ItemDefaultOverrides = PS_ItemDefaultOverrides or {}
 
 -- Returns true if the player holds the ULX "owner" group.
 -- Checked on both client (to hide the sub-panel) and server (to reject the net message).
+-- A table rather than a hardcoded string so renaming the ULX group doesn't silently
+-- lock everyone out — but the default stays owner-only.
+--
+-- Deliberately NOT falling back to ply:IsSuperAdmin(): that's a privilege check and
+-- other ranks commonly inherit it in ULX, which would widen this below owner. These
+-- defaults apply to every player on the server; add groups here explicitly if wanted.
+PS_ItemDefaultGroups = PS_ItemDefaultGroups or { owner = true }
+
 function PS_IsItemDefaultOwner(ply)
     if not IsValid(ply) then return false end
-    return ply:PS_GetUsergroup() == "owner"
+    return PS_ItemDefaultGroups[ply:PS_GetUsergroup()] == true
 end
 
 -- ============================================================================
@@ -215,12 +223,25 @@ if SERVER then
     -- NET: OWNER PANEL SAVE
     -- Receives a full mods table from the owner's in-game default editor panel.
     -- ============================================================================
+    local PS_MAX_DEFAULT_BITS = 16384   -- ~2 KB; a defaults table is small
+
     net.Receive("PS_ItemDefault_Set", function(len, ply)
+        -- Size and auth are both checked before any net.Read*. Reading first meant a
+        -- non-owner could make the server deserialize an arbitrary table and only then
+        -- be rejected — the expensive part had already run.
+        if len > PS_MAX_DEFAULT_BITS then return end
+        if not PS_IsItemDefaultOwner(ply) then return end
+
+        -- Owner-only, but still rate limited: the panel can fire on slider drag, and
+        -- every accepted write hits disk and broadcasts to everyone.
+        ply._PS_LastDefaultSet = ply._PS_LastDefaultSet or 0
+        if CurTime() - ply._PS_LastDefaultSet < 0.25 then return end
+        ply._PS_LastDefaultSet = CurTime()
+
         local itemID = net.ReadString()
         local mods   = net.ReadTable()
         local clear  = net.ReadBool()
 
-        if not PS_IsItemDefaultOwner(ply) then return end
         if not itemID or itemID == "" then return end
 
         if clear then

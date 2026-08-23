@@ -19,7 +19,10 @@ function Player:PS_PlayerSpawn()
 		if !IsValid(self) then return end
 		for item_id, item in pairs(self.PS_Items) do
 			local ITEM = PS.Items[item_id]
-			if item.Equipped then
+			-- An item deleted from the server while a player still owns it leaves ITEM
+			-- nil. Without this the next line errors and aborts the WHOLE loop, so one
+			-- stale entry means the player spawns with nothing equipped at all.
+			if ITEM and item.Equipped then
 				-- Skip (but keep equipped) playermodel items from wrong-team categories
 				-- so only the model matching the player's current team gets applied
 				local cat_name = ITEM.Category
@@ -56,7 +59,7 @@ function Player:PS_PlayerDeath()
 	for item_id, item in pairs(self.PS_Items) do
 		if item.Equipped then
 			local ITEM = PS.Items[item_id]
-			ITEM:OnHolster(self, item.Modifiers)
+			if ITEM then ITEM:OnHolster(self, item.Modifiers) end
 		end
 	end
 end
@@ -143,7 +146,7 @@ end
 function Player:PS_CanPerformAction(itemname)
 	local allowed = true
 	local itemexcept = false
-	if itemname then itemexcept = PS.Items[itemname].Except end
+	if itemname and PS.Items[itemname] then itemexcept = PS.Items[itemname].Except end
 
 	if (self.IsSpec and self:IsSpec()) and not itemexcept then allowed = false end
 	if not self:Alive() and not itemexcept then allowed = false end
@@ -283,11 +286,17 @@ function Player:PS_BuyItem(item_id, initial_mods)
 		end
 	end
 
+	-- ITEM:OnBuy is item-supplied code. Run it BEFORE taking payment and inside a pcall:
+	-- if it errors, the player keeps their points instead of paying for nothing.
+	local ok, err = pcall(function() ITEM:OnBuy(self) end)
+	if not ok then
+		ErrorNoHalt("[PointShop] OnBuy failed for '" .. tostring(item_id) .. "': " .. tostring(err) .. "\n")
+		self:PS_Notify('Something went wrong buying that item. You have not been charged.')
+		return finish(false)
+	end
+
 	self:PS_TakePoints(points)
-
 	self:PS_Notify('Bought ', ITEM.Name, ' for ', points, ' ', PS.Config.PointsName)
-
-	ITEM:OnBuy(self)
 
 	hook.Call( "PS_ItemPurchased", nil, self, item_id )
 
@@ -296,18 +305,35 @@ function Player:PS_BuyItem(item_id, initial_mods)
 		return finish(true)
 	end
 
-	self:PS_GiveItem(item_id)
-	-- Persist try-before-you-buy mods BEFORE equip: OnEquip resolves via
-	-- PS_GetCustomization, which must find the SQL row so the item applies
-	-- and broadcasts with the pre-purchase customization on first equip.
-	if initial_mods and PS_SetCustomization and PS_SanitizeCustomizationData then
-		local safe = PS_SanitizeCustomizationData(initial_mods, ITEM.TYPE or "accessory")
-		if next(safe) ~= nil then
-			PS_SetCustomization(self, item_id, safe)
+	-- Everything past payment is wrapped too. An error here must not leave
+	-- _PS_Purchasing latched, or that player can never buy anything again without
+	-- reconnecting — finish() below is what clears it, and it has to be reached.
+	local ok2, err2 = pcall(function()
+		self:PS_GiveItem(item_id)
+
+		-- Persist try-before-you-buy mods BEFORE equip: OnEquip resolves via
+		-- PS_GetCustomization, which must find the SQL row so the item applies
+		-- and broadcasts with the pre-purchase customization on first equip.
+		if initial_mods and PS_SetCustomization and PS_SanitizeCustomizationData then
+			local safe = PS_SanitizeCustomizationData(initial_mods, ITEM.TYPE or "accessory")
+			if next(safe) ~= nil then
+				PS_SetCustomization(self, item_id, safe)
+			end
+		end
+
+		self:PS_EquipItem(item_id)
+	end)
+
+	if not ok2 then
+		-- The item was paid for; grant it even if equipping blew up, so the purchase
+		-- isn't silently lost.
+		ErrorNoHalt("[PointShop] Post-purchase step failed for '" .. tostring(item_id) .. "': " .. tostring(err2) .. "\n")
+		if not self:PS_HasItem(item_id) then
+			pcall(function() self:PS_GiveItem(item_id) end)
 		end
 	end
-	self:PS_EquipItem(item_id)
-	finish(true)
+
+	return finish(true)
 end
 
 function Player:PS_SellItem(item_id)
@@ -332,18 +358,36 @@ function Player:PS_SellItem(item_id)
 	end
 
 	local points = math.max(0, PS.Config.CalculateSellPrice(self, ITEM))
+
+	-- Item-supplied callbacks run first, in a pcall. Payment used to be credited before
+	-- these, so an error left the player paid AND still holding the item.
+	local ok, err = pcall(function()
+		if self.PS_Items[item_id] and self.PS_Items[item_id].Equipped then
+			ITEM:OnHolster(self)
+		end
+		ITEM:OnSell(self)
+	end)
+
+	if not ok then
+		ErrorNoHalt("[PointShop] OnSell/OnHolster failed for '" .. tostring(item_id) .. "': " .. tostring(err) .. "\n")
+		self:PS_Notify('Something went wrong selling that item. Nothing has changed.')
+		return false
+	end
+
+	-- Remove before paying: if TakeItem fails the player keeps the item and gets nothing,
+	-- which is recoverable. Paying first and failing to remove hands out free points.
+	if not self:PS_TakeItem(item_id) then
+		self:PS_Notify('Something went wrong selling that item. Nothing has changed.')
+		return false
+	end
+
 	self:PS_GivePoints(points)
 
-	if self.PS_Items[item_id] and self.PS_Items[item_id].Equipped then
-		ITEM:OnHolster(self)
-	end
-	ITEM:OnSell(self)
-	
 	hook.Call( "PS_ItemSold", nil, self, item_id )
 
 	self:PS_Notify('Sold ', ITEM.Name, ' for ', points, ' ', PS.Config.PointsName)
 
-	return self:PS_TakeItem(item_id)
+	return true
 end
 
 function Player:PS_HasItem(item_id)
@@ -361,7 +405,7 @@ function Player:PS_NumItemsEquippedFromCategory(cat_name)
 
 	for item_id, item in pairs(self.PS_Items) do
 		local ITEM = PS.Items[item_id]
-		if ITEM.Category == cat_name and item.Equipped then
+		if ITEM and ITEM.Category == cat_name and item.Equipped then
 			count = count + 1
 		end
 	end
@@ -372,6 +416,10 @@ end
 -- equip/hoster items
 
 function Player:PS_EquipItem(item_id)
+	-- Buy and sell already gate on this; equip/holster/modify didn't, and they all reach
+	-- the provider's save path. Acting before the load callback returns means writing
+	-- against an inventory that isn't populated yet.
+	if not self.PS_DataLoaded then return false end
 	if not PS.Items[item_id] then return false end
 	if not self:PS_HasItem(item_id) then return false end
 	if not self:PS_CanPerformAction(item_id) then return false end
@@ -410,7 +458,7 @@ function Player:PS_EquipItem(item_id)
 
 	if PS.Items[item_id].Slot then
 		for id, item in pairs(self.PS_Items) do
-			if item_id ~= id and PS.Items[id].Slot and PS.Items[id].Slot == PS.Items[item_id].Slot and self.PS_Items[id].Equipped then
+			if item_id ~= id and PS.Items[id] and PS.Items[id].Slot and PS.Items[id].Slot == PS.Items[item_id].Slot and self.PS_Items[id].Equipped then
 				self:PS_HolsterItem(id)
 			end
 		end
@@ -462,9 +510,12 @@ function Player:PS_EquipItem(item_id)
 		local NumEquipped = self.PS_NumItemsEquippedFromCategory
 		for id, item in pairs(self.PS_Items) do
 			if not self:PS_HasItemEquipped(id) then continue end
+			if not PS.Items[id] then continue end
 			local CatName = PS.Items[id].Category
 			local Cat = PS:FindCategoryByName( CatName )
-			if not Cat.SharedCategories then continue end
+			-- FindCategoryByName returns false, not nil, when there's no match — so this
+			-- has to test Cat itself before indexing it.
+			if not Cat or not Cat.SharedCategories then continue end
 			for _, SharedCategory in pairs( Cat.SharedCategories ) do
 				if SharedCategory == CATEGORY.Name then
 					if Cat.AllowedEquipped > -1 and CATEGORY.AllowedEquipped > -1 then
@@ -492,6 +543,7 @@ function Player:PS_EquipItem(item_id)
 end
 
 function Player:PS_HolsterItem(item_id)
+	if not self.PS_DataLoaded then return false end
 	if not PS.Items[item_id] then return false end
 	if not self:PS_HasItem(item_id) then return false end
 	if not self:PS_CanPerformAction(item_id) then return false end
@@ -542,6 +594,7 @@ local function Sanitize( modifications ) -- default when item has no SanitizeTab
 end
 
 function Player:PS_ModifyItem(item_id, modifications)
+	if not self.PS_DataLoaded then return false end
 	if not PS.Items[item_id] then return false end
 	if not self:PS_HasItem(item_id) then return false end
 	if type(modifications) ~= "table" then return false end

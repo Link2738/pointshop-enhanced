@@ -185,6 +185,9 @@ if SERVER then
     hook.Add("PlayerDisconnected", "PS_CleanupRateLimits", function(ply)
         local steamid = ply:SteamID()
         PS_CustomizationRateLimits[steamid] = nil
+        -- The request limiter writes under a separate "<steamid>_request" key; clearing
+        -- only the bare steamid left that one behind on every disconnect.
+        PS_CustomizationRateLimits[steamid .. "_request"] = nil
         RATE_LIMIT_VIOLATIONS[steamid] = nil
     end)
     
@@ -383,8 +386,20 @@ if SERVER then
             local r = net.ReadUInt(8)
             local g = net.ReadUInt(8)
             local b = net.ReadUInt(8)
-            -- Values are already 0-255 from UInt(8), safe to apply
-            ply:SetPlayerColor(Vector(r / 255, g / 255, b / 255))
+
+            -- Branch on UseColor2Proxy the same way the save path does. Preview used to
+            -- always call SetPlayerColor, so for a modulation-path model the preview and
+            -- the applied result disagreed — you'd tune a colour that then changed on
+            -- Apply. Values are already 0-255 from UInt(8), so no clamping needed.
+            local useColor2 = PS.Items and PS.Items[itemID] and PS.Items[itemID].UseColor2Proxy or false
+            if useColor2 then
+                ply:SetColor(Color(255, 255, 255, 255))
+                ply:SetPlayerColor(Vector(r / 255, g / 255, b / 255))
+            else
+                ply:SetColor(Color(r, g, b, 255))
+                ply:SetPlayerColor(Vector(1, 1, 1))
+            end
+            ply:SetRenderMode(RENDERMODE_NORMAL)
         end
     end)
     

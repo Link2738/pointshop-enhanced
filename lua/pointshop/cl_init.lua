@@ -3,22 +3,17 @@
 	first file included clientside.
 ]]--
 
--- [PS DEBUG] Intercept SetColor calls on player entities to find who calls SetColor after broadcast
--- Remove this block once the culprit is found
-if PS and PS.Config and PS.Config.Debug then
-    local playerMeta = FindMetaTable("Player")
-    local originalSetColor = playerMeta.SetColor
-    playerMeta.SetColor = function(self, ...)
-        -- Log if color is not white (not a reset)
-        local c = (...)
-        if c and (c.r ~= 255 or c.g ~= 255 or c.b ~= 255) then
-            print(string.format("[PS SETCOLOR INTERCEPT] Player %s SetColor(%d,%d,%d) called from:", 
-                IsValid(self) and self:Nick() or "?", c.r or 0, c.g or 0, c.b or 0))
-            print(debug.traceback("", 2))
-        end
-        return originalSetColor(self, ...)
-    end
-end
+-- REMOVED: a SetColor interceptor that monkey-patched Player.SetColor globally to trace
+-- who was recolouring players after a broadcast.
+--
+-- It never ran. The guard was `if PS and PS.Config and PS.Config.Debug`, but this sits
+-- above `include "sh_init.lua"` — which is what creates PS — so PS was always nil here
+-- and the block was dead from the day it was written.
+--
+-- Worth knowing before reinstating it: the patch was unconditional and permanent once
+-- applied, replacing the method for every addon on the client for the rest of the
+-- session. If that trace is needed again, hook it behind a console command so it can be
+-- turned off, and place it after the include.
 
 include "sh_init.lua"
 include "cl_player_extension.lua"
@@ -521,9 +516,20 @@ hook.Add('PostPlayerDraw', 'PS_PostPlayerDraw', function(ply)
     
     if not PS.ClientsideModels[ply] then return end
     for item_id, model in pairs(PS.ClientsideModels[ply]) do
-        if not PS.Items[item_id] then PS.ClientsideModels[ply][item_id] = nil continue end
+        -- Remove the entity before dropping the reference. Nilling the table entry on
+        -- its own orphans the ClientsideModel — it stays alive, holding a slot against
+        -- the clientside entity cap, with nothing left pointing at it.
+        if not PS.Items[item_id] then
+            if IsValid(model) then model:Remove() end
+            PS.ClientsideModels[ply][item_id] = nil
+            continue
+        end
         local ITEM = PS.Items[item_id]
-        if not ITEM.Attachment and not ITEM.Bone then PS.ClientsideModels[ply][item_id] = nil continue end
+        if not ITEM.Attachment and not ITEM.Bone then
+            if IsValid(model) then model:Remove() end
+            PS.ClientsideModels[ply][item_id] = nil
+            continue
+        end
         local pos = Vector()
         local ang = Angle()
         if ITEM.Attachment then
@@ -538,6 +544,11 @@ hook.Add('PostPlayerDraw', 'PS_PostPlayerDraw', function(ply)
             local bone_id = ply:LookupBone(boneOverride or ITEM.Bone)
             if not bone_id then continue end
             pos, ang = ply:GetBonePosition(bone_id)
+            -- GetBonePosition returns nil,nil when the bone matrix isn't set up yet,
+            -- which happens routinely on the spawn frame. Passing that on ends in
+            -- model:SetPos(nil), and because this is PostPlayerDraw the error repeats
+            -- every frame rather than once.
+            if not pos or not ang then continue end
         end
         model, pos, ang = ITEM:ModifyClientsideModel(ply, model, pos, ang)
         model:SetPos(pos)
