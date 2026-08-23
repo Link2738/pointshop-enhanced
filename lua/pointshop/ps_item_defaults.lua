@@ -35,14 +35,18 @@ end
 
 -- Returns the effective default mods for an item: owner override if present,
 -- otherwise the item's own DefaultModifications, otherwise nil.
+-- Both sources are normalized on the way out: owner overrides may have been written by
+-- an older build, and item files are hand-authored — on a distributed copy of this addon
+-- they can be in either shape. Normalizing here means every consumer sees offset/ang
+-- regardless of how the file was written.
 function PS_GetItemDefault(itemID)
     if not itemID then return nil end
     if PS_ItemDefaultOverrides[itemID] then
-        return table.Copy(PS_ItemDefaultOverrides[itemID])
+        return (PS_NormalizeMods(table.Copy(PS_ItemDefaultOverrides[itemID])))
     end
     local ITEM = PS and PS.Items and PS.Items[itemID]
     if ITEM and ITEM.DefaultModifications then
-        return table.Copy(ITEM.DefaultModifications)
+        return (PS_NormalizeMods(table.Copy(ITEM.DefaultModifications)))
     end
     return nil
 end

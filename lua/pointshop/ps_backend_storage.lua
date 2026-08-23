@@ -30,7 +30,19 @@ function PS_GetCustomization(ply, itemID)
     )
     if row and row.mods and row.mods ~= "" then
         local ok, tbl = pcall(util.JSONToTable, row.mods)
-        if ok and tbl then return tbl end
+        if ok and tbl then
+            -- Upgrade legacy rows (offsetX/Y/Z, axis+axisDeg, scalar rotation) on read.
+            -- Written straight back so each row converts once instead of on every read,
+            -- and so the stored data ends up in the shape the readers expect.
+            local normalized, changed = PS_NormalizeMods(tbl)
+            if changed then
+                PS_SetCustomization(ply, itemID, normalized)
+                if PS and PS.Config and PS.Config.Debug then
+                    print(string.format("[PS MIGRATE] upgraded legacy row: %s / %s", steamid, tostring(itemID)))
+                end
+            end
+            return normalized
+        end
     end
 
     -- Layer 2: owner override (data file) or item's Lua DefaultModifications
@@ -43,8 +55,9 @@ function PS_GetCustomization(ply, itemID)
     if ITEM then
         if ITEM.Attachment or ITEM.Bone or ITEM.TYPE == "accessory" then
             return {
-                scale = 1, offsetX = 0, offsetY = 0, offsetZ = 0,
-                rotation = 0, axis = "Right", axisDeg = -90,
+                scale = 1,
+                offset = {0, 0, 0},
+                ang = {-90, 0, 0},
                 color = Color(255, 255, 255, 255)
             }
         end

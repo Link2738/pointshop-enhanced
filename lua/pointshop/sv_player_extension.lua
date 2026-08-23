@@ -193,7 +193,7 @@ function Player:PS_GiveItem(item_id)
 
 	PS:GivePlayerItem(self, item_id, self.PS_Items[item_id])
 
-	self:PS_SendItems()
+	self:PS_SendItemDelta(PS_DELTA_ADD, item_id)
 
 	return true
 end
@@ -206,7 +206,7 @@ function Player:PS_TakeItem(item_id)
 
 	PS:TakePlayerItem(self, item_id)
 
-	self:PS_SendItems()
+	self:PS_SendItemDelta(PS_DELTA_REMOVE, item_id)
 
 	return true
 end
@@ -488,7 +488,7 @@ function Player:PS_EquipItem(item_id)
 
 	PS:SavePlayerItem(self, item_id, self.PS_Items[item_id])
 
-	self:PS_SendItems()
+	self:PS_SendItemDelta(PS_DELTA_UPDATE, item_id)
 end
 
 function Player:PS_HolsterItem(item_id)
@@ -522,7 +522,7 @@ function Player:PS_HolsterItem(item_id)
 
 	PS:SavePlayerItem(self, item_id, self.PS_Items[item_id])
 
-	self:PS_SendItems()
+	self:PS_SendItemDelta(PS_DELTA_UPDATE, item_id)
 end
 
 
@@ -563,10 +563,10 @@ function Player:PS_ModifyItem(item_id, modifications)
 	ITEM:OnModify(self, self.PS_Items[item_id].Modifiers)
 
 	hook.Call( "PS_ItemUpdated", nil, self, item_id, PS_ITEM_MODIFY, modifications )
-	
+
 	PS:SavePlayerItem(self, item_id, self.PS_Items[item_id])
 
-	self:PS_SendItems()
+	self:PS_SendItemDelta(PS_DELTA_UPDATE, item_id)
 end
 
 -- clientside Models
@@ -575,8 +575,12 @@ function Player:PS_AddClientsideModel(item_id)
 	if not PS.Items[item_id] then return false end
 	if not self:PS_HasItem(item_id) then return false end
 
+	-- EntIndex is sent alongside the entity because net.ReadEntity() returns NULL on the
+	-- client when the player hasn't been networked yet. Without an index the client has
+	-- no identity to queue the pending item against.
 	net.Start('PS_AddClientsideModel')
 		net.WriteEntity(self)
+		net.WriteUInt(self:EntIndex(), 13)
 		net.WriteString(item_id)
 	net.Broadcast()
 
@@ -610,15 +614,69 @@ end
 function Player:PS_SendPoints()
 	net.Start('PS_Points')
 		net.WriteEntity(self)
+		net.WriteUInt(self:EntIndex(), 13)  -- see PS_SendItems for why
 		net.WriteInt(self.PS_Points, 32)
 	net.Send(self)  -- Send only to this player (privacy + efficiency)
 end
 
+-- Full inventory sync. Kept for the three cases that genuinely need everything:
+-- initial load, an explicit client re-request, and the admin clear command.
+-- Single-item changes go through PS_SendItemDelta instead — see below.
 function Player:PS_SendItems()
+	-- EntIndex accompanies the entity because this fires ~0.1s after the player's data
+	-- loads, which is right on the boundary of the entity being networked to the client.
+	-- Confirmed in a live dump: the join sync arrived the same second as InitPostEntity
+	-- with net.ReadEntity() returning NULL, so the whole inventory was silently dropped
+	-- and only recovered when opening the shop triggered a second full sync. The index
+	-- lets the client queue it and apply once the entity resolves.
 	net.Start('PS_Items')
 		net.WriteEntity(self)
+		net.WriteUInt(self:EntIndex(), 13)
 		net.WriteTable(self.PS_Items)
 	net.Send(self)  -- Send only to item owner (other clients get PS_AddClientsideModel messages)
+end
+
+-- Single-item delta. Replaces the full-table send for equip/holster/modify/give/take.
+--
+-- net.WriteTable serialises every key and value with a type tag and writes numbers as
+-- 8-byte doubles, so an untouched `offset = {0,0,0}` costs ~54 bytes to say "nothing
+-- here". A 20-item inventory is several KB, and that whole payload used to go out every
+-- time one boolean flipped. PS_WriteModifiers emits a 7-bit flag header and only the
+-- fields actually present, as floats — typically ~40 bytes for the whole message.
+--
+-- op is one of PS_DELTA_ADD / PS_DELTA_REMOVE / PS_DELTA_UPDATE (sh_item_delta.lua).
+function Player:PS_SendItemDelta(op, item_id)
+	if not item_id then return end
+
+	local entry = self.PS_Items and self.PS_Items[item_id]
+
+	-- Nothing to describe: fall back to a full sync rather than sending a delta that
+	-- references an item the client can't resolve.
+	if op ~= PS_DELTA_REMOVE and not entry then
+		self:PS_SendItems()
+		return
+	end
+
+	net.Start('PS_ItemDelta')
+		net.WriteEntity(self)
+		net.WriteUInt(op, 2)
+		net.WriteString(item_id)
+
+		if op ~= PS_DELTA_REMOVE then
+			net.WriteBool(entry.Equipped and true or false)
+			PS_WriteModifiers(entry.Modifiers)
+		end
+	net.Send(self)
+
+	if PS and PS.Config and PS.Config.Debug then
+		local opName = (op == PS_DELTA_ADD and "ADD")
+			or (op == PS_DELTA_REMOVE and "REMOVE")
+			or (op == PS_DELTA_UPDATE and "UPDATE") or ("?" .. tostring(op))
+		print(string.format("[PS DELTA] -> %s  op=%s id=%s equipped=%s (inventory has %d items)",
+			self:Nick(), opName, tostring(item_id),
+			entry and tostring(entry.Equipped) or "n/a",
+			table.Count(self.PS_Items or {})))
+	end
 end
 
 function Player:PS_SendClientsideModels()

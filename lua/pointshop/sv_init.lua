@@ -199,6 +199,8 @@ end)
 -- ugly networked strings
 
 util.AddNetworkString('PS_Items')
+util.AddNetworkString('PS_ItemDelta')
+util.AddNetworkString('PS_DeltaSelfTest')
 util.AddNetworkString('PS_Points')
 util.AddNetworkString('PS_BuyItem')
 util.AddNetworkString('PS_SellItem')
@@ -228,6 +230,46 @@ net.Receive('PS_AdminRequestItems', function(len, ply)
 		net.WriteEntity(target)
 		net.WriteTable(target.PS_Items or {})
 	net.Send(ply)
+end)
+
+-- Delta protocol self-test. Writes every vector in PS_DeltaTestVectors over the real
+-- net layer; the client reads them back and diffs against its own copy of the same
+-- table (see the receiver in cl_init.lua). Catches read/write asymmetry — a field
+-- written in one order and read in another, or at a mismatched bit width — which
+-- otherwise corrupts the rest of the stream silently.
+--
+--   ps_delta_selftest          run against every player
+--   ps_delta_selftest <name>   run against one player
+--
+-- Results print in the *client* console of whoever is tested.
+concommand.Add('ps_delta_selftest', function(ply, cmd, args)
+	if IsValid(ply) and not ply:IsSuperAdmin() then return end
+
+	local targets = {}
+	if args and args[1] then
+		local found = string.lower(args[1])
+		for _, p in ipairs(player.GetAll()) do
+			if string.find(string.lower(p:Nick()), found, 1, true) then table.insert(targets, p) end
+		end
+	else
+		targets = player.GetAll()
+	end
+
+	if #targets == 0 then
+		MsgN("[PS delta] No matching players.")
+		return
+	end
+
+	for _, p in ipairs(targets) do
+		for i, vec in ipairs(PS_DeltaTestVectors) do
+			net.Start('PS_DeltaSelfTest')
+				net.WriteUInt(i, 8)
+				PS_WriteModifiers(vec.mods)
+			net.Send(p)
+		end
+		MsgN(string.format("[PS delta] Sent %d test vectors to %s — results are in their client console.",
+			#PS_DeltaTestVectors, p:Nick()))
+	end
 end)
 
 -- console commands

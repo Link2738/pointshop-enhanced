@@ -3,7 +3,7 @@
     Copy to a real filename to use it.
 
     Same schema as any playermodel. __category.lua restricts this category to the bear
-    teams (CATEGORY.AllowedTeams = { 2, 3 } = TEAM_BEAR, TEAM_INFTBEAR), enforced
+    teams (CATEGORY.AllowedTeams = { 2 } = TEAM_BEAR), enforced
     server-side by PS:CanEquipForTeam — so only bears can equip models placed here.
 ]]
 

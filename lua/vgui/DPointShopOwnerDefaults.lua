@@ -167,9 +167,11 @@ function PANEL:SetItem(item)
         local ang = defaults.ang    or {}
 
         SectionTitle("Position")
-        Slider("Offset X", "offsetX", -30, 30, 2):SetValue(off[1] or off.x or seed("offsetX", 0))
-        Slider("Offset Y", "offsetY", -30, 30, 2):SetValue(off[2] or off.y or seed("offsetY", 0))
-        Slider("Offset Z", "offsetZ", -30, 30, 2):SetValue(off[3] or off.z or seed("offsetZ", 0))
+        -- "offsetX" here is the slider's key, not a stored data field — the value always
+        -- comes from defaults.offset, the {x,y,z} table.
+        Slider("Offset X", "offsetX", -30, 30, 2):SetValue(off[1] or off.x or 0)
+        Slider("Offset Y", "offsetY", -30, 30, 2):SetValue(off[2] or off.y or 0)
+        Slider("Offset Z", "offsetZ", -30, 30, 2):SetValue(off[3] or off.z or 0)
         Spacer()
         SectionTitle("Rotation")
         Slider("Pitch", "pitch", -180, 180, 1):SetValue(ang[1] or seed("pitch", 0))

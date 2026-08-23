@@ -21,12 +21,8 @@ ITEM.UseColor2Proxy = false                         -- true only if the model ha
 -- Starting transform used the first time a player customizes this item.
 ITEM.DefaultModifications = {
     scale = 1,                          -- clamped 0.1 - 2
-    offsetX = 0,                        -- clamped -30 - 30
-    offsetY = 0,
-    offsetZ = 0,
-    rotation = 0,                       -- 0 - 360, spin around the bone's up axis
-    axis = "Right",                     -- "Right" | "Up" | "Forward"
-    axisDeg = -90,                      -- -180 - 180, tilt along the chosen axis
+    offset = {0, 0, 0},
+    ang = {-90, 0, 0},
     color = Color(255, 255, 255, 255),
 }
 

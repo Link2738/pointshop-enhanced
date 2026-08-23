@@ -22,10 +22,11 @@ PS_DELTA_UPDATE = 3   -- equip / holster / modify (send current state)
 -- Modifier bitmask flags (7-bit field)
 -- ─────────────────────────────────────────────────────────────────────
 local MOD_SCALE     = 1   -- number
-local MOD_OFFSET    = 2   -- 3x float (offsetX/Y/Z or offset table)
-local MOD_ROTATION  = 4   -- number
-local MOD_AXIS      = 8   -- string enum: "Right" | "Up" | "Forward"
-local MOD_AXISDEG   = 16  -- number
+local MOD_OFFSET    = 2   -- 3x float (offset table)
+-- Bits 4, 8 and 16 are RETIRED: they carried the legacy `rotation` scalar, the
+-- `axis` string enum and `axisDeg`. Rotation is now `ang` only (EXT_ANG). The bit
+-- values are left documented rather than reused so an old client talking to a new
+-- server desyncs loudly instead of silently misreading a field.
 local MOD_COLOR     = 32  -- Color (r,g,b,a as 4 bytes)
 local MOD_EXTRA     = 64  -- extended fields present (skin, bodygroups, playercolor, ang, text)
 
@@ -39,14 +40,12 @@ local EXT_ANG          = 8
 local EXT_TEXT         = 16
 
 -- ─────────────────────────────────────────────────────────────────────
--- Helper: normalize offset from legacy offsetX/Y/Z or Vector to {x,y,z}
+-- Helper: normalize offset from a {x,y,z} table or a Vector
 -- ─────────────────────────────────────────────────────────────────────
 local function NormalizeOffset(mods)
 	if mods.offset then
 		local o = mods.offset
 		return tonumber(o[1] or o.x) or 0, tonumber(o[2] or o.y) or 0, tonumber(o[3] or o.z) or 0
-	elseif mods.offsetX or mods.offsetY or mods.offsetZ then
-		return tonumber(mods.offsetX) or 0, tonumber(mods.offsetY) or 0, tonumber(mods.offsetZ) or 0
 	end
 	return nil
 end
@@ -85,10 +84,7 @@ function PS_WriteModifiers(mods)
 	-- Build primary flags
 	local flags = 0
 	if mods.scale                                         then flags = bit.bor(flags, MOD_SCALE) end
-	if mods.offset or mods.offsetX or mods.offsetY or mods.offsetZ then flags = bit.bor(flags, MOD_OFFSET) end
-	if mods.rotation                                      then flags = bit.bor(flags, MOD_ROTATION) end
-	if mods.axis                                          then flags = bit.bor(flags, MOD_AXIS) end
-	if mods.axisDeg                                       then flags = bit.bor(flags, MOD_AXISDEG) end
+	if mods.offset                                        then flags = bit.bor(flags, MOD_OFFSET) end
 	if mods.color                                         then flags = bit.bor(flags, MOD_COLOR) end
 
 	-- Build extended flags
@@ -114,20 +110,6 @@ function PS_WriteModifiers(mods)
 		net.WriteFloat(oz)
 	end
 
-	if bit.band(flags, MOD_ROTATION) ~= 0 then
-		net.WriteFloat(mods.rotation)
-	end
-
-	if bit.band(flags, MOD_AXIS) ~= 0 then
-		-- Encode axis enum as 2 bits: 0=Right, 1=Up, 2=Forward
-		local axisMap = { Right = 0, Up = 1, Forward = 2 }
-		net.WriteUInt(axisMap[mods.axis] or 0, 2)
-	end
-
-	if bit.band(flags, MOD_AXISDEG) ~= 0 then
-		net.WriteFloat(mods.axisDeg)
-	end
-
 	if bit.band(flags, MOD_COLOR) ~= 0 then
 		local r, g, b, a = NormalizeColor(mods.color)
 		net.WriteUInt(r, 8)
@@ -145,10 +127,14 @@ function PS_WriteModifiers(mods)
 		end
 
 		if bit.band(extFlags, EXT_BODYGROUPS) ~= 0 then
-			-- Count entries, write count + key/value pairs (both small ints)
+			-- Count entries, write count + key/value pairs (both small ints).
+			-- Count is 6 bits, not 5: bodygroup IDs are 0-31, so there can be 32 of them,
+			-- and the sanitizer in ps_backend_unified.lua permits exactly 32. A 5-bit
+			-- count caps at 31 and would silently truncate, desyncing the whole net
+			-- stream and corrupting every field read after it.
 			local count = 0
 			for _ in pairs(mods.bodygroups) do count = count + 1 end
-			net.WriteUInt(count, 5)  -- max 31 bodygroups
+			net.WriteUInt(count, 6)  -- max 63, covers the 32 possible bodygroups
 			for bgID, bgVal in pairs(mods.bodygroups) do
 				net.WriteUInt(bgID, 5)   -- bodygroup index 0-31
 				net.WriteUInt(bgVal, 4)  -- bodygroup value 0-15
@@ -196,19 +182,6 @@ function PS_ReadModifiers()
 		mods.offset = { net.ReadFloat(), net.ReadFloat(), net.ReadFloat() }
 	end
 
-	if bit.band(flags, MOD_ROTATION) ~= 0 then
-		mods.rotation = net.ReadFloat()
-	end
-
-	if bit.band(flags, MOD_AXIS) ~= 0 then
-		local axisLookup = { [0] = "Right", [1] = "Up", [2] = "Forward" }
-		mods.axis = axisLookup[net.ReadUInt(2)] or "Right"
-	end
-
-	if bit.band(flags, MOD_AXISDEG) ~= 0 then
-		mods.axisDeg = net.ReadFloat()
-	end
-
 	if bit.band(flags, MOD_COLOR) ~= 0 then
 		mods.color = Color(net.ReadUInt(8), net.ReadUInt(8), net.ReadUInt(8), net.ReadUInt(8))
 	end
@@ -222,7 +195,7 @@ function PS_ReadModifiers()
 
 		if bit.band(extFlags, EXT_BODYGROUPS) ~= 0 then
 			mods.bodygroups = {}
-			local count = net.ReadUInt(5)
+			local count = net.ReadUInt(6)  -- must match the 6-bit write above
 			for i = 1, count do
 				local bgID = net.ReadUInt(5)
 				local bgVal = net.ReadUInt(4)
@@ -244,4 +217,103 @@ function PS_ReadModifiers()
 	end
 
 	return mods
+end
+
+-- ═════════════════════════════════════════════════════════════════════
+-- SELF TEST
+--
+-- The failure mode this protocol has is a read/write asymmetry: a field written in one
+-- order and read in another, or at a different bit width. That corrupts everything
+-- after it in the stream and shows up as inventories that quietly drift rather than as
+-- an error, so it needs to be tested directly rather than noticed in play.
+--
+-- These vectors live in the shared file so the server and client each hold an identical
+-- copy. `ps_delta_selftest` on the server writes them over the real net layer; the
+-- client reads them back and diffs against its own copy. Anything that doesn't survive
+-- the round trip is a protocol bug.
+-- ═════════════════════════════════════════════════════════════════════
+
+PS_DeltaTestVectors = {
+	{
+		name = "empty",
+		mods = {},
+	},
+	{
+		name = "accessory (typical)",
+		mods = { scale = 1, offset = {0, 0, 0}, ang = {-90, 0, 0}, color = {r=255,g=255,b=255,a=255} },
+	},
+	{
+		name = "accessory (all fields, non-default)",
+		mods = { scale = 1.5, offset = {3.25, -30, 29.5}, ang = {-180, 179, 45.5},
+		         color = {r=1,g=128,b=254,a=200} },
+	},
+	{
+		name = "playermodel",
+		mods = { skin = 3, bodygroups = {[0]=1, [1]=2, [5]=15}, playercolor = {0.25, 0.5, 1} },
+	},
+	{
+		name = "bodygroups at the 32 limit",  -- the case the old 5-bit count truncated
+		mods = (function()
+			local bg = {}
+			for i = 0, 31 do bg[i] = i % 16 end
+			return { bodygroups = bg }
+		end)(),
+	},
+	{
+		name = "text",
+		mods = { text = "hello world", color = {r=10,g=20,b=30,a=40} },
+	},
+	{
+		name = "ang extremes",
+		mods = { ang = {-180, 180, -180} },
+	},
+	{
+		name = "offset extremes",
+		mods = { offset = {-30, 30, -30} },
+	},
+}
+
+-- Compares a round-tripped table against the original. Floats get a tolerance because
+-- net.WriteFloat is 32-bit and the source values are Lua doubles.
+-- Returns true, or false plus a description of the first mismatch found.
+function PS_DeltaCompare(orig, got)
+	local function approx(a, b)
+		if type(a) == "number" and type(b) == "number" then
+			return math.abs(a - b) < 0.01
+		end
+		return a == b
+	end
+
+	local function walk(o, g, path)
+		for k, v in pairs(o) do
+			local gv = g[k]
+			local p = path .. "." .. tostring(k)
+
+			if type(v) == "table" then
+				if type(gv) ~= "table" then
+					return false, p .. ": expected table, got " .. type(gv)
+				end
+				local ok, err = walk(v, gv, p)
+				if not ok then return false, err end
+			elseif not approx(v, gv) then
+				return false, string.format("%s: sent %s, got %s", p, tostring(v), tostring(gv))
+			end
+		end
+		return true
+	end
+
+	-- Colour survives as a Color userdata/table with r,g,b,a — normalise both sides.
+	local function norm(t)
+		local out = {}
+		for k, v in pairs(t) do
+			if k == "color" and v then
+				out.color = { r = v.r or v[1], g = v.g or v[2], b = v.b or v[3], a = v.a or v[4] }
+			else
+				out[k] = v
+			end
+		end
+		return out
+	end
+
+	return walk(norm(orig), norm(got), "mods")
 end

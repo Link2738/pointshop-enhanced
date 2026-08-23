@@ -18,12 +18,8 @@ ITEM.UseColor2Proxy = false
 
 ITEM.DefaultModifications = {
     scale = 0.7,
-    offsetX = 0,
-    offsetY = 0,
-    offsetZ = 4,
-    rotation = 0,
-    axis = "Forward",
-    axisDeg = -90,
+    offset = {0, 0, 4},
+    ang = {0, 0, -90},
     color = Color(255, 255, 255, 255),
 }
 

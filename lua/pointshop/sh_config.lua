@@ -10,7 +10,7 @@ end
 
 -- Edit below
 
-PS.Config.Debug = false -- Enable debug prints (console output for troubleshooting)
+PS.Config.Debug = true -- Enable debug prints (console + dump to data/bear_debug/, see ps_debug_path)
 
 PS.Config.CommunityName = "My Community"
 

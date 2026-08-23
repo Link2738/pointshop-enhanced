@@ -462,9 +462,9 @@ function PANEL:CreateCustomizationSliders(itemData)
 	-- Seed defaults from owner overrides → Lua DefaultModifications
 	local dm = (PS_GetItemDefault and PS_GetItemDefault(itemID)) or itemData.DefaultModifications or {}
 	local defScale = dm.scale or 1
-	local defOX = dm.offsetX or (dm.offset and (dm.offset[1] or dm.offset.x)) or 0
-	local defOY = dm.offsetY or (dm.offset and (dm.offset[2] or dm.offset.y)) or 0
-	local defOZ = dm.offsetZ or (dm.offset and (dm.offset[3] or dm.offset.z)) or 0
+	local defOX = (dm.offset and (dm.offset[1] or dm.offset.x)) or 0
+	local defOY = (dm.offset and (dm.offset[2] or dm.offset.y)) or 0
+	local defOZ = (dm.offset and (dm.offset[3] or dm.offset.z)) or 0
 	local defP = (dm.ang and dm.ang[1]) or 0
 	local defYaw = (dm.ang and dm.ang[2]) or 0
 	local defR = (dm.ang and dm.ang[3]) or 0

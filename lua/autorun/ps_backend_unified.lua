@@ -23,17 +23,19 @@ if SERVER then
     -- Global so other server code (e.g. PS_BuyItem's initial-mods path) can reuse it.
     function PS_SanitizeCustomizationData(mods, itemType)
         if not mods or type(mods) ~= "table" then return {} end
-        
+
+        -- Upgrade legacy shapes before sanitizing. This addon is distributed, so a
+        -- client running an older build can still send offsetX/axis/axisDeg — without
+        -- this they'd be dropped by the sanitizer and the player would silently lose
+        -- their positioning on save.
+        if PS_NormalizeMods then mods = PS_NormalizeMods(mods) end
+
         local sanitized = {}
         
         if itemType == "accessory" then
             -- Sanitize accessory data
             if mods.scale then
                 sanitized.scale = math.Clamp(tonumber(mods.scale) or 1, 0.1, 2)
-            end
-            
-            if mods.rotation then
-                sanitized.rotation = math.Clamp(tonumber(mods.rotation) or 0, 0, 360)
             end
             
             if mods.offset and type(mods.offset) == "table" then
@@ -43,16 +45,11 @@ if SERVER then
                     math.Clamp(tonumber(mods.offset[3] or mods.offset.z) or 0, -30, 30)
                 }
             end
-            
-            if mods.axis and type(mods.axis) == "string" then
-                local validAxes = {Right = true, Up = true, Forward = true}
-                sanitized.axis = validAxes[mods.axis] and mods.axis or "Right"
-            end
-            
-            if mods.axisDeg then
-                sanitized.axisDeg = math.Clamp(tonumber(mods.axisDeg) or -90, -180, 180)
-            end
-            
+
+            -- Legacy `rotation`, `axis` and `axisDeg` are deliberately not sanitized
+            -- through: nothing reads them any more, so letting them past would just
+            -- persist dead keys into new SQL rows.
+
             if mods.ang and type(mods.ang) == "table" then
                 sanitized.ang = {
                     math.Clamp(tonumber(mods.ang[1]) or 0, -180, 180),

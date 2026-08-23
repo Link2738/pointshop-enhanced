@@ -109,7 +109,9 @@ function BASE:ModifyClientsideModel(ply, model, pos, ang, modifications)
 
     -- Apply offset and angle modifications if present
     if modifications then
-        -- offset can be a table {x,y,z} or a Vector
+        -- offset is a table {x,y,z} or a Vector. The legacy offsetX/offsetY/offsetZ
+        -- triple is no longer supported — item files and stored data are all on the
+        -- table form.
         local off = modifications.offset
         local ox, oy, oz = 0, 0, 0
         if off then
@@ -122,8 +124,8 @@ function BASE:ModifyClientsideModel(ply, model, pos, ang, modifications)
             end
         end
 
-        -- Rotation can be provided as an `ang` table/Angle or as explicit `axis` + `axisDeg`.
-        -- Prefer `ang` first so stored angle data is applied directly; fall back to axis+axisDeg.
+        -- Rotation is an `ang` table {pitch, yaw, roll} or an Angle. The old
+        -- axis + axisDeg pair and the scalar `rotation` yaw are gone.
         local ap, ay, ar = 0, 0, 0
         if modifications.ang then
             local aang = modifications.ang
@@ -134,22 +136,9 @@ function BASE:ModifyClientsideModel(ply, model, pos, ang, modifications)
             elseif type(aang) == "Angle" or tostring(type(aang)) == "Angle" then
                 ap, ay, ar = aang.p or 0, aang.y or 0, aang.r or 0
             end
-        elseif modifications.axis and modifications.axisDeg then
-            local ax = tostring(modifications.axis)
-            local deg = tonumber(modifications.axisDeg) or 0
-            if ax == "Right" then
-                ap = deg
-            elseif ax == "Up" then
-                ay = deg
-            elseif ax == "Forward" then
-                ar = deg
-            end
         end
 
-        local rotation = modifications.rotation or 0
-
-        -- apply rotation and ang offsets
-        ang:RotateAroundAxis(ang:Up(), rotation)
+        -- apply ang offsets
         ang:RotateAroundAxis(ang:Right(), ap)
         ang:RotateAroundAxis(ang:Up(), ay)
         ang:RotateAroundAxis(ang:Forward(), ar)

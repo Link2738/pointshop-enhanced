@@ -24,11 +24,6 @@ local function SanitizeCustomizationData(mods, itemType)
             sanitized.scale = math.Clamp(tonumber(mods.scale) or 1, 0.1, 2)
         end
         
-        -- Rotation: 0 to 360
-        if mods.rotation then
-            sanitized.rotation = math.Clamp(tonumber(mods.rotation) or 0, 0, 360)
-        end
-        
         -- Offset: -30 to 30 for each axis
         if mods.offset and type(mods.offset) == "table" then
             sanitized.offset = {
@@ -37,18 +32,11 @@ local function SanitizeCustomizationData(mods, itemType)
                 math.Clamp(tonumber(mods.offset[3] or mods.offset.z) or 0, -30, 30)
             }
         end
-        
-        -- Axis: must be valid string
-        if mods.axis and type(mods.axis) == "string" then
-            local validAxes = {Right = true, Up = true, Forward = true}
-            sanitized.axis = validAxes[mods.axis] and mods.axis or "Right"
-        end
-        
-        -- Axis degrees: -180 to 180
-        if mods.axisDeg then
-            sanitized.axisDeg = math.Clamp(tonumber(mods.axisDeg) or -90, -180, 180)
-        end
-        
+
+        -- Legacy `rotation`, `axis` and `axisDeg` are intentionally dropped rather than
+        -- sanitized through — nothing reads them any more, so passing them along would
+        -- only persist dead keys.
+
         -- Angle table: -180 to 180 for each component
         if mods.ang and type(mods.ang) == "table" then
             sanitized.ang = {
@@ -116,7 +104,6 @@ function PANEL:GetSliderValues()
         -- Accessories: position/scale/rotation data
         local result = {
             scale = math.Clamp(self.scaleSlider and self.scaleSlider:GetValue() or 1, 0.1, 2),
-            rotation = 0,
             offset = {
                 math.Clamp(self.offsetXSlider and self.offsetXSlider:GetValue() or 0, -30, 30),
                 math.Clamp(self.offsetYSlider and self.offsetYSlider:GetValue() or 0, -30, 30),
@@ -355,6 +342,17 @@ function PANEL:CreateAccessorySliders()
     self.accessoryColorMixer:SetColor(Color(255, 255, 255, 255))
     self.accessoryColorMixer.ValueChanged = function(_, col)
         if not IsValid(self) then return end
+
+        -- Same repeat-fire as the playermodel mixer: DColorMixer keeps calling this
+        -- while the mouse is held regardless of movement. Skip identical values so the
+        -- debug log stays readable and ApplyLivePreview isn't redone for nothing.
+        local c = self.accessoryColorMixer:GetColor()
+        local last = self._lastAccessoryColor
+        if last and last.r == c.r and last.g == c.g and last.b == c.b and last.a == c.a then
+            return
+        end
+        self._lastAccessoryColor = { r = c.r, g = c.g, b = c.b, a = c.a }
+
         self.previewEnabled = true
         self:ApplyLivePreview()
     end
@@ -428,13 +426,23 @@ function PANEL:CreatePlayermodelControls()
         local ply = LocalPlayer()
         if IsValid(ply) then
             local col = self.colorMixer:GetColor()
-            
+
+            -- DColorMixer fires ValueChanged continuously while the mouse is held, even
+            -- when the cursor hasn't moved. A single drag produced ~90 of these, the last
+            -- ~25 all carrying the identical colour — each one redoing SetColor,
+            -- SetPlayerColor and a net send for no visible change. Bail if nothing moved.
+            local last = self._lastPreviewColor
+            if last and last.r == col.r and last.g == col.g and last.b == col.b then
+                return
+            end
+            self._lastPreviewColor = { r = col.r, g = col.g, b = col.b }
+
             -- Check if this item uses Color2Proxy
             local useColor2 = false
             if self.itemID and PS.Items and PS.Items[self.itemID] then
                 useColor2 = PS.Items[self.itemID].UseColor2Proxy or false
             end
-            
+
             if PS and PS.Config and PS.Config.Debug then
                 print(string.format("[PS COLOR DEBUG] PREVIEW colorMixer -> R=%d G=%d B=%d useColor2=%s itemID=%s", col.r, col.g, col.b, tostring(useColor2), tostring(self.itemID)))
             end
@@ -1008,35 +1016,39 @@ function PANEL:ResetSliders()
         offsetX = 0,
         offsetY = 0,
         offsetZ = 0,
-        rotation = 0,
-        axis = "Right",
-        axisDeg = -90,
+        pitch = 0,
+        yaw = 0,
+        roll = 0,
         color = Color(255, 255, 255, 255)
     }
-    
-    -- Resolve via owner overrides → ITEM.DefaultModifications
+
+    -- Resolve via owner overrides → ITEM.DefaultModifications.
+    -- offsetX/Y/Z here are slider names, not a data format — the source is always
+    -- dm.offset, the {x,y,z} table.
     local dm = PS_GetItemDefault and PS_GetItemDefault(self.itemID)
     if dm then
         if PS and PS.Config and PS.Config.Debug then
             print("[PS RESET] Found defaults for " .. tostring(self.itemID))
         end
-        defaults.scale    = dm.scale    or defaults.scale
-        defaults.offsetX  = dm.offsetX  or (dm.offset and (dm.offset[1] or dm.offset.x)) or defaults.offsetX
-        defaults.offsetY  = dm.offsetY  or (dm.offset and (dm.offset[2] or dm.offset.y)) or defaults.offsetY
-        defaults.offsetZ  = dm.offsetZ  or (dm.offset and (dm.offset[3] or dm.offset.z)) or defaults.offsetZ
-        defaults.rotation = dm.rotation or defaults.rotation
-        defaults.axis     = dm.axis     or defaults.axis
-        defaults.axisDeg  = dm.axisDeg  or defaults.axisDeg
-        defaults.color    = dm.color    or defaults.color
+        defaults.scale = dm.scale or defaults.scale
+        defaults.color = dm.color or defaults.color
+        if dm.offset then
+            defaults.offsetX = dm.offset[1] or dm.offset.x or defaults.offsetX
+            defaults.offsetY = dm.offset[2] or dm.offset.y or defaults.offsetY
+            defaults.offsetZ = dm.offset[3] or dm.offset.z or defaults.offsetZ
+        end
         if dm.ang then
             defaults.pitch = dm.ang[1] or 0
             defaults.yaw   = dm.ang[2] or 0
             defaults.roll  = dm.ang[3] or 0
         end
     end
-    
+
     if PS and PS.Config and PS.Config.Debug then
-        print("[PS RESET] Final defaults: axisDeg=" .. tostring(defaults.axisDeg) .. " axis=" .. tostring(defaults.axis) .. " scale=" .. tostring(defaults.scale) .. " rotation=" .. tostring(defaults.rotation))
+        print(string.format("[PS RESET] Final defaults: scale=%s offset=%s,%s,%s ang=%s,%s,%s",
+            tostring(defaults.scale), tostring(defaults.offsetX), tostring(defaults.offsetY),
+            tostring(defaults.offsetZ), tostring(defaults.pitch), tostring(defaults.yaw),
+            tostring(defaults.roll)))
     end
     
     -- Apply default values to controls (also sync number boxes directly to avoid missed updates)
@@ -1193,6 +1205,21 @@ function PANEL:ApplyLivePreview()
     if self.itemType == "accessory" then
         -- Accessories: update real accessory modifiers in the customization table (real-time preview)
         local mods = self:GetSliderValues()
+
+        -- Bail if nothing actually changed. Setting a DNumSlider's value makes it and its
+        -- DSlider child settle over several frames, and each settle step re-fires
+        -- OnValueChanged — loading saved data produced ~65 identical ApplyLivePreview
+        -- calls in one second. Deduping here covers every caller rather than trying to
+        -- suppress each one individually.
+        local sig = string.format("%.4f|%.4f,%.4f,%.4f|%.4f,%.4f,%.4f|%s",
+            mods.scale or 1,
+            mods.offset[1] or 0, mods.offset[2] or 0, mods.offset[3] or 0,
+            mods.ang[1] or 0, mods.ang[2] or 0, mods.ang[3] or 0,
+            mods.color and string.format("%d,%d,%d,%d", mods.color.r, mods.color.g, mods.color.b, mods.color.a) or "-")
+
+        if self._lastPreviewSig == sig then return end
+        self._lastPreviewSig = sig
+
         if PS and PS.Config and PS.Config.Debug then
             print("[PS PREVIEW] ApplyLivePreview: ang=" .. tostring(mods.ang[1]) .. "/" .. tostring(mods.ang[2]) .. "/" .. tostring(mods.ang[3]) .. " scale=" .. tostring(mods.scale))
         end
@@ -1362,11 +1389,6 @@ function PANEL:LoadModsIntoSliders(mods)
             if self.offsetXSlider then self.offsetXSlider:SetValue(mods.offset.x or mods.offset[1] or 0) end
             if self.offsetYSlider then self.offsetYSlider:SetValue(mods.offset.y or mods.offset[2] or 0) end
             if self.offsetZSlider then self.offsetZSlider:SetValue(mods.offset.z or mods.offset[3] or 0) end
-        end
-        if mods.offsetX then
-            if self.offsetXSlider then self.offsetXSlider:SetValue(mods.offsetX) end
-            if self.offsetYSlider then self.offsetYSlider:SetValue(mods.offsetY or 0) end
-            if self.offsetZSlider then self.offsetZSlider:SetValue(mods.offsetZ or 0) end
         end
         if mods.ang then
             if self.pitchSlider then self.pitchSlider:SetValue(mods.ang[1] or 0) end
