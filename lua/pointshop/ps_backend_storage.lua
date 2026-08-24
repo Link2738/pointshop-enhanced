@@ -94,7 +94,19 @@ function PS_GetCustomization(ply, itemID)
                 color = Color(255, 255, 255, 255)
             }
         end
-        return { skin = 0, bodygroups = {}, playercolor = {255, 255, 255} }
+        -- Deliberately no `playercolor` key here.
+        --
+        -- For an accessory, white is a genuine neutral: it means "no tint", and applying
+        -- it changes nothing. A player's colour is not like that — it is a persistent
+        -- property of the player that exists whether or not this item was ever
+        -- customised. Returning {255,255,255} made "never customised" indistinguishable
+        -- from "deliberately set to white", and every consumer tests `if mods.playercolor
+        -- then` and applies whatever it is handed. So opening the customization panel on
+        -- an uncustomised playermodel repainted the player white.
+        --
+        -- Omitting the key lets those same guards skip, which is the correct behaviour:
+        -- no saved colour means leave the player's colour alone.
+        return { skin = 0, bodygroups = {} }
     end
 
     return nil
@@ -136,19 +148,32 @@ local function PurgeOrphanRows()
         return
     end
 
-    local rows = sql.Query("SELECT DISTINCT item_id FROM ps_customization")
+    -- One row per orphaned item with its count, rather than a COUNT query per orphan
+    -- followed by a DELETE per orphan. sql.Query is synchronous and this runs on
+    -- InitPostEntity, so the old form put 2N blocking round trips on the boot path.
+    local rows = sql.Query(
+        "SELECT item_id, COUNT(*) AS n FROM ps_customization GROUP BY item_id")
     if not rows then return end   -- nil = empty table or error; nothing to do either way
 
     local purged, items = 0, {}
+    local quoted = {}
     for _, row in ipairs(rows) do
         local id = row.item_id
         if id and not PS.Items[id] then
-            local res = sql.Query("SELECT COUNT(*) AS n FROM ps_customization WHERE item_id = " .. sql.SQLStr(id))
-            local n = tonumber(res and res[1] and res[1].n) or 0
-            sql.Query("DELETE FROM ps_customization WHERE item_id = " .. sql.SQLStr(id))
-            purged = purged + n
+            purged = purged + (tonumber(row.n) or 0)
             items[#items + 1] = id
+            quoted[#quoted + 1] = sql.SQLStr(id)
         end
+    end
+
+    -- Single DELETE for the whole set. Chunked because SQLite caps how many terms an
+    -- IN list may hold, and a shop that lost a whole category can exceed it.
+    for i = 1, #quoted, 500 do
+        local chunk = {}
+        for j = i, math.min(i + 499, #quoted) do
+            chunk[#chunk + 1] = quoted[j]
+        end
+        sql.Query("DELETE FROM ps_customization WHERE item_id IN (" .. table.concat(chunk, ",") .. ")")
     end
 
     if purged > 0 then

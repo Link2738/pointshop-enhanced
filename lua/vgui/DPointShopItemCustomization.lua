@@ -4,6 +4,9 @@
 
 local PANEL = {}
 
+-- Cached at file scope rather than rebuilt inside PaintOver every frame.
+local COL_STATUSBAR = Color(20, 40, 60)
+
 -- Global table to store pending saved data that arrives before panel is created
 PS_PendingCustomizationData = PS_PendingCustomizationData or {}
 
@@ -183,8 +186,28 @@ function PANEL:Init()
 end
 
 
-function PANEL:Think()
+-- Horizontal content column that every control group lays out inside, so the margins are
+-- symmetric and all the groups share one left and one right edge.
+--
+-- The groups had drifted to four different right edges on a 450px panel:
+--   slider rows        x=20 .. 380   (width GetWide() - 90)
+--   colour mixers      x=20 .. 320   (width GetWide() - 150)
+--   buttons            x=20 .. 320   (width GetWide() - 150)
+--   playermodel block  x=20 .. 430   (width GetWide() - 40)
+--
+-- Only the last was symmetric. Everything now uses this, which is that same 20/20 margin.
+local CONTENT_MARGIN = 20
+
+function PANEL:GetContentColumn()
+	local panelW = self:GetWide()
+	local w = math.max(150, panelW - CONTENT_MARGIN * 2)
+	return math.floor((panelW - w) / 2), w
 end
+
+-- An empty PANEL:Think() used to sit here. It wasn't inert: this panel is registered on
+-- DFrame, and DFrame:Think is what moves the frame while the mouse is held, so an override
+-- that doesn't chain up silently disables dragging. Removed rather than stubbed — if
+-- per-frame work is needed here later it has to call self.BaseClass.Think(self) first.
 
 function PANEL:SetupHooks()
     local panelRef = self
@@ -202,15 +225,36 @@ function PANEL:SetupHooks()
         local yOffset = (self.cameraYSlider and self.cameraYSlider:GetValue()) or 0
         local radius = (self.cameraZoomSlider and self.cameraZoomSlider:GetValue()) or self.orbitRadius
         
+        -- CalcView runs every frame while the panel is open. The original built two
+        -- Vectors, a third from the addition, an Angle and a fresh `view` table on each
+        -- one. The table and the origin Vector are reused here and the intermediate
+        -- Vectors dropped in favour of plain components; the Angle stays as a `:Angle()`
+        -- call rather than hand-rolled trig, since getting Source's pitch convention
+        -- subtly wrong would break the camera for a single allocation.
+        self._viewTbl = self._viewTbl or {}
+        self._viewOrigin = self._viewOrigin or Vector()
+        self._viewDelta = self._viewDelta or Vector()
+
         local theta = math.rad(rotDeg)
-        local target = ply:GetPos() + Vector(0, 0, 64 + yOffset)
-        local x = radius * math.sin(self.orbitPhi) * math.cos(theta)
-        local y = radius * math.sin(self.orbitPhi) * math.sin(theta)
-        local z = radius * math.cos(self.orbitPhi)
-        
-        local view = {}
-        view.origin = target + Vector(x, y, z)
-        view.angles = (target - view.origin):Angle()
+        local sinPhi = math.sin(self.orbitPhi)
+
+        local p = ply:GetPos()
+        local tx, ty, tz = p.x, p.y, p.z + 64 + yOffset
+
+        local dx = radius * sinPhi * math.cos(theta)
+        local dy = radius * sinPhi * math.sin(theta)
+        local dz = radius * math.cos(self.orbitPhi)
+
+        local origin = self._viewOrigin
+        origin.x, origin.y, origin.z = tx + dx, ty + dy, tz + dz
+
+        -- target - origin, i.e. the direction from the camera back to the player.
+        local delta = self._viewDelta
+        delta.x, delta.y, delta.z = -dx, -dy, -dz
+
+        local view = self._viewTbl
+        view.origin = origin
+        view.angles = delta:Angle()
         view.fov = fov
         view.drawviewer = true
         return view
@@ -222,9 +266,9 @@ end
 -- ============================================================================
 
 function PANEL:CreateAccessorySliders()
-    local sliderW = math.max(150, self:GetWide() - 90)
+    local baseX, sliderW = self:GetContentColumn()
     local sliderH = 24
-    local baseX, y = 20, 40
+    local y = 40
     
     -- Helper function to create slider+box pair
     local function CreateSliderPair(label, min, max, default, decimals)
@@ -330,12 +374,12 @@ function PANEL:CreateAccessorySliders()
     local colorLabel = self:Add("DLabel")
     colorLabel:SetText("Model Color:")
     colorLabel:SetPos(baseX, y)
-    colorLabel:SetSize(sliderW - 60, 20)
+    colorLabel:SetSize(sliderW, 20)
     y = y + 22
 
     self.accessoryColorMixer = self:Add("DColorMixer")
     self.accessoryColorMixer:SetPos(baseX, y)
-    self.accessoryColorMixer:SetSize(sliderW - 60, 150)
+    self.accessoryColorMixer:SetSize(sliderW, 150)
     self.accessoryColorMixer:SetPalette(true)
     self.accessoryColorMixer:SetAlphaBar(true)
     self.accessoryColorMixer:SetWangs(true)
@@ -405,8 +449,8 @@ end
 -- ============================================================================
 
 function PANEL:CreatePlayermodelControls()
-    local baseX, y = 20, 40
-    local w = self:GetWide() - 40
+    local baseX, w = self:GetContentColumn()
+    local y = 40
 
     -- Color mixer
     local colorLabel = self:Add("DLabel")
@@ -438,10 +482,7 @@ function PANEL:CreatePlayermodelControls()
             self._lastPreviewColor = { r = col.r, g = col.g, b = col.b }
 
             -- Check if this item uses Color2Proxy
-            local useColor2 = false
-            if self.itemID and PS.Items and PS.Items[self.itemID] then
-                useColor2 = PS.Items[self.itemID].UseColor2Proxy or false
-            end
+            local useColor2 = self:UsesColor2()
 
             if PS and PS.Config and PS.Config.Debug then
                 print(string.format("[PS COLOR DEBUG] PREVIEW colorMixer -> R=%d G=%d B=%d useColor2=%s itemID=%s", col.r, col.g, col.b, tostring(useColor2), tostring(self.itemID)))
@@ -797,6 +838,10 @@ function PANEL:CreateBodygroupButtons()
                     )
                 end
             end
+        else
+            -- No saved colour for this item. Show what the player is actually wearing
+            -- rather than the white the mixer was constructed with.
+            self:SeedColorMixerFromPlayer()
         end
     end
 end
@@ -828,14 +873,13 @@ end
 -- ============================================================================
 
 function PANEL:CreateButtons()
-    local sliderW = math.max(150, self:GetWide() - 90)
-    local baseX = 20
+    local baseX, contentW = self:GetContentColumn()
     local y = self._controlsEndY or 450
 
     -- Apply button
     self.applyButton = self:Add("DButton")
     self.applyButton:SetText("")
-    self.applyButton:SetSize(sliderW - 60, 28)
+    self.applyButton:SetSize(contentW, 28)
     self.applyButton:SetPos(baseX, y)
     self.applyButton.DoClick = function()
         self:ApplyCustomization()
@@ -873,7 +917,7 @@ function PANEL:CreateButtons()
     if self.itemType == "accessory" or self.itemType == "playermodel" then
         self.resetButton = self:Add("DButton")
         self.resetButton:SetText("")
-        self.resetButton:SetSize(sliderW - 60, 24)
+        self.resetButton:SetSize(contentW, 24)
         self.resetButton:SetPos(baseX, y)
         self.resetButton.DoClick = function()
             if self.itemType == "playermodel" then
@@ -907,7 +951,7 @@ function PANEL:CreateButtons()
     y = y + 6
     self._ownerDivider = self:Add("DPanel")
     self._ownerDivider:SetPos(baseX, y)
-    self._ownerDivider:SetSize(sliderW - 60, 1)
+    self._ownerDivider:SetSize(contentW, 1)
     self._ownerDivider.Paint = function(s, w, h)
         surface.SetDrawColor(180, 140, 30, 120)
         surface.DrawRect(0, 0, w, h)
@@ -916,7 +960,7 @@ function PANEL:CreateButtons()
 
     self._ownerLabel = self:Add("DLabel")
     self._ownerLabel:SetPos(baseX, y)
-    self._ownerLabel:SetSize(sliderW - 60, 16)
+    self._ownerLabel:SetSize(contentW, 16)
     self._ownerLabel:SetFont("DermaDefault")
     self._ownerLabel:SetTextColor(Color(180, 140, 30))
     self._ownerLabel:SetText("Server Default")
@@ -924,7 +968,7 @@ function PANEL:CreateButtons()
 
     self._saveDefaultBtn = self:Add("DButton")
     self._saveDefaultBtn:SetText("")
-    self._saveDefaultBtn:SetSize(sliderW - 60, 24)
+    self._saveDefaultBtn:SetSize(contentW, 24)
     self._saveDefaultBtn:SetPos(baseX, y)
     self._saveDefaultBtn.DoClick = function()
         local mods = self:GetSliderValues()
@@ -948,7 +992,7 @@ function PANEL:CreateButtons()
 
     self._clearDefaultBtn = self:Add("DButton")
     self._clearDefaultBtn:SetText("")
-    self._clearDefaultBtn:SetSize(sliderW - 60, 24)
+    self._clearDefaultBtn:SetSize(contentW, 24)
     self._clearDefaultBtn:SetPos(baseX, y)
     self._clearDefaultBtn.DoClick = function()
         net.Start("PS_ItemDefault_Set")
@@ -972,7 +1016,7 @@ function PANEL:CreateButtons()
     -- Discard button: closes without saving and restores the live preview
     self.discardButton = self:Add("DButton")
     self.discardButton:SetText("")
-    self.discardButton:SetSize(sliderW - 60, 24)
+    self.discardButton:SetSize(contentW, 24)
     self.discardButton:SetPos(baseX, y)
     self.discardButton.DoClick = function()
         self:Close()
@@ -1126,10 +1170,7 @@ function PANEL:ResetPlayermodel()
     local r, g, b = defaults.playercolor[1], defaults.playercolor[2], defaults.playercolor[3]
     if self.colorMixer then self.colorMixer:SetColor(Color(r, g, b)) end
     if IsValid(ply) then
-        local useColor2 = false
-        if self.itemID and PS.Items and PS.Items[self.itemID] then
-            useColor2 = PS.Items[self.itemID].UseColor2Proxy or false
-        end
+        local useColor2 = self:UsesColor2()
         if useColor2 then
             ply:SetColor(Color(255, 255, 255, 255))
             ply:SetPlayerColor(Vector(r / 255, g / 255, b / 255))
@@ -1198,10 +1239,20 @@ end
 
 function PANEL:ApplyLivePreview()
     if not self.previewEnabled then return end
-    
+
+    -- Don't push preview state out before the server's saved data has landed.
+    --
+    -- EnablePreview schedules this ~0.25s after the panel opens. If the round trip hasn't
+    -- finished by then the controls still hold the values they were constructed with, and
+    -- the accessory branch below writes them straight into PS_AccessoryCustomizations and
+    -- onto the clientside model — replacing the player's real colour and offsets with the
+    -- defaults. _dataReceived is set by SetControlsEnabled, which runs both when the
+    -- response arrives and on the 2s timeout, so a silent server still unblocks.
+    if not self._dataReceived then return end
+
     local ply = LocalPlayer()
     if not IsValid(ply) then return end
-    
+
     if self.itemType == "accessory" then
         -- Accessories: update real accessory modifiers in the customization table (real-time preview)
         local mods = self:GetSliderValues()
@@ -1230,9 +1281,7 @@ function PANEL:ApplyLivePreview()
             
             -- Apply color to the clientside model immediately if it exists
             if mods.color and PS and PS.ClientsideModels and PS.ClientsideModels[ply] then
-                -- Determine if this item uses Color2Proxy
-                local ITEM = PS and PS.Items and PS.Items[self.itemID]
-                local useColor2 = ITEM and ITEM.UseColor2Proxy or false
+                local useColor2 = self:UsesColor2()
                 
                 for k, mdl in pairs(PS.ClientsideModels[ply]) do
                     if IsValid(mdl) and mdl.GetModel and mdl:GetModel() == self.itemModelPath then
@@ -1304,10 +1353,7 @@ function PANEL:DisablePreview(restoreAccessories)
             
             if self._originalPlayerColor then
                 -- Restore using correct method based on item type
-                local useColor2 = false
-                if self.itemID and PS.Items and PS.Items[self.itemID] then
-                    useColor2 = PS.Items[self.itemID].UseColor2Proxy or false
-                end
+                local useColor2 = self:UsesColor2()
                 if useColor2 then
                     ply:SetPlayerColor(self._originalPlayerColor)
                 else
@@ -1438,6 +1484,9 @@ function PANEL:SetItem(item)
     self.itemBone = item.Bone
     self._itemSkinCount = item.SkinCount or 0
 
+    -- Captured from the item table we were handed, not re-derived later. See UsesColor2.
+    self.useColor2 = item.UseColor2Proxy or false
+
     -- Create type-appropriate controls
     if self.itemType == "accessory" then
         self:CreateAccessorySliders()
@@ -1532,6 +1581,63 @@ function PANEL:SetItem(item)
     end)
 end
 
+-- Whether this item colours through the $color2 proxy (the player colour channel) or
+-- through render modulation. The two paths are mutually exclusive and each one explicitly
+-- clears the other, so picking the wrong one does not merely fail to apply a colour — it
+-- actively wipes the channel the model was actually using.
+--
+-- Five call sites each re-derived this as `PS.Items[self.itemID].UseColor2Proxy or false`.
+-- That lookup yields false on a miss, and it can miss: itemID falls back to item.Model
+-- when the item table has no ID, and a model path is not a PS.Items key. A miss sends a
+-- Color2Proxy model down the modulation branch, which ends in SetPlayerColor(1, 1, 1) —
+-- the model turns white while the mixer still shows the correct colour, because the mixer
+-- was seeded from the saved data and never touched the channel that got cleared.
+--
+-- The panel is handed the item table in SetItem, so it reads the flag from there and
+-- treats the global lookup as a fallback rather than the source of truth.
+function PANEL:UsesColor2()
+    if self.useColor2 ~= nil then return self.useColor2 end
+    local ITEM = PS and PS.Items and PS.Items[self.itemID]
+    return (ITEM and ITEM.UseColor2Proxy) or false
+end
+
+-- Seeds the colour mixer from the player's live colour, applying nothing back.
+--
+-- Used when the server has no saved colour for this item. Previously the mixer just sat
+-- at the white it was constructed with, so the panel claimed you were wearing white when
+-- you weren't — and hitting Save wrote that white back as if you had chosen it.
+--
+-- Reads whichever channel the item actually uses, mirroring the split in the mixer's own
+-- ValueChanged: Color2Proxy items carry their colour in the player colour, everything
+-- else in render modulation.
+function PANEL:SeedColorMixerFromPlayer()
+    if not self.colorMixer then return end
+
+    local ply = LocalPlayer()
+    if not IsValid(ply) then return end
+
+    local useColor2 = self:UsesColor2()
+
+    local col
+    if useColor2 then
+        local v = ply:GetPlayerColor()   -- normalized 0-1 Vector
+        col = Color(
+            math.Clamp(math.floor((v.x or 1) * 255), 0, 255),
+            math.Clamp(math.floor((v.y or 1) * 255), 0, 255),
+            math.Clamp(math.floor((v.z or 1) * 255), 0, 255)
+        )
+    else
+        local c = ply:GetColor()
+        col = Color(c.r, c.g, c.b)
+    end
+
+    -- DColorMixer:SetColor fires ValueChanged, which would apply this straight back to the
+    -- player. This is a display sync, not a user edit, so prime the callback's own dedupe
+    -- field first and let it bail.
+    self._lastPreviewColor = { r = col.r, g = col.g, b = col.b }
+    self.colorMixer:SetColor(col)
+end
+
 function PANEL:GetBoneName()
     return self.itemBone or "ValveBiped.Bip01_Head1"
 end
@@ -1541,8 +1647,8 @@ end
 -- ============================================================================
 
 function PANEL:CreateTrailControls()
-    local baseX, y = 20, 50
-    local w = math.max(150, self:GetWide() - 90)
+    local baseX, w = self:GetContentColumn()
+    local y = 50
 
     local label = self:Add("DLabel")
     label:SetText("Trail Color")
@@ -1691,12 +1797,11 @@ function PANEL:PaintOver(w, h)
     -- Styled status bar at top
     local barHeight = 35
 
-    -- Status bar gradient background
-    for i = 0, barHeight do
-        local alpha = 150 - (i * 1.5)
-        surface.SetDrawColor(20, 40, 60, math.max(0, alpha))
-        surface.DrawRect(0, i, w, 1)
-    end
+    -- Status bar gradient background.
+    -- Was one 1px rect per row. The ramp runs 150 down to 150 - (35 * 1.5) = 97.5, so it
+    -- never reached zero inside the bar — hence the explicit bottom alpha rather than a
+    -- plain fade-out.
+    PS_DrawScrimFade(0, 0, w, barHeight, COL_STATUSBAR, 150, 150 - (barHeight * 1.5))
 
     -- Bottom border of status bar
     surface.SetDrawColor(60, 120, 180, 150)
@@ -1888,6 +1993,10 @@ if CLIENT then
                                         print("[PS PANEL DEBUG] Applied playercolor:", pc[1], pc[2], pc[3])
                                     end
                                 end
+                            else
+                                -- No saved colour for this item. Show what the player is
+                                -- actually wearing rather than the mixer's default white.
+                                v:SeedColorMixerFromPlayer()
                             end
                         end
                         
