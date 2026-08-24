@@ -38,16 +38,34 @@ function PANEL:SetupHooks()
         local yOff   = sl.camY     and sl.camY:GetValue()     or 0
         local radius = sl.camZoom  and sl.camZoom:GetValue()  or self.orbitRadius
 
+        -- Reused across frames rather than rebuilt. See the matching comment in
+        -- DPointShopItemCustomization's CalcView: this runs every frame while the panel is
+        -- open and was allocating three Vectors, an Angle and a table each time.
+        self._viewTbl = self._viewTbl or {}
+        self._viewOrigin = self._viewOrigin or Vector()
+        self._viewDelta = self._viewDelta or Vector()
+
         local theta  = math.rad(rotDeg)
         local phi    = math.pi / 2
-        local target = ply:GetPos() + Vector(0, 0, 64 + yOff)
-        local view   = {}
-        view.origin  = target + Vector(
-            radius * math.sin(phi) * math.cos(theta),
-            radius * math.sin(phi) * math.sin(theta),
-            radius * math.cos(phi)
-        )
-        view.angles   = (target - view.origin):Angle()
+        local sinPhi = math.sin(phi)
+
+        local p = ply:GetPos()
+        local tx, ty, tz = p.x, p.y, p.z + 64 + yOff
+
+        local dx = radius * sinPhi * math.cos(theta)
+        local dy = radius * sinPhi * math.sin(theta)
+        local dz = radius * math.cos(phi)
+
+        local origin = self._viewOrigin
+        origin.x, origin.y, origin.z = tx + dx, ty + dy, tz + dz
+
+        -- target - origin, i.e. the direction from the camera back to the player.
+        local delta = self._viewDelta
+        delta.x, delta.y, delta.z = -dx, -dy, -dz
+
+        local view = self._viewTbl
+        view.origin   = origin
+        view.angles   = delta:Angle()
         view.fov      = fov
         view.drawviewer = true
         return view

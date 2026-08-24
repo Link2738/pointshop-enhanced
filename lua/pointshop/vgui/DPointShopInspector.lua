@@ -8,6 +8,10 @@ end
 
 local PANEL = {}
 
+-- Cached at file scope rather than rebuilt inside Paint every frame.
+local COL_PANEL_BG = Color(40, 40, 45, 255)
+local COL_SCRIM    = Color(0, 0, 0)
+
 -- Custom styled confirmation dialog
 local function CreateStyledConfirmation(title, message, yesCallback, noCallback)
 	local frame = vgui.Create("DFrame")
@@ -19,13 +23,10 @@ local function CreateStyledConfirmation(title, message, yesCallback, noCallback)
 	frame:SetDraggable(false)
 	
 	frame.Paint = function(s, w, h)
-		draw.RoundedBox(8, 0, 0, w, h, Color(40, 40, 45, 255))
-		
-		for i = 8, h - 8 do
-			local alpha = math.min(100, i * 0.15)
-			surface.SetDrawColor(0, 0, 0, alpha)
-			surface.DrawRect(8, i, w - 16, 1)
-		end
+		draw.RoundedBox(8, 0, 0, w, h, COL_PANEL_BG)
+
+		-- Was one 1px rect per row, every frame.
+		PS_DrawScrim(8, 8, w - 16, h - 16, COL_SCRIM, 0.15, 100)
 		
 		surface.SetDrawColor(60, 120, 180, 100)
 		surface.DrawOutlinedRect(0, 0, w, h)
@@ -131,14 +132,10 @@ function PANEL:Init()
 	self.ControlPanel:SetMouseInputEnabled(true)  -- Panel captures mouse
 	self.ControlPanel.Paint = function(s, w, h)
 		-- Rounded background base
-		draw.RoundedBox(8, 0, 0, w, h, Color(40, 40, 45, 255))
-		
-		-- Gradient overlay
-		for i = 8, h - 8 do
-			local alpha = math.min(100, i * 0.15)
-			surface.SetDrawColor(0, 0, 0, alpha)
-			surface.DrawRect(8, i, w - 16, 1)
-		end
+		draw.RoundedBox(8, 0, 0, w, h, COL_PANEL_BG)
+
+		-- Gradient overlay. Was one 1px rect per row, every frame.
+		PS_DrawScrim(8, 8, w - 16, h - 16, COL_SCRIM, 0.15, 100)
 		
 		-- Outer border glow
 		surface.SetDrawColor(60, 120, 180, 100)

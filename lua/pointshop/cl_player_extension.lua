@@ -88,6 +88,21 @@ local function CopyColor(c)
 	return Color(c.r or 255, c.g or 255, c.b or 255, a)
 end
 
+-- REMOVED: InstallColorCache, which shadowed SetColor per model so PostPlayerDraw could
+-- read cached modulation values instead of querying the entity each frame.
+--
+-- It only ever saved one engine call per accessory per frame — the allocation that made
+-- the read expensive was already gone once the draw path moved to Entity:GetColor4Part,
+-- which returns the channels as plain numbers.
+--
+-- What it cost was correctness. The cache had to be installed at construction to be
+-- trustworthy, and there are at least four places that build a clientside accessory model:
+-- PS_AddClientsideModel here, the hover model in cl_init.lua, and two in
+-- DPointShopInspector. Any model born from the others had no cache, so the draw path saw
+-- no colour and rendered it neutral — accessories that simply would not tint.
+--
+-- Covering four creation sites with a per-entity method shadow to save one accessor call
+-- is the wrong trade. The draw path reads the colour directly again.
 local function StorePlayerColor(ent, col)
 	ent.PS_AppliedColor = Vector(col.r / 255, col.g / 255, col.b / 255)
 	if not ent.PS_GetPlayerColorHooked then

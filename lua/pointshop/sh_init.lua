@@ -209,14 +209,34 @@ end
 
 -- Utils
 
+-- Name -> category index, built lazily and invalidated whenever PS.Categories changes size.
+--
+-- FindCategoryByName was a linear scan over every category, and two of its call sites sit
+-- inside `for id, item in pairs(self.PS_Items)` loops in PS_EquipItem — making each equip
+-- O(items_owned × categories). A player owning 300 items on a 20-category shop paid ~6,000
+-- string comparisons per equip, and equipping runs once per equipped item on every spawn.
+--
+-- Rebuilt on a count mismatch rather than at load: categories are registered during
+-- LoadItems, and this is shared code called from both realms, so there is no single point
+-- after registration that is guaranteed to have run on both.
+local categoryByName = nil
+local categoryByNameCount = -1
+
 function PS:FindCategoryByName(cat_name)
-	for id, cat in pairs(self.Categories) do
-		if cat.Name == cat_name then
-			return cat
+	if not cat_name then return false end
+
+	local count = table.Count(self.Categories)
+	if categoryByName == nil or count ~= categoryByNameCount then
+		categoryByName = {}
+		categoryByNameCount = count
+		for _, cat in pairs(self.Categories) do
+			if cat.Name then categoryByName[cat.Name] = cat end
 		end
 	end
 
-	return false
+	-- Still returns `false` rather than nil on a miss. Existing guards test the value
+	-- itself before indexing it, and `false` is what they were written against.
+	return categoryByName[cat_name] or false
 end
 
 -- Single source of truth for the per-category team restriction (e.g. bear models
@@ -328,8 +348,47 @@ function PS:LoadItems()
 						continue
 					end
 					
+					-- Colour path. Pinned here rather than inferred at each call site.
+					--
+					-- The two paths clear each other: ApplyModelSettings sets one and
+					-- explicitly resets the other, to stop a previously equipped model's
+					-- colour bleeding through. That means "undeclared" is not a neutral
+					-- state — whichever branch ends up running wipes the other channel.
+					--
+					-- Defaults to render modulation (SetColor). $color2 proxy support is
+					-- inconsistent across addon models while modulation works on all of
+					-- them, so it is the path that degrades gracefully on an unknown
+					-- model. The colour defaults to neutral white, which under modulation
+					-- means untinted — the model's own appearance, not a colour nobody
+					-- picked.
+					--
+					-- Deliberately not behind PS.Config.Debug. A missing flag is a content
+					-- error in an item file, and the person running the server is the one
+					-- who has to go fix it.
+					if ITEM.UseColor2Proxy == nil then
+						ITEM.UseColor2Proxy = false
+
+						-- The neutral colour is only seeded for the types that key off
+						-- `color` — accessories and trails. Playermodels key off
+						-- `playercolor`, and seeding that is exactly the destructive case
+						-- PS_GetCustomization's fallback was fixed for: a player's colour
+						-- exists independently of the item, so inventing one repaints them.
+						-- For a playermodel the flag alone is the fix; the colour is left
+						-- to whatever they already have.
+						if ITEM.TYPE ~= "playermodel" then
+							ITEM.DefaultModifications = ITEM.DefaultModifications or {}
+							if ITEM.DefaultModifications.color == nil then
+								ITEM.DefaultModifications.color = Color(255, 255, 255, 255)
+							end
+						end
+
+						MsgC(Color(255, 120, 40), string.format(
+							"[POINTSHOP] %s does not set UseColor2Proxy - defaulting to SetColor modulation with a neutral colour. Set it explicitly (true or false) in %s\n",
+							ITEM.ID, ITEM.__luaFile))
+					end
+
 					-- precache
-					
+
 					if ITEM.Model then
 						util.PrecacheModel(ITEM.Model)
 					end

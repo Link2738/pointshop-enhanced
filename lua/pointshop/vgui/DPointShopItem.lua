@@ -11,6 +11,10 @@ local COL_OWNED      = Color(60,  140, 200, 255)
 local COL_CAN_BUY    = Color(50,  160, 70,  220)
 local COL_CANT_BUY   = Color(160, 50,  50,  220)
 local COL_BORDER_DEF = Color(70,  70,  75,  200)
+local COL_PANEL_BG   = Color(40,  40,  45,  255)
+local COL_MENU_BG    = Color(40,  40,  45,  250)
+local COL_SCRIM      = Color(0,   0,   0)
+local COL_LABEL_BG   = Color(18,  18,  22)
 
 -- ============================================================================
 -- STYLED CONFIRMATION DIALOG
@@ -26,12 +30,8 @@ local function CreateStyledConfirmation(title, message, yesCallback, noCallback)
 	frame:SetDraggable(false)
 
 	frame.Paint = function(s, w, h)
-		draw.RoundedBox(8, 0, 0, w, h, Color(40, 40, 45, 255))
-		for i = 8, h - 8 do
-			local alpha = math.min(100, i * 0.15)
-			surface.SetDrawColor(0, 0, 0, alpha)
-			surface.DrawRect(8, i, w - 16, 1)
-		end
+		draw.RoundedBox(8, 0, 0, w, h, COL_PANEL_BG)
+		PS_DrawScrim(8, 8, w - 16, h - 16, COL_SCRIM, 0.15, 100)
 		surface.SetDrawColor(60, 120, 180, 100)
 		surface.DrawOutlinedRect(0, 0, w, h)
 		surface.SetDrawColor(60, 120, 180, 50)
@@ -121,11 +121,15 @@ function PANEL:DoClick()
 	menu:SetKeyboardInputEnabled(false)
 
 	menu.Paint = function(s, w, h)
-		draw.RoundedBox(6, 0, 0, w, h, Color(40, 40, 45, 250))
-		for i = 0, h, 2 do
-			surface.SetDrawColor(0, 0, 0, math.min(60, i * 0.1))
-			surface.DrawRect(3, i, w - 6, 1)
-		end
+		draw.RoundedBox(6, 0, 0, w, h, COL_MENU_BG)
+
+		-- The loop this replaces stepped `i` by 2 but drew 1px-tall rects, so it shaded
+		-- every other row and left the rows between them clear — a 1px stripe pattern
+		-- rather than the smooth scrim it reads as everywhere else. Almost certainly a
+		-- typo (step 2 with a 1px rect), so this draws it smooth, which makes the panel
+		-- very slightly darker toward the bottom where the gaps used to show through.
+		PS_DrawScrim(3, 0, w - 6, h, COL_SCRIM, 0.1, 60)
+
 		surface.SetDrawColor(60, 120, 180, 120)
 		surface.DrawOutlinedRect(0, 0, w, h)
 	end
@@ -321,21 +325,41 @@ end
 -- PAINT
 -- ============================================================================
 
+-- Resolves the four per-frame state values this panel draws from, and caches them on self
+-- for PaintOver.
+--
+-- Paint and PaintOver both run every frame for the same panel, and each used to compute all
+-- four independently — so every value was derived twice per panel per frame. Paint also
+-- computed `points` and `canAfford` and then never referenced either, which meant a
+-- CalculateBuyPrice call per panel per frame thrown away. That matters more than it looks:
+-- CalculateBuyPrice is a config hook (sh_config.lua) whose shipped examples call
+-- PS_GetUsergroup and a debug print, so anyone who uncomments one turns a dead line into
+-- real work across the whole grid.
+--
+-- Paint always runs immediately before PaintOver, so PaintOver reads what this stored.
+function PANEL:ResolveDrawState()
+	local ply = LocalPlayer()
+	local id  = self.Data.ID
+
+	self._isOwned    = ply:PS_HasItem(id)
+	self._isEquipped = ply:PS_HasItemEquipped(id)
+	self._points     = PS.Config.CalculateBuyPrice(ply, self.Data)
+	self._canAfford  = ply:PS_HasPoints(self._points)
+	self._isQueued   = PS_RemovalQueue and PS_RemovalQueue[id] ~= nil
+end
+
 function PANEL:Paint(w, h)
 	if not self.Data then return end
 
-	local ply        = LocalPlayer()
-	local isOwned    = ply:PS_HasItem(self.Data.ID)
-	local isEquipped = ply:PS_HasItemEquipped(self.Data.ID)
-	local points     = PS.Config.CalculateBuyPrice(ply, self.Data)
-	local canAfford  = ply:PS_HasPoints(points)
+	self:ResolveDrawState()
+	local isOwned, isEquipped = self._isOwned, self._isEquipped
 
 	self._hoverAlpha = Lerp(FrameTime() * 8, self._hoverAlpha, self.Hovered and 1 or 0)
 
 	-- Base background
 	draw.RoundedBox(6, 0, 0, w, h, COL_BG)
 
-	local isQueued = PS_RemovalQueue and PS_RemovalQueue[self.Data.ID] ~= nil
+	local isQueued = self._isQueued
 
 	-- State-based border
 	local bc
@@ -369,18 +393,21 @@ function PANEL:PaintOver()
 	if not self.Data then return end
 	local w, h = self:GetSize()
 
-	local ply        = LocalPlayer()
-	local isOwned    = ply:PS_HasItem(self.Data.ID)
-	local isEquipped = ply:PS_HasItemEquipped(self.Data.ID)
-	local points     = PS.Config.CalculateBuyPrice(ply, self.Data)
-	local canAfford  = ply:PS_HasPoints(points)
+	-- Resolved in Paint, which always runs immediately before this. The fallback covers a
+	-- PaintOver that somehow lands first, so a missing cache draws stale-but-valid state
+	-- rather than erroring on nil.
+	if self._isOwned == nil then self:ResolveDrawState() end
 
-	-- Bottom gradient overlay (drawn over model)
-	for i = 0, LABEL_H do
-		local a = math.min(230, (LABEL_H - i) * (230 / LABEL_H))
-		surface.SetDrawColor(18, 18, 22, a)
-		surface.DrawRect(1, h - LABEL_H + i, w - 2, 1)
-	end
+	local ply        = LocalPlayer()
+	local isOwned    = self._isOwned
+	local isEquipped = self._isEquipped
+	local points     = self._points
+	local canAfford  = self._canAfford
+
+	-- Bottom gradient overlay (drawn over model).
+	-- Was LABEL_H + 1 = 39 draw calls per item panel per frame — the copy of this loop
+	-- that actually scaled, since it ran once for every item visible in the grid.
+	PS_DrawScrimFade(1, h - LABEL_H, w - 2, LABEL_H, COL_LABEL_BG, 230)
 
 	-- Item name
 	draw.SimpleText(self.Data.Name, "PS_ItemText", w/2 + 1, h - LABEL_H/2 + 1, Color(0, 0, 0, 180), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)

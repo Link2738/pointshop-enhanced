@@ -18,6 +18,88 @@
 include "sh_init.lua"
 include "cl_player_extension.lua"
 
+-- ============================================================================
+-- SHARED DRAW HELPERS
+-- ============================================================================
+--
+-- Defined above the vgui includes below so every panel file can reach them.
+
+-- Engine gradient materials. Orientation is easy to get backwards, so it was confirmed
+-- against the engine's own panels rather than guessed: DAlphaBar (lua/vgui/dalphabar.lua)
+-- draws gradient-u over an alpha checker with the opaque end at the top, and DColorCube
+-- (lua/vgui/dcolorcube.lua) tints gradient-d black to darken toward the bottom.
+local MAT_SCRIM_DOWN = Material("gui/gradient_down")  -- clear at top  -> opaque at bottom
+local MAT_SCRIM_UP   = Material("gui/gradient_up")    -- opaque at top -> clear at bottom
+
+-- Vertical scrim whose alpha ramps downward, clamped at maxAlpha.
+--
+-- Replaces a per-scanline loop that had been copy-pasted into four places:
+--
+--     for i = 8, h - 8 do
+--         surface.SetDrawColor(0, 0, 0, math.min(100, i * 0.15))
+--         surface.DrawRect(8, i, w - 16, 1)
+--     end
+--
+-- That is one SetDrawColor + DrawRect pair per pixel row, every frame, per panel — about
+-- 885 of them on a 900px shop menu, plus 39 more for every item panel in the grid. With
+-- the grid open it added up to roughly 2,000 draw calls a frame to shade two backgrounds.
+--
+-- Same result in at most two calls: the sloped section as one gradient-textured rect, and
+-- one solid rect for the tail where the old math.min had already flattened the alpha out.
+--
+-- Alpha at panel row R is min(maxAlpha, R * slope), matching the old loops exactly except
+-- on the very first row — the loop started at y * slope rather than 0, a difference of
+-- about one alpha step in 255 along the top edge.
+--
+--   x, y, w, h  region to shade, in panel coordinates
+--   colour      scrim colour; its own alpha is ignored, the ramp supplies it
+--   slope       alpha gained per pixel row, measured from panel row 0
+--   maxAlpha    ceiling the old loop's math.min applied
+function PS_DrawScrim(x, y, w, h, colour, slope, maxAlpha)
+	if w <= 0 or h <= 0 or slope <= 0 then return end
+
+	local r, g, b = colour.r, colour.g, colour.b
+	local bottom = y + h
+
+	-- Panel row at which the ramp hits the ceiling and goes flat.
+	local capRow = math.Clamp(maxAlpha / slope, y, bottom)
+
+	local rampH = capRow - y
+	if rampH > 0 then
+		surface.SetDrawColor(r, g, b, math.min(maxAlpha, capRow * slope))
+		surface.SetMaterial(MAT_SCRIM_DOWN)
+		surface.DrawTexturedRect(x, y, w, rampH)
+	end
+
+	local flatH = bottom - capRow
+	if flatH > 0 then
+		surface.SetDrawColor(r, g, b, maxAlpha)
+		surface.DrawRect(x, capRow, w, flatH)
+	end
+end
+
+-- Vertical scrim fading from topAlpha down to bottomAlpha (default 0) across the region.
+--
+-- Replaces the label-strip loop in DPointShopItem's PaintOver — the copy that actually
+-- scaled, since it ran once per item panel visible in the grid — and the status-bar loop
+-- in DPointShopItemCustomization, which fades to a non-zero alpha.
+function PS_DrawScrimFade(x, y, w, h, colour, topAlpha, bottomAlpha)
+	if w <= 0 or h <= 0 or topAlpha <= 0 then return end
+
+	surface.SetDrawColor(colour.r, colour.g, colour.b, topAlpha)
+	surface.SetMaterial(MAT_SCRIM_UP)
+
+	bottomAlpha = bottomAlpha or 0
+	if bottomAlpha <= 0 then
+		surface.DrawTexturedRect(x, y, w, h)
+	else
+		-- Sample only part of the gradient. The material runs opaque at v=0 to clear at
+		-- v=1, so stopping short of v=1 leaves the bottom edge sitting at bottomAlpha
+		-- rather than fading out completely.
+		surface.DrawTexturedRectUV(x, y, w, h, 0, 0, 1, 1 - (bottomAlpha / topAlpha))
+	end
+end
+
 include "vgui/DPointShopMenu.lua"
 include "vgui/DPointShopItem.lua"
 include "vgui/DPointShopInspector.lua"
@@ -37,6 +119,20 @@ local invalidplayeritems = {}
 -- Points/items that arrived before their player entity was networked. Keyed by
 -- EntIndex; drained in PS_Think once the entity resolves. See the PS_Items receiver.
 local pendingPlayerData = {}
+
+-- Resolved attachment / bone indices, keyed by player then item id. Consumed by
+-- CachedLookup in PostPlayerDraw; cleared for a player in the EntityRemoved hook below.
+--
+-- LookupAttachment and LookupBone take a name string and walk the model's tables to return
+-- an integer index. That answer only changes when the player's model changes or the item's
+-- bone override does — but PostPlayerDraw was recomputing it for every accessory, on every
+-- player, on every frame, which made it the most expensive thing in the hook.
+--
+-- Each entry records what it was resolved against, so a stale one is detected rather than
+-- trusted: the model path at resolve time and the exact name that was looked up. A model
+-- swap or a changed override therefore re-resolves on its own, with no invalidation call
+-- needed at the sites that cause it.
+local lookupCache = {}
 
 -- menu stuff
 
@@ -410,6 +506,10 @@ hook.Add('EntityRemoved', 'PS_CleanupClientsideModels', function(ent)
 		PS_AccessoryCustomizations[ent] = nil
 	end
 
+	-- Resolved bone/attachment indices for this player. Keyed by the entity itself, so
+	-- leaving it behind would pin the entity table for the rest of the map.
+	lookupCache[ent] = nil
+
 	-- invalidplayeritems is keyed by EntIndex, so clear that player's pending queue too.
 	local idx = ent:EntIndex()
 	if idx then invalidplayeritems[idx] = nil end
@@ -505,82 +605,139 @@ concommand.Add("ps_leakcheck", function()
 	MsgC(color_white, string.format("  players on server: %d\n", #player.GetAll()))
 end)
 
+local function CachedLookup(ply, item_id, name, isAttachment)
+	local byPly = lookupCache[ply]
+	if not byPly then
+		byPly = {}
+		lookupCache[ply] = byPly
+	end
+
+	local model = ply:GetModel()
+	local entry = byPly[item_id]
+	if entry and entry.name == name and entry.model == model and entry.attach == isAttachment then
+		return entry.id
+	end
+
+	local id
+	if isAttachment then
+		id = ply:LookupAttachment(name)
+	else
+		id = ply:LookupBone(name)
+	end
+
+	byPly[item_id] = { name = name, model = model, attach = isAttachment, id = id }
+	return id
+end
+
+-- Entity:GetColor builds and returns a fresh table on every call. GetColor4Part returns the
+-- same four channels as plain numbers. Resolved once here rather than branched per draw,
+-- with a fallback so an older build still works.
+local ReadColor4
+do
+	local entMeta = FindMetaTable('Entity')
+	if entMeta and entMeta.GetColor4Part then
+		ReadColor4 = entMeta.GetColor4Part
+	else
+		ReadColor4 = function(ent)
+			local c = ent:GetColor()
+			return c.r, c.g, c.b, c.a
+		end
+	end
+end
+
 hook.Add('PostPlayerDraw', 'PS_PostPlayerDraw', function(ply)
-	local t1 = SysTime()
 	if not ply:Alive() then return end
-	-- Removed problematic GetConVar('thirdperson') check to prevent engine spam
-	-- If you need to check for third person, use a custom convar or hook instead
-    
-    -- Player model color is already set server-side and networked automatically
-    -- We only need to draw clientside accessory models here
-    
-    if not PS.ClientsideModels[ply] then return end
-    for item_id, model in pairs(PS.ClientsideModels[ply]) do
-        -- Remove the entity before dropping the reference. Nilling the table entry on
-        -- its own orphans the ClientsideModel — it stays alive, holding a slot against
-        -- the clientside entity cap, with nothing left pointing at it.
-        if not PS.Items[item_id] then
-            if IsValid(model) then model:Remove() end
-            PS.ClientsideModels[ply][item_id] = nil
-            continue
-        end
-        local ITEM = PS.Items[item_id]
-        if not ITEM.Attachment and not ITEM.Bone then
-            if IsValid(model) then model:Remove() end
-            PS.ClientsideModels[ply][item_id] = nil
-            continue
-        end
-        local pos = Vector()
-        local ang = Angle()
-        if ITEM.Attachment then
-            local attach_id = ply:LookupAttachment(ITEM.Attachment)
-            if not attach_id then continue end
-            local attach = ply:GetAttachment(attach_id)
-            if not attach then continue end
-            pos = attach.Pos
-            ang = attach.Ang
-        else
-            local boneOverride = PS_ItemDefaultOverrides and PS_ItemDefaultOverrides[item_id] and PS_ItemDefaultOverrides[item_id].bone
-            local bone_id = ply:LookupBone(boneOverride or ITEM.Bone)
-            if not bone_id then continue end
-            pos, ang = ply:GetBonePosition(bone_id)
-            -- GetBonePosition returns nil,nil when the bone matrix isn't set up yet,
-            -- which happens routinely on the spawn frame. Passing that on ends in
-            -- model:SetPos(nil), and because this is PostPlayerDraw the error repeats
-            -- every frame rather than once.
-            if not pos or not ang then continue end
-        end
-        model, pos, ang = ITEM:ModifyClientsideModel(ply, model, pos, ang)
-        model:SetPos(pos)
-        model:SetAngles(ang)
-        model:SetRenderOrigin(pos)
-        model:SetRenderAngles(ang)
-        model:SetupBones()
-        
-        -- Apply color modulation before drawing
-        -- Skip render.SetColorModulation if model uses Color2Proxy (color already set via SetColor2)
-        if not ITEM.UseColor2Proxy then
-            local modelColor = model:GetColor() or Color(255, 255, 255, 255)
-            render.SetColorModulation(modelColor.r / 255, modelColor.g / 255, modelColor.b / 255)
-            if modelColor.a < 255 then
-                render.SetBlend(modelColor.a / 255)
-            end
-        end
-        
-        model:DrawModel()
-        
-        -- Reset render state (only if we set it)
-        if not ITEM.UseColor2Proxy then
-            render.SetColorModulation(1, 1, 1)
-            render.SetBlend(1)
-        end
-        
-        model:SetRenderOrigin()
-        model:SetRenderAngles()
-    end
-    local t2 = SysTime()
-    local dt = (t2 - t1) * 1000 -- ms
-    if PS and PS.Config and PS.Config.Debug and dt > 2 then
-        print(string.format('[Pointshop] PostPlayerDraw for %s took %.2f ms', tostring(ply), dt))
-    end
+	if not PS.ClientsideModels[ply] then return end
+
+	-- Timing is gated up front rather than measured unconditionally and discarded at the
+	-- bottom. The old form called SysTime() twice on every invocation — including before
+	-- the Alive() check, on a path that then returned without ever using it — to feed a
+	-- print behind PS.Config.Debug, testing that flag only after the work it guards.
+	local debugging = PS and PS.Config and PS.Config.Debug
+	local t1 = debugging and SysTime() or 0
+
+	-- Player model color is already set server-side and networked automatically
+	-- We only need to draw clientside accessory models here
+
+	for item_id, model in pairs(PS.ClientsideModels[ply]) do
+		local ITEM = PS.Items[item_id]
+
+		-- Remove the entity before dropping the reference. Nilling the table entry on
+		-- its own orphans the ClientsideModel — it stays alive, holding a slot against
+		-- the clientside entity cap, with nothing left pointing at it.
+		if not ITEM or (not ITEM.Attachment and not ITEM.Bone) then
+			if IsValid(model) then model:Remove() end
+			PS.ClientsideModels[ply][item_id] = nil
+			continue
+		end
+
+		local pos, ang
+		if ITEM.Attachment then
+			local attach_id = CachedLookup(ply, item_id, ITEM.Attachment, true)
+			if not attach_id then continue end
+			local attach = ply:GetAttachment(attach_id)
+			if not attach then continue end
+			pos = attach.Pos
+			ang = attach.Ang
+		else
+			local override = PS_ItemDefaultOverrides and PS_ItemDefaultOverrides[item_id]
+			local bone_id = CachedLookup(ply, item_id, (override and override.bone) or ITEM.Bone, false)
+			if not bone_id then continue end
+			pos, ang = ply:GetBonePosition(bone_id)
+			-- GetBonePosition returns nil,nil when the bone matrix isn't set up yet,
+			-- which happens routinely on the spawn frame. Passing that on ends in
+			-- model:SetPos(nil), and because this is PostPlayerDraw the error repeats
+			-- every frame rather than once.
+			if not pos or not ang then continue end
+		end
+
+		model, pos, ang = ITEM:ModifyClientsideModel(ply, model, pos, ang)
+		model:SetPos(pos)
+		model:SetAngles(ang)
+		model:SetRenderOrigin(pos)
+		model:SetRenderAngles(ang)
+		model:SetupBones()
+
+		-- Render state is set and reset UNCONDITIONALLY around every accessory draw.
+		--
+		-- render.SetColorModulation and render.SetBlend are global, and PostPlayerDraw runs
+		-- after the player model has already been drawn — so whatever modulation the player
+		-- was drawn with is still active when we get here. Setting it per accessory is not
+		-- just how the accessory's own colour is applied, it is what isolates the accessory
+		-- from the player's render state.
+		--
+		-- Skipping the call when there is nothing to apply does NOT leave the identity
+		-- transform in place, it leaves the player's. That is how a modulation-coloured
+		-- playermodel ends up tinting every accessory on it, and why the reset below is
+		-- also unconditional rather than paired to a branch.
+		--
+		-- Read from the entity. GetColor4Part returns the four channels as plain numbers,
+		-- so this costs an accessor call and no allocation — Entity:GetColor would build a
+		-- fresh table per accessory per frame.
+		if ITEM.UseColor2Proxy then
+			-- Colour already lives in the $color2 proxy; modulation must be neutral so it
+			-- neither double-tints nor inherits the player's.
+			render.SetColorModulation(1, 1, 1)
+			render.SetBlend(1)
+		else
+			local r, g, b, a = ReadColor4(model)
+			render.SetColorModulation(r / 255, g / 255, b / 255)
+			render.SetBlend(a / 255)
+		end
+
+		model:DrawModel()
+
+		render.SetColorModulation(1, 1, 1)
+		render.SetBlend(1)
+
+		model:SetRenderOrigin()
+		model:SetRenderAngles()
+	end
+
+	if debugging then
+		local dt = (SysTime() - t1) * 1000 -- ms
+		if dt > 2 then
+			print(string.format('[Pointshop] PostPlayerDraw for %s took %.2f ms', tostring(ply), dt))
+		end
+	end
 end)
