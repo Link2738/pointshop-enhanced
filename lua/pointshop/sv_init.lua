@@ -164,20 +164,34 @@ end)
 net.Receive('PS_TakeItem', function(length, ply)
 	local other = net.ReadEntity()
 	local item_id = net.ReadString()
-	
+
 	if not PS.Config.AdminCanAccessAdminTab and not PS.Config.SuperAdminCanAccessAdminTab then return end
-	
+
 	local admin_allowed = PS.Config.AdminCanAccessAdminTab and ply:IsAdmin()
 	local super_admin_allowed = PS.Config.SuperAdminCanAccessAdminTab and ply:IsSuperAdmin()
-	
-	if (admin_allowed or super_admin_allowed) and other and item_id and PS.Items[item_id] and IsValid(other) and other:IsPlayer() and other:PS_HasItem(item_id) then
-		-- holster it first without notificaiton
+
+	if not (admin_allowed or super_admin_allowed) then return end
+	if not item_id or item_id == '' then return end
+	if not IsValid(other) or not other:IsPlayer() then return end
+	if not other:PS_HasItem(item_id) then return end
+
+	-- PS.Items[item_id] used to be part of this condition, which meant an item whose Lua
+	-- file had been deleted could not be taken back at all: the player still owned the
+	-- row, but every admin path to remove it was gated on a definition that no longer
+	-- existed. The ownership check above is the one that matters for authority; the
+	-- lookup below is only needed for the holster callback.
+	local ITEM = PS.Items[item_id]
+
+	-- holster it first without notificaiton
+	if other.PS_Items[item_id] then
 		other.PS_Items[item_id].Equipped = false
-	
-		local ITEM = PS.Items[item_id]
-		ITEM:OnHolster(other)
-		other:PS_TakeItem(item_id)
 	end
+
+	if ITEM then
+		ITEM:OnHolster(other)
+	end
+
+	other:PS_TakeItem(item_id)
 end)
 
 -- hooks
@@ -230,17 +244,23 @@ util.AddNetworkString('PS_SendNotification')
 util.AddNetworkString('PS_ToggleMenu')
 util.AddNetworkString('PS_AdminRequestItems')
 util.AddNetworkString('PS_AdminItemsResponse')
+util.AddNetworkString('PS_AdminRequestSummary')
+util.AddNetworkString('PS_AdminSummaryResponse')
+
+-- Shared gate for every admin-tab net handler. Mirrors the client-side check that
+-- decides whether the tab is drawn at all — the client one is cosmetic, this one is
+-- the actual authority.
+local function PS_AdminTabAllowed(ply)
+	if not IsValid(ply) then return false end
+	if not PS.Config.AdminCanAccessAdminTab and not PS.Config.SuperAdminCanAccessAdminTab then return false end
+	local admin_allowed = PS.Config.AdminCanAccessAdminTab and ply:IsAdmin()
+	local super_allowed = PS.Config.SuperAdminCanAccessAdminTab and ply:IsSuperAdmin()
+	return (admin_allowed or super_allowed) == true
+end
 
 -- Admin request: fetch another player's items (not synced to other clients by default)
 net.Receive('PS_AdminRequestItems', function(len, ply)
-	if not IsValid(ply) then return end
-
-	-- Respects the same config gate as every other admin handler; this one used to check
-	-- IsAdmin() alone, so it stayed open even with the admin tab disabled.
-	if not PS.Config.AdminCanAccessAdminTab and not PS.Config.SuperAdminCanAccessAdminTab then return end
-	local admin_allowed = PS.Config.AdminCanAccessAdminTab and ply:IsAdmin()
-	local super_allowed = PS.Config.SuperAdminCanAccessAdminTab and ply:IsSuperAdmin()
-	if not (admin_allowed or super_allowed) then return end
+	if not PS_AdminTabAllowed(ply) then return end
 
 	-- Rate limited: the response serialises a player's entire inventory.
 	ply._PS_LastAdminReq = ply._PS_LastAdminReq or 0
@@ -252,6 +272,33 @@ net.Receive('PS_AdminRequestItems', function(len, ply)
 	net.Start('PS_AdminItemsResponse')
 		net.WriteEntity(target)
 		net.WriteTable(target.PS_Items or {})
+	net.Send(ply)
+end)
+
+-- Admin request: points and item counts for every player, for the admin list columns.
+--
+-- Those columns called ply:PS_GetPoints() / ply:PS_GetItems() directly, but PS_SendPoints
+-- and PS_SendItems both net.Send(self) — a player's points and inventory are only ever
+-- networked to that player. So the columns read PS_Points on a remote player entity,
+-- which is never set, and rendered 0 for everyone but the admin themselves.
+--
+-- Sent as a flat list rather than per-player messages: one round trip for the whole
+-- list, and counts instead of inventories keeps it small (2 bytes + 4 bytes per player).
+net.Receive('PS_AdminRequestSummary', function(len, ply)
+	if not PS_AdminTabAllowed(ply) then return end
+
+	ply._PS_LastAdminSummary = ply._PS_LastAdminSummary or 0
+	if CurTime() - ply._PS_LastAdminSummary < 0.5 then return end
+	ply._PS_LastAdminSummary = CurTime()
+
+	local plys = player.GetAll()
+	net.Start('PS_AdminSummaryResponse')
+		net.WriteUInt(#plys, 8)
+		for _, p in ipairs(plys) do
+			net.WriteUInt(p:EntIndex(), 13)
+			net.WriteUInt(math.Clamp(p.PS_Points or 0, 0, 16777215), 24)
+			net.WriteUInt(math.Clamp(table.Count(p.PS_Items or {}), 0, 4095), 12)
+		end
 	net.Send(ply)
 end)
 

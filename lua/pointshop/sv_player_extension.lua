@@ -202,7 +202,16 @@ function Player:PS_GiveItem(item_id)
 end
 
 function Player:PS_TakeItem(item_id)
-	if not PS.Items[item_id] then return false end
+	-- Deliberately does NOT require PS.Items[item_id] to exist.
+	--
+	-- Ownership is the authority here, and that's what PS_HasItem checks. Gating removal
+	-- on a live item definition made an item whose Lua file had been deleted permanently
+	-- unremovable: the row stayed in the player's inventory and in storage, and nothing
+	-- — admin panel or otherwise — could reach it.
+	--
+	-- The sell path (PS_SellItem) resolves and validates ITEM before it gets here, so
+	-- this doesn't loosen anything for selling.
+	if not item_id then return false end
 	if not self:PS_HasItem(item_id) then return false end
 
 	self.PS_Items[item_id] = nil
@@ -475,8 +484,11 @@ function Player:PS_EquipItem(item_id)
 		end
 
 		for id, item in pairs(self.PS_Items) do
-			if item_id ~= id and PS.Items[id] and PS.Items[id].TYPE == "playermodel" and self.PS_Items[id].Equipped then
-				local otherCategory = PS:FindCategoryByName(PS.Items[id].Category)
+			-- PS.Items[id] was indexed four times across these two lines, and
+			-- self.PS_Items[id] re-fetched when `item` is already the loop value.
+			local otherITEM = PS.Items[id]
+			if item_id ~= id and otherITEM and otherITEM.TYPE == "playermodel" and item.Equipped then
+				local otherCategory = PS:FindCategoryByName(otherITEM.Category)
 				if otherCategory then
 					-- Holster if teams overlap (same team group) OR same category name
 					local overlap = false

@@ -43,32 +43,14 @@ surface.CreateFont( "PS_CategoryButton", {
 	size = 14, weight = 600, antialias = true,
 })
 
-local ALL_ITEMS = 1
-local OWNED_ITEMS = 2
-local UNOWNED_ITEMS = 3
-
 local BGColor1 = Color(52, 73, 94)
 local BGColor2 = Color(40, 40, 40)
 local BGColor3 = Color(57, 56, 54)
 
-local function BuildItemMenu(menu, ply, itemstype, callback)
-	local plyitems = ply:PS_GetItems()
-	
-	for category_id, CATEGORY in pairs(PS.Categories) do
-		
-		local catmenu = menu:AddSubMenu(CATEGORY.Name)
-		
-		table.SortByMember(PS.Items, PS.Config.SortItemsBy, function(a, b) return a > b end)
-		
-		for item_id, ITEM in pairs(PS.Items) do
-			if ITEM.Category == CATEGORY.Name then
-				if itemstype == ALL_ITEMS or (itemstype == OWNED_ITEMS and plyitems[item_id]) or (itemstype == UNOWNED_ITEMS and not plyitems[item_id]) then
-					catmenu:AddOption(ITEM.Name, function() callback(item_id) end)
-				end
-			end
-		end
-	end
-end
+-- Cached at file scope rather than rebuilt inside Paint every frame, matching how
+-- cl_hud.lua and cl_scoreboard.lua in the gamemode handle their palettes.
+local COL_PANEL_BG = Color(40, 40, 45, 255)
+local COL_SCRIM    = Color(0, 0, 0)
 
 local PANEL = {}
 
@@ -445,131 +427,27 @@ function PANEL:PopulateItems()
 	self.ItemScroll:InvalidateLayout(true)
 end
 
-function PANEL:OpenAdminMenu()
-	local menu = DermaMenu()
-	menu:SetMinimumWidth(200)
-	
-	-- Give Points submenu
-	local givePointsMenu = menu:AddSubMenu("Give Points")
-	for _, ply in pairs(player.GetAll()) do
-		givePointsMenu:AddOption(ply:Nick(), function()
-			self:PromptGivePoints(ply)
-		end)
-	end
-	
-	-- Set Points submenu
-	local setPointsMenu = menu:AddSubMenu("Set Points")
-	for _, ply in pairs(player.GetAll()) do
-		setPointsMenu:AddOption(ply:Nick(), function()
-			self:PromptSetPoints(ply)
-		end)
-	end
-	
-	menu:AddSpacer()
-	
-	-- Give Item submenu
-	local giveItemMenu = menu:AddSubMenu("Give Item")
-	for _, ply in pairs(player.GetAll()) do
-		local plyMenu = giveItemMenu:AddSubMenu(ply:Nick())
-		BuildItemMenu(plyMenu, ply, ALL_ITEMS, function(item_id)
-			net.Start('PS_GiveItem')
-				net.WriteEntity(ply)
-				net.WriteString(item_id)
-			net.SendToServer()
-		end)
-	end
-	
-	-- Take Item submenu
-	local takeItemMenu = menu:AddSubMenu("Take Item")
-	for _, ply in pairs(player.GetAll()) do
-		local plyMenu = takeItemMenu:AddSubMenu(ply:Nick())
-		BuildItemMenu(plyMenu, ply, OWNED_ITEMS, function(item_id)
-			net.Start('PS_TakeItem')
-				net.WriteEntity(ply)
-				net.WriteString(item_id)
-			net.SendToServer()
-		end)
-	end
-	
-	menu:Open()
-end
+-- PANEL:OpenAdminMenu() and its PromptGivePoints / PromptSetPoints / BuildItemMenu
+-- helpers used to sit here: a DermaMenu-based admin UI superseded by DPointShopAdmin,
+-- which the admin button in Init creates. Nothing referenced OpenAdminMenu, so none of
+-- it could run — but it carried live bugs for whoever wired it up, since it read another
+-- player's points and inventory off the client (both are only networked to their owner,
+-- so Set Points would have written 0 and the Take Item submenu was always empty).
+-- Removed rather than repaired; DPointShopAdmin is the supported path.
 
-function PANEL:PromptGivePoints(ply)
-	local frame = vgui.Create("DFrame")
-	frame:SetTitle("Give " .. PS.Config.PointsName .. " to " .. ply:Nick())
-	frame:SetSize(300, 120)
-	frame:Center()
-	frame:MakePopup()
-	
-	local label = vgui.Create("DLabel", frame)
-	label:SetText("Amount:")
-	label:Dock(TOP)
-	label:DockMargin(5, 10, 5, 5)
-	
-	local entry = vgui.Create("DNumberWang", frame)
-	entry:Dock(TOP)
-	entry:DockMargin(5, 0, 5, 5)
-	entry:SetValue(100)
-	
-	local btn = vgui.Create("DButton", frame)
-	btn:SetText("Give")
-	btn:Dock(TOP)
-	btn:DockMargin(5, 5, 5, 5)
-	btn.DoClick = function()
-		net.Start('PS_GivePoints')
-			net.WriteEntity(ply)
-			net.WriteInt(tonumber(entry:GetValue()) or 0, 32)
-		net.SendToServer()
-		frame:Close()
-	end
-end
-
-function PANEL:PromptSetPoints(ply)
-	local frame = vgui.Create("DFrame")
-	frame:SetTitle("Set " .. PS.Config.PointsName .. " for " .. ply:Nick())
-	frame:SetSize(300, 120)
-	frame:Center()
-	frame:MakePopup()
-	
-	local label = vgui.Create("DLabel", frame)
-	label:SetText("Amount:")
-	label:Dock(TOP)
-	label:DockMargin(5, 10, 5, 5)
-	
-	local entry = vgui.Create("DNumberWang", frame)
-	entry:Dock(TOP)
-	entry:DockMargin(5, 0, 5, 5)
-	entry:SetValue(ply:PS_GetPoints())
-	
-	local btn = vgui.Create("DButton", frame)
-	btn:SetText("Set")
-	btn:Dock(TOP)
-	btn:DockMargin(5, 5, 5, 5)
-	btn.DoClick = function()
-		net.Start('PS_SetPoints')
-			net.WriteEntity(ply)
-			net.WriteInt(tonumber(entry:GetValue()) or 0, 32)
-		net.SendToServer()
-		frame:Close()
-	end
-end
-
-function PANEL:Think()
-	-- Update admin tab if needed (simplified version)
-	-- Original admin functionality preserved but can be expanded later
-end
+-- An empty PANEL:Think() used to sit here as a placeholder. It wasn't inert: it replaced
+-- DFrame:Think, which is what drives dragging, so SetDraggable(true) at the top of Init
+-- did nothing and the shop window couldn't be moved. Removed rather than stubbed — if
+-- per-frame work is needed here later it has to call self.BaseClass.Think(self) first.
 
 function PANEL:Paint(w, h)
 	-- Rounded background base
-	draw.RoundedBox(8, 0, 0, w, h, Color(40, 40, 45, 255))
-	
-	-- Gradient overlay (drawn inside rounded area)
-	for i = 8, h - 8 do
-		local alpha = math.min(100, i * 0.15)
-		surface.SetDrawColor(0, 0, 0, alpha)
-		surface.DrawRect(8, i, w - 16, 1)
-	end
-	
+	draw.RoundedBox(8, 0, 0, w, h, COL_PANEL_BG)
+
+	-- Gradient overlay (drawn inside rounded area).
+	-- Was a loop drawing one 1px rect per row: ~885 draw calls a frame on a 900px panel.
+	PS_DrawScrim(8, 8, w - 16, h - 16, COL_SCRIM, 0.15, 100)
+
 	-- Outer border glow with rounded corners
 	surface.SetDrawColor(60, 120, 180, 100)
 	surface.DrawOutlinedRect(0, 0, w, h)
