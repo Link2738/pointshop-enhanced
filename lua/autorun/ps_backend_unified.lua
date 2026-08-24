@@ -312,14 +312,8 @@ if SERVER then
                 end
 
                 local useColor2 = PS.Items and PS.Items[itemID] and PS.Items[itemID].UseColor2Proxy or false
-                if useColor2 then
-                    ply:SetPlayerColor(Vector(r/255, g/255, b/255))
-                    ply:SetColor(Color(255, 255, 255, 255))
-                else
-                    ply:SetColor(Color(r, g, b, 255))
-                    ply:SetPlayerColor(Vector(1, 1, 1))
-                end
-                ply:SetRenderMode(RENDERMODE_NORMAL)
+                -- Both channels written in one place. See PS:ApplyColorToPlayer.
+                PS:ApplyColorToPlayer(ply, Color(r, g, b, 255), useColor2)
                 ply.PS_PlayerColor   = Color(r, g, b, 255)
                 ply.PS_UseColor2Proxy = useColor2
 
@@ -392,14 +386,7 @@ if SERVER then
             -- the applied result disagreed — you'd tune a colour that then changed on
             -- Apply. Values are already 0-255 from UInt(8), so no clamping needed.
             local useColor2 = PS.Items and PS.Items[itemID] and PS.Items[itemID].UseColor2Proxy or false
-            if useColor2 then
-                ply:SetColor(Color(255, 255, 255, 255))
-                ply:SetPlayerColor(Vector(r / 255, g / 255, b / 255))
-            else
-                ply:SetColor(Color(r, g, b, 255))
-                ply:SetPlayerColor(Vector(1, 1, 1))
-            end
-            ply:SetRenderMode(RENDERMODE_NORMAL)
+            PS:ApplyColorToPlayer(ply, Color(r, g, b, 255), useColor2)
         end
     end)
     

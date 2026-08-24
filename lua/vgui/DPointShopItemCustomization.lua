@@ -465,10 +465,27 @@ function PANEL:CreatePlayermodelControls()
     self.colorMixer:SetPalette(true)
     self.colorMixer:SetAlphaBar(false)
     self.colorMixer:SetWangs(true)
+
+    -- Opened before ValueChanged is assigned below, so this SetColor itself cannot apply —
+    -- but the cube's delayed re-fire lands a frame or two later, by which time the callback
+    -- exists. Held open until the panel has settled, and every later seed reopens it.
+    self._colorSeeding = true
     self.colorMixer:SetColor(Color(255, 255, 255))
+    timer.Simple(0.2, function()
+        -- Must close on its own. A panel whose saved data never arrives is never seeded
+        -- again, and leaving the window open would swallow the user's own input.
+        if IsValid(self) then self._colorSeeding = false end
+    end)
+
     self.colorMixer.ValueChanged = function()
         local ply = LocalPlayer()
         if IsValid(ply) then
+            -- Seeding the mixer programmatically also fires this, and not only once: the
+            -- colour cube re-fires a frame or two later with a value taken from its knob
+            -- position rather than from what was set. Applying that would overwrite the
+            -- player's real colour with one nobody picked. See SetMixerColorQuiet.
+            if self._colorSeeding then return end
+
             local col = self.colorMixer:GetColor()
 
             -- DColorMixer fires ValueChanged continuously while the mouse is held, even
@@ -487,31 +504,12 @@ function PANEL:CreatePlayermodelControls()
             if PS and PS.Config and PS.Config.Debug then
                 print(string.format("[PS COLOR DEBUG] PREVIEW colorMixer -> R=%d G=%d B=%d useColor2=%s itemID=%s", col.r, col.g, col.b, tostring(useColor2), tostring(self.itemID)))
             end
-            if useColor2 then
-                -- Clear any leftover render modulation from a previously equipped modulation model
-                ply:SetColor(Color(255, 255, 255, 255))
-                if PS and PS.Config and PS.Config.Debug then
-                    print(string.format("[PS COLOR DEBUG] PREVIEW Calling SetPlayerColor(%.3f, %.3f, %.3f)", col.r/255, col.g/255, col.b/255))
-                end
-                ply:SetPlayerColor(Vector(col.r / 255, col.g / 255, col.b / 255))
-                ply:SetRenderMode(RENDERMODE_NORMAL)
-            else
-                -- Use SetColor for render modulation
-                if PS and PS.Config and PS.Config.Debug then
-                    print(string.format("[PS COLOR DEBUG] PREVIEW Calling SetColor(%d, %d, %d)", col.r, col.g, col.b))
-                end
-                ply:SetColor(Color(col.r, col.g, col.b, 255))
-                ply:SetRenderMode(RENDERMODE_NORMAL)
-                -- Reset player color so it doesn't interfere
-                if PS and PS.Config and PS.Config.Debug then
-                    print("[PS COLOR DEBUG] PREVIEW Resetting SetPlayerColor to white (was modulation path)")
-                end
-                ply:SetPlayerColor(Vector(1, 1, 1))
-            end
-            if PS and PS.Config and PS.Config.Debug then
-                print(string.format("[PS COLOR DEBUG] PREVIEW After apply -> GetColor=%s GetPlayerColor=%s", tostring(ply:GetColor()), tostring(ply:GetPlayerColor())))
-            end
-            
+
+            -- Both channels written in one place. This block used to carry its own copy of
+            -- the branch, which is how the preview could disagree with what Apply produced.
+            PS:ApplyColorToPlayer(ply, col, useColor2)
+
+
             if PS and PS.Config and PS.Config.Debug then
                 print(string.format("[PS PREVIEW] Color changed: R=%d G=%d B=%d UseColor2=%s", 
                     col.r, col.g, col.b, tostring(useColor2)))
@@ -818,18 +816,18 @@ function PANEL:CreateBodygroupButtons()
         -- Apply player color
         if mods.playercolor and self.colorMixer then
             local pc = mods.playercolor
-            self.colorMixer:SetColor(Color(
+            self:SetMixerColorQuiet(Color(
                 pc[1] or pc.r or 255,
                 pc[2] or pc.g or 255,
                 pc[3] or pc.b or 255
             ))
             local ply = LocalPlayer()
             if IsValid(ply) then
-                ply:SetPlayerColor(Vector(
-                    (pc[1] or pc.r or 255) / 255,
-                    (pc[2] or pc.g or 255) / 255,
-                    (pc[3] or pc.b or 255) / 255
-                ))
+                -- Was an unconditional SetPlayerColor with no path branch at all, so
+                -- loading saved data pushed the colour into the proxy channel even for a
+                -- modulation item — landing it where that model does not render it while
+                -- leaving modulation untouched.
+                PS:ApplyColorToPlayer(ply, pc, self:UsesColor2())
                 if PS_SendPreviewUpdate then
                     PS_SendPreviewUpdate(self.itemType, self.itemID, "playercolor",
                         pc[1] or pc.r or 255,
@@ -1168,17 +1166,9 @@ function PANEL:ResetPlayermodel()
 
     -- Player color (apply with the same color2-proxy awareness as the live mixer).
     local r, g, b = defaults.playercolor[1], defaults.playercolor[2], defaults.playercolor[3]
-    if self.colorMixer then self.colorMixer:SetColor(Color(r, g, b)) end
+    if self.colorMixer then self:SetMixerColorQuiet(Color(r, g, b)) end
     if IsValid(ply) then
-        local useColor2 = self:UsesColor2()
-        if useColor2 then
-            ply:SetColor(Color(255, 255, 255, 255))
-            ply:SetPlayerColor(Vector(r / 255, g / 255, b / 255))
-        else
-            ply:SetColor(Color(r, g, b, 255))
-            ply:SetPlayerColor(Vector(1, 1, 1))
-        end
-        ply:SetRenderMode(RENDERMODE_NORMAL)
+        PS:ApplyColorToPlayer(ply, Color(r, g, b, 255), self:UsesColor2())
     end
     if PS_SendPreviewUpdate then PS_SendPreviewUpdate(self.itemType, self.itemID, "playercolor", r, g, b) end
 end
@@ -1218,7 +1208,12 @@ function PANEL:EnablePreview()
         for i = 0, ply:GetNumBodyGroups() - 1 do
             self._originalBodygroups[i] = ply:GetBodygroup(i)
         end
-        self._originalPlayerColor = ply:GetPlayerColor()
+        -- Both channels are captured, because which one holds the player's actual colour
+        -- depends on the item. Only the proxy was saved before, so cancelling a preview on
+        -- a modulation item restored the proxy's value *as* modulation — a colour the
+        -- player had never had.
+        self._originalPlayerColor = ply:GetPlayerColor()   -- proxy, normalised Vector
+        self._originalRenderColor = ply:GetColor()         -- modulation, Color
     elseif self.itemType == "trail" then
         -- Trails are server-side entities; nothing to preview locally
     end
@@ -1351,17 +1346,13 @@ function PANEL:DisablePreview(restoreAccessories)
                 end
             end
             
-            if self._originalPlayerColor then
-                -- Restore using correct method based on item type
-                local useColor2 = self:UsesColor2()
-                if useColor2 then
-                    ply:SetPlayerColor(self._originalPlayerColor)
-                else
-                    -- originalPlayerColor is a Vector, convert back to Color for modulation
-                    local v = self._originalPlayerColor
-                    ply:SetColor(Color(v.x * 255, v.y * 255, v.z * 255, 255))
-                    ply:SetRenderMode(RENDERMODE_NORMAL)
-                end
+            -- Restore from whichever channel actually held this item's colour, through the
+            -- same entry point that applied the preview — so the channel that is not being
+            -- restored gets cleared rather than being left as the preview left it.
+            local useColor2 = self:UsesColor2()
+            local original = useColor2 and self._originalPlayerColor or self._originalRenderColor
+            if original then
+                PS:ApplyColorToPlayer(ply, original, useColor2)
             end
         end
     elseif self.itemType == "trail" then
@@ -1467,7 +1458,7 @@ function PANEL:LoadModsIntoSliders(mods)
         end
         if mods.playercolor and self.colorMixer then
             local pc = mods.playercolor
-            self.colorMixer:SetColor(Color(pc[1] or pc.r or 255, pc[2] or pc.g or 255, pc[3] or pc.b or 255))
+            self:SetMixerColorQuiet(Color(pc[1] or pc.r or 255, pc[2] or pc.g or 255, pc[3] or pc.b or 255))
         end
     end
     timer.Simple(0.05, function()
@@ -1610,16 +1601,38 @@ end
 -- Reads whichever channel the item actually uses, mirroring the split in the mixer's own
 -- ValueChanged: Color2Proxy items carry their colour in the player colour, everything
 -- else in render modulation.
+-- Sets the mixer's displayed colour WITHOUT letting it write back to the player.
+--
+-- Every programmatic SetColor on a DColorMixer fires ValueChanged, and it does not stop
+-- at one: the mixer's colour cube re-fires on a later frame once it has laid out, with a
+-- value derived from its knob position rather than from what was set. That late fire
+-- carries a different colour, so a dedupe on the last applied value does not catch it, and
+-- the panel ends up pushing a colour nobody chose onto the player — which is why opening
+-- the panel used to strip the model's colour while still displaying the correct numbers.
+--
+-- The window suppresses applies until the mixer has settled. Same idea as the _syncing and
+-- _resetting flags the sliders in this file already use; genuine user input arrives well
+-- after it closes.
+function PANEL:SetMixerColorQuiet(col)
+    if not self.colorMixer then return end
+
+    self._colorSeeding = true
+    self._lastPreviewColor = { r = col.r, g = col.g, b = col.b }
+    self.colorMixer:SetColor(col)
+
+    timer.Simple(0.2, function()
+        if IsValid(self) then self._colorSeeding = false end
+    end)
+end
+
 function PANEL:SeedColorMixerFromPlayer()
     if not self.colorMixer then return end
 
     local ply = LocalPlayer()
     if not IsValid(ply) then return end
 
-    local useColor2 = self:UsesColor2()
-
     local col
-    if useColor2 then
+    if self:UsesColor2() then
         local v = ply:GetPlayerColor()   -- normalized 0-1 Vector
         col = Color(
             math.Clamp(math.floor((v.x or 1) * 255), 0, 255),
@@ -1631,11 +1644,7 @@ function PANEL:SeedColorMixerFromPlayer()
         col = Color(c.r, c.g, c.b)
     end
 
-    -- DColorMixer:SetColor fires ValueChanged, which would apply this straight back to the
-    -- player. This is a display sync, not a user edit, so prime the callback's own dedupe
-    -- field first and let it bail.
-    self._lastPreviewColor = { r = col.r, g = col.g, b = col.b }
-    self.colorMixer:SetColor(col)
+    self:SetMixerColorQuiet(col)
 end
 
 function PANEL:GetBoneName()
@@ -1970,18 +1979,16 @@ if CLIENT then
                             -- Apply player color
                             if mods.playercolor and v.colorMixer then
                                 local pc = mods.playercolor
-                                v.colorMixer:SetColor(Color(
+                                v:SetMixerColorQuiet(Color(
                                     pc[1] or pc.r or 255,
                                     pc[2] or pc.g or 255,
                                     pc[3] or pc.b or 255
                                 ))
                                 local ply = LocalPlayer()
                                 if IsValid(ply) then
-                                    ply:SetPlayerColor(Vector(
-                                        (pc[1] or pc.r or 255) / 255,
-                                        (pc[2] or pc.g or 255) / 255,
-                                        (pc[3] or pc.b or 255) / 255
-                                    ))
+                                    -- Same fix as the pending-data path above: this was an
+                                    -- unconditional SetPlayerColor with no path branch.
+                                    PS:ApplyColorToPlayer(ply, pc, v:UsesColor2())
                                     if PS_SendPreviewUpdate then
                                         PS_SendPreviewUpdate(itemType, itemID, "playercolor",
                                             pc[1] or pc.r or 255,

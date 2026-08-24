@@ -14,54 +14,16 @@ function BASE:ApplyModelSettings(ply, modifications)
         end
     end
     if modifications and modifications.playercolor then
-        local c = modifications.playercolor
-        local r, g, b
-        
-        -- Handle Vector format (normalized 0-1) - convert to RGB 0-255
-        if type(c) == "Vector" or (type(c) == "table" and c.x) then
-            r = math.floor((c.x or 1) * 255)
-            g = math.floor((c.y or 1) * 255)
-            b = math.floor((c.z or 1) * 255)
-        -- Handle table format (RGB 0-255)
-        else
-            r = (c[1] or 255)
-            g = (c[2] or 255)
-            b = (c[3] or 255)
-        end
-        
-        if SERVER and PS and PS.Config and PS.Config.Debug then
-            print(string.format("[PS Playermodel] Applying color to %s: R=%d G=%d B=%d, UseColor2Proxy=%s", 
-                ply:Nick(), r, g, b, tostring(self.UseColor2Proxy)))
-        end
-        
-        if PS and PS.Config and PS.Config.Debug then
-            print(string.format("[PS COLOR DEBUG] BASE:ApplyModelSettings -> player=%s R=%d G=%d B=%d UseColor2Proxy=%s model=%s", ply:Nick(), r, g, b, tostring(self.UseColor2Proxy), tostring(self.Model)))
-        end
-        if self.UseColor2Proxy then
-            -- Clear any leftover render modulation from a previously equipped modulation model
-            ply:SetColor(Color(255, 255, 255, 255))
-            if PS and PS.Config and PS.Config.Debug then
-                print(string.format("[PS COLOR DEBUG] BASE Calling SetPlayerColor(%.3f, %.3f, %.3f)", r/255, g/255, b/255))
-            end
-            ply:SetPlayerColor(Vector(r/255, g/255, b/255))
-            ply:SetRenderMode(RENDERMODE_NORMAL)
-        else
-            -- Use render color modulation for models without color2 proxy
-            if PS and PS.Config and PS.Config.Debug then
-                print(string.format("[PS COLOR DEBUG] BASE Calling SetColor(%d, %d, %d)", r, g, b))
-            end
-            ply:SetColor(Color(r, g, b, 255))
-            ply:SetRenderMode(RENDERMODE_NORMAL)
-            -- Reset player color so it doesn't interfere
-            if PS and PS.Config and PS.Config.Debug then
-                print("[PS COLOR DEBUG] BASE Resetting SetPlayerColor to white (was modulation path)")
-            end
-            ply:SetPlayerColor(Vector(1, 1, 1))
-        end
-        if PS and PS.Config and PS.Config.Debug then
-            print(string.format("[PS COLOR DEBUG] BASE After apply -> GetColor=%s GetPlayerColor=%s", tostring(ply:GetColor()), tostring(ply:GetPlayerColor())))
-        end
-        
+        -- Both colour channels are written by PS:ApplyColorToPlayer (sh_init.lua) — the
+        -- active one to this colour, the other reset to neutral. The two-branch version
+        -- that used to live here was one of six copies of that rule.
+        --
+        -- It also handled the three colour shapes inline; ReadRGB in that function does it
+        -- now, including the normalised Vector shape item files write.
+        PS:ApplyColorToPlayer(ply, modifications.playercolor, self.UseColor2Proxy)
+
+        local r, g, b = PS:ReadColorRGB(modifications.playercolor)
+
         -- Store and broadcast color
         if SERVER then
             ply.PS_PlayerColor = Color(r, g, b, 255)
@@ -104,10 +66,10 @@ function BASE:OnHolster(ply)
     if ply._OldModel then
         ply:SetModel(ply._OldModel)
     end
-    -- Reset all color/bodygroup state so the default model is clean
-    ply:SetColor(Color(255, 255, 255, 255))
-    ply:SetPlayerColor(Vector(1, 1, 1))
-    ply:SetRenderMode(RENDERMODE_NORMAL)
+    -- Reset all color/bodygroup state so the default model is clean. Neutral through the
+    -- modulation path sets modulation to white and clears the proxy, which is both
+    -- channels — the same "clear what you are not using" rule, used to clear both.
+    PS:ApplyColorToPlayer(ply, Color(255, 255, 255, 255), false)
     -- Reset all bodygroups to 0
     for i = 0, ply:GetNumBodyGroups() - 1 do
         ply:SetBodygroup(i, 0)

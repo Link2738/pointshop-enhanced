@@ -257,6 +257,94 @@ function PS:CanEquipForTeam(ply, ITEM)
 	return false
 end
 
+-- ============================================================================
+-- COLOUR APPLICATION
+-- ============================================================================
+--
+-- There are two colour channels and they are mutually exclusive:
+--
+--   modulation   ent:SetColor(col)         works on every model
+--   proxy        ply:SetPlayerColor(vec)   players; needs $color2 in the material
+--                mdl:SetColor2(vec)        clientside models; same requirement
+--
+-- Whichever channel carries the colour, the other MUST be reset to neutral. Leaving it
+-- alone lets the previously equipped model's colour bleed through the channel nobody
+-- cleared, and on a wrong branch it is worse than that: the write lands in a channel the
+-- model does not render while the one it was using gets wiped.
+--
+-- That rule is the entire reason these functions exist. It used to be reimplemented at
+-- roughly 28 sites across 6 files, and every one had to remember to clear the channel it
+-- was not using. Forgetting once is not a missing tint, it is a wiped one — which is what
+-- made the failures so hard to read.
+--
+-- Players and accessories keep SEPARATE entry points on purpose. They share this rule,
+-- not their API:
+--
+--   * the proxy channel is SetPlayerColor on a player and SetColor2 on a model
+--   * a player's colour is a persistent property of the player; an accessory's belongs to
+--     that one model and dies with it
+--   * the player path is shared realm (equipping runs on the server), while clientside
+--     models only exist on the client
+--
+-- Collapsing them into one "it's all a model" helper is precisely how a playermodel's
+-- colour ends up on a hat.
+--
+-- PS:ApplyColorToPlayer  -- here, shared realm
+-- PS:ApplyColorToModel   -- cl_player_extension.lua, client only
+
+local COLOR_NEUTRAL  = Color(255, 255, 255, 255)
+local VECTOR_NEUTRAL = Vector(1, 1, 1)
+
+-- Normalises the three shapes a colour actually arrives in, because all three genuinely
+-- reach this from different directions:
+--
+--   Color{r,g,b}        0-255, from panels and the accessory storage key
+--   {[1],[2],[3]}       0-255, the array shape `playercolor` is stored as in SQL
+--   Vector(x,y,z)       0-1 normalised, what item files write (playercolor = Vector(1,1,1))
+--
+-- The Vector case has to be tested first: a Vector answers to .x, and an unlucky read of
+-- .r on one would come back nil and silently default the channel to 255.
+-- Exposed as PS:ReadColorRGB below, because callers that store or network a colour need
+-- the same normalisation and should not each re-derive it.
+local function ReadRGB(color)
+	if not color then return 255, 255, 255 end
+
+	if type(color) == "Vector" or color.x ~= nil then
+		return math.Clamp(math.floor((tonumber(color.x) or 1) * 255), 0, 255),
+		       math.Clamp(math.floor((tonumber(color.y) or 1) * 255), 0, 255),
+		       math.Clamp(math.floor((tonumber(color.z) or 1) * 255), 0, 255)
+	end
+
+	return math.Clamp(tonumber(color.r or color[1]) or 255, 0, 255),
+	       math.Clamp(tonumber(color.g or color[2]) or 255, 0, 255),
+	       math.Clamp(tonumber(color.b or color[3]) or 255, 0, 255)
+end
+
+function PS:ReadColorRGB(color)
+	return ReadRGB(color)
+end
+
+function PS:ApplyColorToPlayer(ply, color, useColor2)
+	if not IsValid(ply) or not ply.SetColor then return end
+
+	local r, g, b = ReadRGB(color)
+
+	if useColor2 then
+		ply:SetColor(COLOR_NEUTRAL)
+		ply:SetPlayerColor(Vector(r / 255, g / 255, b / 255))
+	else
+		ply:SetColor(Color(r, g, b, 255))
+		ply:SetPlayerColor(VECTOR_NEUTRAL)
+	end
+
+	ply:SetRenderMode(RENDERMODE_NORMAL)
+
+	if PS.Config and PS.Config.Debug then
+		print(string.format("[PS COLOR] player=%s R=%d G=%d B=%d useColor2=%s",
+			ply:Nick(), r, g, b, tostring(useColor2 and true or false)))
+	end
+end
+
 -- Initialization
 
 function PS:Initialize()

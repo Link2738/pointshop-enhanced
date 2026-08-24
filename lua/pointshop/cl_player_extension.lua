@@ -113,26 +113,35 @@ local function StorePlayerColor(ent, col)
 	end
 end
 
-function PS:ApplyColorToPlayerModel(ply, color)
-	if not IsValid(ply) or not ply.SetColor then return end
-	local col = CopyColor(color)
-	ply:SetColor(col)
-	StorePlayerColor(ply, col)
-end
+-- REMOVED: PS:ApplyColorToPlayerModel. It had no callers, and it only ever wrote the
+-- modulation channel — no useColor2 parameter, no clearing of the proxy — so anything that
+-- had started using it would have hit exactly the bleed the rule exists to prevent.
+-- PS:ApplyColorToPlayer in sh_init.lua is the player entry point.
 
+-- The accessory half of the colour rule. Its player counterpart is PS:ApplyColorToPlayer
+-- in sh_init.lua, where the rule itself is documented.
+--
+-- Kept separate from that one deliberately: the proxy channel here is SetColor2 rather
+-- than SetPlayerColor, this is client-only because clientside models do not exist on the
+-- server, and an accessory's colour belongs to that one model rather than persisting on
+-- the player. Sharing the rule does not mean sharing the function.
 function PS:ApplyColorToModel(model, color, useColor2Proxy)
 	if not IsValid(model) then return end
 	local col = CopyColor(color)
 
 	if useColor2Proxy and model.SetColor2 then
-		model:SetColor2(Vector(col.r/255, col.g/255, col.b/255))
+		model:SetColor2(Vector(col.r / 255, col.g / 255, col.b / 255))
 		model:SetColor(Color(255, 255, 255, col.a))
+		model:SetRenderMode(col.a < 255 and RENDERMODE_TRANSCOLOR or RENDERMODE_NORMAL)
 	else
-		if col.a < 255 then
-			model:SetRenderMode(RENDERMODE_TRANSCOLOR)
-		else
-			model:SetRenderMode(RENDERMODE_NORMAL)
+		-- Clear the proxy as well. This branch used to set modulation and leave SetColor2
+		-- alone, so a model that had previously been coloured through the proxy kept that
+		-- tint underneath the new one — the same bleed the player path guards against, on
+		-- the accessory side.
+		if model.SetColor2 then
+			model:SetColor2(Vector(1, 1, 1))
 		end
+		model:SetRenderMode(col.a < 255 and RENDERMODE_TRANSCOLOR or RENDERMODE_NORMAL)
 		model:SetColor(col)
 	end
 
