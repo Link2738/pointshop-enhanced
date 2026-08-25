@@ -189,6 +189,11 @@ local function ValidRow(row, where)
 		return true
 	end
 
+	if row.type == "toggle" then
+		if not isfunction(row.set) then Warn(where .. " toggle '" .. row.label .. "' has no set()") return false end
+		return true
+	end
+
 	Warn(where .. " row '" .. row.label .. "' has unknown type " .. tostring(row.type))
 	return false
 end
@@ -540,6 +545,7 @@ end
 -- the caller to know which type it was.
 function PANEL:AddRow(row, y, listW)
 	if row.type == "slider" then return self:AddSliderRow(row, y, listW) end
+	if row.type == "toggle" then return self:AddToggleRow(row, y, listW) end
 	return self:AddColourRow(row, y, listW)
 end
 
@@ -566,6 +572,24 @@ function PANEL:AddColourRow(row, y, listW)
 	swatch.DoClick = function() self:OpenMixer(row) end
 
 	return 26
+end
+
+-- Label and a checkbox, on one line — a toggle needs no travel, so it fits where a slider
+-- would not.
+function PANEL:AddToggleRow(row, y, listW)
+	local box = self.List:Add("DCheckBoxLabel")
+	box:SetPos(4, y + 4)
+	box:SetSize(listW - 30, 16)
+	box:SetText(row.label)
+	box:SetTextColor(PS.Theme.Text)
+	box:SetValue(row.get() and true or false)
+
+	box.OnChange = function(_, v)
+		local ok, err = pcall(row.set, v and true or false)
+		if not ok then Warn("toggle '" .. row.label .. "' set() errored: " .. tostring(err)) end
+	end
+
+	return 24
 end
 
 -- Label above, slider below. Two lines because the list column is 300px and a slider
