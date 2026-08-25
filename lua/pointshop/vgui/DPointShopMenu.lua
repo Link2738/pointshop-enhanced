@@ -313,12 +313,12 @@ end
 
 -- Flat body, shared border. No scrim: there was a black gradient here that drew a hard bar
 -- across the bottom of anything taller than ~675px, and it meant the body was never the
--- colour MenuBG named.
+-- colour its entry named.
 --
--- MenuBG rather than FrameBG so the shop window stays separately identifiable in the
--- Appearance editor; the border recipe is shared either way.
+-- FrameBG, the same body every other window uses. The shop menu and the customization panel
+-- are siblings, so they are one colour rather than two that drift.
 function PANEL:Paint(w, h)
-	PS.Theme.PaintFrame(w, h, PS.Theme.MenuBG)
+	PS.Theme.PaintFrame(w, h)
 end
 
 vgui.Register('DPointShopMenu', PANEL, 'DFrame')

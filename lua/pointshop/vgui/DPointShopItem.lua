@@ -12,7 +12,7 @@ local COL_EQUIPPED   = PS.Theme.CardEquipped
 local COL_OWNED      = PS.Theme.CardOwned
 local COL_CAN_BUY    = PS.Theme.CardCanBuy
 local COL_CANT_BUY   = PS.Theme.CardCantBuy
-local COL_PANEL_BG   = PS.Theme.CardPanelBG
+local COL_PANEL_BG   = PS.Theme.FrameBG
 local COL_MENU_BG    = PS.Theme.CardMenuBG
 local COL_LABEL_BG   = PS.Theme.CardLabelBG
 

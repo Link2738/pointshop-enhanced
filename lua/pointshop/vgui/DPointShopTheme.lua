@@ -37,12 +37,9 @@ local EXCLUDE = {
 }
 
 local LABELS = {
-	PanelBG = "Customization panel body", StatusBar = "Status strip", Accent = "Accent line",
+	StatusBar = "Status strip", Accent = "Accent line",
 
-	MenuBG         = "Shop window body",
-	MenuHeaderBG   = "Shop header bar",
 	MenuCategoryBG = "Category strip background",
-	MenuScrollBG   = "Scrollbar track (shop)",
 
 	FrameBG     = "Window body",
 	FrameBorder = "Window border",
@@ -102,7 +99,7 @@ local LABELS = {
 	CardQueued  = "Item, queued for removal",
 	CardCanBuy  = "Badge, affordable", CardCantBuy = "Badge, too costly",
 	CardLabelBG = "Item name strip",
-	CardPanelBG = "Dialog background", CardMenuBG = "Right-click menu",
+CardMenuBG = "Right-click menu",
 
 	Text = "Button text", TextDim = "Labels and status",
 	Shadow = "Text shadow", ShadowStrong = "Text shadow, strong",
@@ -113,9 +110,7 @@ local function AssignSection(name, ...)
 	for _, k in ipairs({ ... }) do SECTION_OF[k] = name end
 end
 
-AssignSection("Surfaces", "PanelBG", "StatusBar", "CardPanelBG", "CardMenuBG",
-	"MenuBG", "MenuHeaderBG", "MenuCategoryBG", "MenuScrollBG",
-	"FrameBG", "FrameBorder", "HeaderBG", "HeaderRule")
+AssignSection("Surfaces", "StatusBar", "CardMenuBG", "MenuCategoryBG", "FrameBG", "FrameBorder", "HeaderBG", "HeaderRule")
 AssignSection("Lists", "RowBG", "RowAlt", "RowHover",
 	"ScrollTrack", "ScrollGrip", "ScrollGripHover")
 AssignSection("Accent", "Accent",

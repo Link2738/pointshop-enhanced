@@ -41,31 +41,27 @@ local T = PS.Theme
 -- SURFACES
 -- ============================================================================
 
-T.PanelBG   = Color(30, 30, 35, 255)   -- customization panel body
+-- ONE entry per surface across the whole shop.
+--
+-- These were briefly split per panel — MenuBG, PanelBG, CardPanelBG, MenuHeaderBG,
+-- MenuScrollBG — so that changing one would show which surface it drew. That was a step, not
+-- a destination: the shop menu, the customization panel, Admin, Inspector and the dialogs
+-- are windows of one program, so their bodies are one colour, their headers are one colour,
+-- and their scrollbars are one colour.
+--
+-- Collapsed onto (40,40,45), the value four of the five already used. The customization
+-- panel was (30,30,35) and gets very slightly lighter, which is the point: it was the one
+-- disagreeing.
+T.FrameBG     = Color(40, 40, 45, 255)     -- every window body
+T.FrameBorder = Color(60, 120, 180, 255)   -- alpha applied per pass by PaintFrame
+T.HeaderBG    = Color(30, 30, 30, 255)     -- every header bar
+T.HeaderRule  = Color(60, 140, 200, 255)   -- the stripe along the top of a header
+
 T.StatusBar = Color(20, 40, 60)        -- status strip gradient base
 
--- Shop window surfaces.
---
--- One entry per surface, deliberately NOT merged with each other or with PanelBG and
--- CardPanelBG, even where they hold the same value today. MenuBG and CardPanelBG are both
--- (40,40,45) and it is tempting to collapse them.
---
--- Do not. You cannot identify a surface by changing a colour three other surfaces share —
--- change it, and you learn nothing about which one you were pointing at. Separate entries
--- make each one findable: change it, see exactly what moves. Deciding which of these should
--- genuinely share a value comes after that, not before.
-T.MenuBG         = Color(40, 40, 45, 255)   -- shop window body
-T.MenuHeaderBG   = Color(30, 30, 30, 255)   -- header bar behind the title and buttons
-T.MenuCategoryBG = Color(40, 40, 40, 255)   -- container behind the category buttons
-T.MenuScrollBG   = Color(30, 30, 30, 255)   -- scrollbar tracks, category and item grid
-
--- Shared frame surfaces. Every window that is not the shop itself — Admin, Inspector, the
--- confirmation dialogs — draws through these, so they agree by construction rather than by
--- four files happening to hold the same numbers.
-T.FrameBG     = Color(40, 40, 45, 255)
-T.FrameBorder = Color(60, 120, 180, 255)   -- alpha applied per pass by PaintFrame
-T.HeaderBG    = Color(30, 30, 30, 255)
-T.HeaderRule  = Color(60, 140, 200, 255)   -- the stripe along the top of a header
+-- Still its own: the strip behind the category buttons is a recessed container within a
+-- window rather than a window, and nothing else in the shop draws one.
+T.MenuCategoryBG = Color(40, 40, 40, 255)
 
 -- List rows.
 T.RowBG    = Color(40, 40, 45, 255)
@@ -217,8 +213,10 @@ T.CardLabelBG  = Color(18, 18, 22)
 T.CardCanBuy   = Color(50, 160, 70, 220)
 T.CardCantBuy  = Color(160, 50, 50, 220)
 
-T.CardPanelBG  = Color(40, 40, 45, 255)     -- confirm dialog body
-T.CardMenuBG   = Color(40, 40, 45, 250)     -- right-click menu body
+-- The right-click menu is translucent, so it keeps its own entry - it sits over the item
+-- grid rather than over the world, and the alpha is the point. The confirm dialog's body
+-- folded into FrameBG with every other window.
+T.CardMenuBG   = Color(40, 40, 45, 250)
 T.MenuRowText  = Color(200, 200, 200, 255)  -- right-click menu entry, not hovered
 
 -- The one right-click entry with no existing role: Modify opens the customization panel, and
@@ -435,9 +433,9 @@ end
 -- There used to be a black gradient between the two. It was removed: it drew a hard bar
 -- across the bottom of anything taller than ~675px, and it meant the body colour was never
 -- the colour anyone set.
--- `body` overrides FrameBG for a window that has its own entry — the shop menu keeps MenuBG
--- so it stays separately identifiable in the Appearance editor. The border recipe is shared
--- either way, which is the part that was drifting.
+-- `body` overrides FrameBG for a caller that genuinely needs a different surface. Nothing in
+-- the shop does today — every window shares FrameBG — but a translucent popup or an embedded
+-- panel would, and the border recipe stays shared either way.
 function T.PaintFrame(w, h, body)
 	draw.RoundedBox(T.Metrics.Radius, 0, 0, w, h, body or T.FrameBG)
 
@@ -488,7 +486,7 @@ end
 
 -- Panel body: rounded background with a single-pixel accent along the top edge.
 function T.PaintPanelBody(w, h)
-	draw.RoundedBox(4, 0, 0, w, h, T.PanelBG)
+	draw.RoundedBox(4, 0, 0, w, h, T.FrameBG)
 	surface.SetDrawColor(T.Alpha(sBorder, T.Accent, 80))
 	surface.DrawRect(0, 0, w, 1)
 end
