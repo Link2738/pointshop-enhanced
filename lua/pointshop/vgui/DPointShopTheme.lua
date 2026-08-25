@@ -67,10 +67,10 @@ local SECTIONS = {
 
 -- Builds the mock shop window: header strip, a row of category buttons with one active,
 -- and a grid of item cards in the states that have distinct borders.
-local function BuildShopMock(parent, x, y, w)
+local function BuildShopMock(parent, w, h)
 	local root = vgui.Create("DPanel", parent)
-	root:SetPos(x, y)
-	root:SetSize(w, 200)
+	root:SetPos(0, 0)
+	root:SetSize(w, h)
 	root.Paint = function(_, pw, ph)
 		PS.Theme.PaintPanelBody(pw, ph)
 		PS.Theme.PaintStatusStrip(pw, 28, "Shop")
@@ -108,13 +108,18 @@ local function BuildShopMock(parent, x, y, w)
 		{ label = "Hover me", state = nil },
 	}
 
+	-- Capped rather than simply filling the pane. A card stretched to full height stops
+	-- looking like an item card, and the point is to show what one looks like — the leftover
+	-- space below is panel background, which is itself a colour being previewed.
 	local cw = math.floor((w - 50) / 4)
+	local ch = math.Clamp(h - 92, 100, 190)
+
 	for i = 1, 4 do
 		-- DButton rather than DPanel: the last card has no state, so its border is the
 		-- hover one, and that only animates on something that takes mouse input.
 		local card = vgui.Create("DButton", root)
 		card:SetText("")
-		card:SetSize(cw, 100)
+		card:SetSize(cw, ch)
 		card:SetPos(10 + (i - 1) * (cw + 10), 82)
 		card.Paint = function(s, pw, ph)
 			PS.Theme.PaintItemCard(s, pw, ph, states[i].state, states[i].label)
@@ -126,10 +131,10 @@ end
 
 -- Builds the mock customization panel: status strip, a row of value buttons, and one of
 -- each action button so every Action style is visible together.
-local function BuildCustomizationMock(parent, x, y, w)
+local function BuildCustomizationMock(parent, w, h)
 	local root = vgui.Create("DPanel", parent)
-	root:SetPos(x, y)
-	root:SetSize(w, 250)
+	root:SetPos(0, 0)
+	root:SetSize(w, h)
 	root.Paint = function(_, pw, ph)
 		PS.Theme.PaintPanelBody(pw, ph)
 		PS.Theme.PaintStatusStrip(pw, 28, "Preview enabled. Use controls to customize.")
@@ -221,17 +226,62 @@ function PANEL:Init()
 		y = y + 8
 	end
 
-	-- Right: the preview.
+	-- Right: the preview, one tab per surface.
+	--
+	-- Tabs rather than both stacked: each mock then gets the full height, so it can be laid
+	-- out at something close to the proportions of the panel it stands for instead of being
+	-- squashed into half the pane.
 	local px = listW + 20
 	local pw = w - px - 10
+	local ph = h - 100
 
 	self.Preview = vgui.Create("DPanel", self)
 	self.Preview:SetPos(px, 45)
-	self.Preview:SetSize(pw, h - 100)
+	self.Preview:SetSize(pw, ph)
 	self.Preview.Paint = function() end
 
-	BuildShopMock(self.Preview, 0, 0, pw)
-	BuildCustomizationMock(self.Preview, 0, 210, pw)
+	local tabH, gap = 30, 8
+
+	-- The tab strip paints with Selectable.Category, the same painter the shop's own
+	-- category buttons use. Not just for consistency: it means the tabs are themselves part
+	-- of the preview, so a change to the category colours is visible immediately in the
+	-- control the cursor is already on.
+	local body = vgui.Create("DPanel", self.Preview)
+	body:SetPos(0, tabH + gap)
+	body:SetSize(pw, ph - tabH - gap)
+	body.Paint = function() end
+
+	local tabs = {
+		{ label = "Shop",          build = BuildShopMock },
+		{ label = "Customization", build = BuildCustomizationMock },
+	}
+
+	self._tabPages = {}
+	local tabW = math.floor((pw - gap) / #tabs)
+
+	for i, t in ipairs(tabs) do
+		local page = t.build(body, pw, ph - tabH - gap)
+		page:SetVisible(i == 1)
+		self._tabPages[i] = page
+
+		local btn = vgui.Create("DButton", self.Preview)
+		btn:SetText(t.label)
+		btn:SetFont("PS_CategoryButton")
+		btn:SetTextColor(PS.Theme.Text)
+		btn:SetSize(tabW, tabH)
+		btn:SetPos((i - 1) * (tabW + gap), 0)
+		btn.DoClick = function()
+			self._activeTab = i
+			for n, p in ipairs(self._tabPages) do
+				p:SetVisible(n == i)
+			end
+		end
+		btn.Paint = function(s, bw, bh)
+			PS.Theme.PaintSelectable(s, bw, bh, (self._activeTab or 1) == i, PS.Theme.Selectable.Category)
+		end
+	end
+
+	self._activeTab = 1
 
 	self:BuildFooter(w, h)
 end
