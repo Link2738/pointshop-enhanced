@@ -43,14 +43,11 @@ surface.CreateFont( "PS_CategoryButton", {
 	size = 14, weight = 600, antialias = true,
 })
 
-local BGColor1 = Color(52, 73, 94)
-local BGColor2 = Color(40, 40, 40)
-local BGColor3 = Color(57, 56, 54)
+-- Removed: BGColor1/2/3. All three were assigned and never read. One of them was (57,56,54),
+-- the only warm grey anywhere in the shop — which is how it survived: nothing ever drew it.
 
--- Cached at file scope rather than rebuilt inside Paint every frame, matching how
--- cl_hud.lua and cl_scoreboard.lua in the gamemode handle their palettes.
-local COL_PANEL_BG = Color(40, 40, 45, 255)
-local COL_SCRIM    = Color(0, 0, 0)
+-- Not a palette entry: a scratch the gradient helper writes into, not a colour anyone picks.
+local COL_SCRIM = Color(0, 0, 0)
 
 local PANEL = {}
 
@@ -75,7 +72,7 @@ function PANEL:Init()
 	self.Header:Dock(TOP)
 	self.Header:SetTall(60)
 	self.Header.Paint = function(s, w, h)
-		surface.SetDrawColor(30, 30, 30, 255)
+		surface.SetDrawColor(PS.Theme.MenuHeaderBG)
 		surface.DrawRect(0, 0, w, h)
 		
 		surface.SetDrawColor(60, 140, 200, 255)
@@ -203,60 +200,20 @@ function PANEL:Init()
 		PS:ToggleMenu()
 	end
 
-	-- Search strip
-	self.SearchText = ""
-	local searchStrip = vgui.Create("DPanel", self)
-	searchStrip:Dock(TOP)
-	searchStrip:SetTall(36)
-	searchStrip:DockMargin(10, 8, 10, 0)
-	searchStrip.Paint = function(s, w, h)
-		draw.RoundedBox(6, 0, 0, w, h, Color(28, 28, 33, 255))
-		surface.SetDrawColor(70, 70, 80, 180)
-		surface.DrawOutlinedRect(0, 0, w, h)
-		-- Magnifier icon
-		local ix, iy = 14, math.floor(h / 2)
-		surface.SetDrawColor(110, 120, 140, 200)
-		surface.DrawOutlinedRect(ix - 5, iy - 5, 9, 9)
-		surface.DrawRect(ix + 3, iy + 3, 5, 2)
-	end
-
-	local searchEntry = vgui.Create("DTextEntry", searchStrip)
-	searchEntry:Dock(FILL)
-	searchEntry:DockMargin(26, 4, 6, 4)
-	searchEntry:SetFont("PS_Default")
-	searchEntry:SetPlaceholderText("Search items...")
-	searchEntry:SetPlaceholderColor(Color(90, 95, 110))
-	searchEntry:SetTextColor(Color(220, 220, 220))
-	searchEntry:SetCursorColor(Color(60, 140, 200))
-	searchEntry.Paint = function(s, w, h)
-		draw.RoundedBox(4, 0, 0, w, h, Color(22, 22, 27, 220))
-		if s:IsEditing() then
-			surface.SetDrawColor(60, 140, 200, 100)
-		else
-			surface.SetDrawColor(55, 55, 65, 150)
-		end
-		surface.DrawOutlinedRect(0, 0, w, h)
-		s:DrawTextEntryText(Color(220, 220, 220), Color(60, 120, 180, 150), Color(220, 220, 220))
-	end
-	searchEntry.OnChange = function(s)
-		local val = s:GetValue()
-		if self.SearchText == val then return end
-		self.SearchText = val
-		self:PopulateItems()
-	end
-	self.SearchEntry = searchEntry
-
 	-- Category Grid Container (Scrollable)
+	--
+	-- Docks directly under the header now. The search strip that used to sit between them was
+	-- deprecated and removed, so both grids gained its 44px without any layout change.
 	self.CategoryScroll = vgui.Create("DScrollPanel", self)
 	self.CategoryScroll:Dock(TOP)
-	self.CategoryScroll:DockMargin(10, 5, 10, 5)
+	self.CategoryScroll:DockMargin(10, 8, 10, 5)
 	self.CategoryScroll:SetTall(90) -- Reduced height to show scrollbar with fewer categories
 	
 	local catSbar = self.CategoryScroll:GetVBar()
 	catSbar:SetWide(10)
 	catSbar:SetHideButtons(true)
 	function catSbar:Paint(w, h)
-		surface.SetDrawColor(30, 30, 30, 255)
+		surface.SetDrawColor(PS.Theme.MenuScrollBG)
 		surface.DrawRect(0, 0, w, h)
 	end
 	function catSbar.btnGrip:Paint(w, h)
@@ -271,7 +228,7 @@ function PANEL:Init()
 	self.CategoryContainer = vgui.Create("DPanel", self.CategoryScroll)
 	self.CategoryContainer:Dock(FILL)
 	self.CategoryContainer.Paint = function(s, w, h)
-		surface.SetDrawColor(40, 40, 40, 255)
+		surface.SetDrawColor(PS.Theme.MenuCategoryBG)
 		surface.DrawRect(0, 0, w, h)
 	end
 	
@@ -284,7 +241,7 @@ function PANEL:Init()
 	sbar:SetWide(12)
 	sbar:SetHideButtons(true)
 	function sbar:Paint(w, h)
-		surface.SetDrawColor(30, 30, 30, 255)
+		surface.SetDrawColor(PS.Theme.MenuScrollBG)
 		surface.DrawRect(0, 0, w, h)
 	end
 	function sbar.btnGrip:Paint(w, h)
@@ -390,12 +347,6 @@ end
 function PANEL:SelectCategory(category)
 	if not category then return end
 
-	-- Clicking a category always exits search mode
-	if self.SearchEntry and IsValid(self.SearchEntry) and self.SearchText ~= "" then
-		self.SearchText = ""
-		self.SearchEntry:SetValue("")
-	end
-
 	for _, btn in pairs(self.CategoryButtons) do
 		btn.IsActive = (btn.Category == category)
 	end
@@ -407,24 +358,14 @@ end
 function PANEL:PopulateItems()
 	self.ItemGrid:Clear()
 
-	local items = {}
-	local search = string.Trim((self.SearchText or ""):lower())
+	if not self.CurrentCategory then return end
 
-	if search ~= "" then
-		-- Cross-category search: show all matching items
-		for _, item in pairs(PS.Items) do
-			if string.find(item.Name:lower(), search, 1, true) then
-				if item.CanPlayerSee and not item:CanPlayerSee(LocalPlayer()) then continue end
-				table.insert(items, item)
-			end
-		end
-	else
-		if not self.CurrentCategory then return end
-		for _, item in pairs(PS.Items) do
-			if item.Category == self.CurrentCategory.Name then
-				if item.CanPlayerSee and not item:CanPlayerSee(LocalPlayer()) then continue end
-				table.insert(items, item)
-			end
+	local items = {}
+
+	for _, item in pairs(PS.Items) do
+		if item.Category == self.CurrentCategory.Name then
+			if item.CanPlayerSee and not item:CanPlayerSee(LocalPlayer()) then continue end
+			table.insert(items, item)
 		end
 	end
 
@@ -466,7 +407,7 @@ end
 
 function PANEL:Paint(w, h)
 	-- Rounded background base
-	draw.RoundedBox(8, 0, 0, w, h, COL_PANEL_BG)
+	draw.RoundedBox(8, 0, 0, w, h, PS.Theme.MenuBG)
 
 	-- Gradient overlay (drawn inside rounded area).
 	-- Was a loop drawing one 1px rect per row: ~885 draw calls a frame on a 900px panel.

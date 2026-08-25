@@ -41,8 +41,23 @@ local T = PS.Theme
 -- SURFACES
 -- ============================================================================
 
-T.PanelBG   = Color(30, 30, 35, 255)   -- panel body
+T.PanelBG   = Color(30, 30, 35, 255)   -- customization panel body
 T.StatusBar = Color(20, 40, 60)        -- status strip gradient base
+
+-- Shop window surfaces.
+--
+-- One entry per surface, deliberately NOT merged with each other or with PanelBG and
+-- CardPanelBG, even where they hold the same value today. MenuBG and CardPanelBG are both
+-- (40,40,45) and it is tempting to collapse them.
+--
+-- Do not. You cannot identify a surface by changing a colour three other surfaces share —
+-- change it, and you learn nothing about which one you were pointing at. Separate entries
+-- make each one findable: change it, see exactly what moves. Deciding which of these should
+-- genuinely share a value comes after that, not before.
+T.MenuBG         = Color(40, 40, 45, 255)   -- shop window body
+T.MenuHeaderBG   = Color(30, 30, 30, 255)   -- header bar behind the title and buttons
+T.MenuCategoryBG = Color(40, 40, 40, 255)   -- container behind the category buttons
+T.MenuScrollBG   = Color(30, 30, 30, 255)   -- scrollbar tracks, category and item grid
 
 -- ============================================================================
 -- ACCENT

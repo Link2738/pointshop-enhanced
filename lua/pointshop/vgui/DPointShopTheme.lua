@@ -37,7 +37,12 @@ local EXCLUDE = {
 }
 
 local LABELS = {
-	PanelBG = "Panel background", StatusBar = "Status strip", Accent = "Accent line",
+	PanelBG = "Customization panel body", StatusBar = "Status strip", Accent = "Accent line",
+
+	MenuBG         = "Shop window body",
+	MenuHeaderBG   = "Shop header bar",
+	MenuCategoryBG = "Category strip background",
+	MenuScrollBG   = "Scrollbar track",
 
 	CategoryFill   = "Category, active",        CategoryGloss  = "Category, active sheen",
 	CategoryGlow   = "Category, active glow",   CategoryBorder = "Category, active border",
@@ -80,7 +85,8 @@ local function AssignSection(name, ...)
 	for _, k in ipairs({ ... }) do SECTION_OF[k] = name end
 end
 
-AssignSection("Surfaces", "PanelBG", "StatusBar", "CardPanelBG", "CardMenuBG")
+AssignSection("Surfaces", "PanelBG", "StatusBar", "CardPanelBG", "CardMenuBG",
+	"MenuBG", "MenuHeaderBG", "MenuCategoryBG", "MenuScrollBG")
 AssignSection("Accent", "Accent",
 	"CategoryFill", "CategoryGloss", "CategoryGlow", "CategoryBorder",
 	"CategoryIdleFill", "CategoryIdleFillHover", "CategoryIdleGloss",
