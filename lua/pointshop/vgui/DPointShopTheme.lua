@@ -16,50 +16,114 @@ local PANEL = {}
 -- ============================================================================
 -- WHAT IS EDITABLE
 --
--- Ordered, grouped, and labelled for a person rather than for the code. Each row names a
--- key on PS.Theme; the editor writes channel values into that Color in place, never
--- replacing the table, because the widget styles hold references to it.
+-- The row list is GENERATED from the palette rather than hand-written. That is deliberate.
+--
+-- A hand-written subset is how the active category button ended up with a blue top half
+-- after its fill was set to black: the sheen it draws over the top half is its own palette
+-- entry, and that entry was not on the list. Same for every hover variant, every glow, and
+-- the whole item card. Anything not listed was simply unreachable, and there was nothing to
+-- make that visible short of noticing a colour that would not change.
+--
+-- Generating means an entry cannot go missing. LABELS supplies readable names and SECTION_OF
+-- the grouping; anything with neither still appears, under "Other", rather than vanishing.
 -- ============================================================================
 
-local SECTIONS = {
-	{
-		name = "Surfaces",
-		rows = {
-			{ key = "PanelBG",   label = "Panel background" },
-			{ key = "StatusBar", label = "Status strip" },
-		},
-	},
-	{
-		name = "Accent",
-		rows = {
-			{ key = "Accent",         label = "Accent line" },
-			{ key = "CategoryFill",   label = "Category, active" },
-			{ key = "CategoryBorder", label = "Category, active border" },
-			{ key = "SelectFill",     label = "Value button, selected" },
-			{ key = "SelectBorder",   label = "Value button, border" },
-			{ key = "ControlFill",    label = "Value button, idle" },
-			{ key = "ControlBorder",  label = "Value button, idle border" },
-		},
-	},
-	{
-		name = "Buttons",
-		rows = {
-			{ key = "PositiveFill",   label = "Confirm" },
-			{ key = "PositiveBorder", label = "Confirm border" },
-			{ key = "WarningFill",    label = "Reset" },
-			{ key = "WarningBorder",  label = "Reset border" },
-			{ key = "NeutralFill",    label = "Dismiss" },
-			{ key = "NeutralBorder",  label = "Dismiss border" },
-		},
-	},
-	{
-		name = "Text",
-		rows = {
-			{ key = "Text",    label = "Button text" },
-			{ key = "TextDim", label = "Labels and status" },
-		},
-	},
+-- Owner-only. The server-default panel is not this editor's to touch, so its colours are
+-- not offered - see the note in the customization mock below.
+local EXCLUDE = {
+	GoldFill = true, GoldFillHover = true, GoldBorder = true,
+	GoldText = true, GoldDivider = true, GoldLabel = true,
+	DangerFill = true, DangerFillHover = true, DangerBorder = true, DangerText = true,
 }
+
+local LABELS = {
+	PanelBG = "Panel background", StatusBar = "Status strip", Accent = "Accent line",
+
+	CategoryFill   = "Category, active",        CategoryGloss  = "Category, active sheen",
+	CategoryGlow   = "Category, active glow",   CategoryBorder = "Category, active border",
+	CategoryIdleFill        = "Category, idle",        CategoryIdleFillHover   = "Category, idle hovered",
+	CategoryIdleGloss       = "Category, idle sheen",  CategoryIdleGlossHover  = "Category, idle sheen hovered",
+	CategoryIdleBorder      = "Category, idle border", CategoryIdleBorderHover = "Category, idle border hovered",
+
+	SelectFill  = "Value button, selected",       SelectGloss  = "Value button, selected sheen",
+	SelectGlow  = "Value button, selected glow",  SelectBorder = "Value button, selected border",
+	ControlFill        = "Value button, idle",        ControlFillHover   = "Value button, idle hovered",
+	ControlGloss       = "Value button, idle sheen",  ControlGlossHover  = "Value button, idle sheen hovered",
+	ControlBorder      = "Value button, idle border", ControlBorderHover = "Value button, idle border hovered",
+
+	PositiveFill  = "Confirm",       PositiveFillHover  = "Confirm hovered",
+	PositiveGloss = "Confirm sheen", PositiveGlossHover = "Confirm sheen hovered",
+	PositiveGlow  = "Confirm glow",  PositiveBorder     = "Confirm border",
+
+	WarningFill  = "Reset",       WarningFillHover  = "Reset hovered",
+	WarningGloss = "Reset sheen", WarningGlossHover = "Reset sheen hovered",
+	WarningBorder = "Reset border",
+
+	NeutralFill  = "Dismiss",       NeutralFillHover  = "Dismiss hovered",
+	NeutralGloss = "Dismiss sheen", NeutralGlossHover = "Dismiss sheen hovered",
+	NeutralBorder = "Dismiss border", NeutralText = "Dismiss text",
+
+	CardBG      = "Item background", CardBorder  = "Item border",
+	CardHover   = "Item border, hovered",
+	CardEquipped = "Item, equipped", CardOwned  = "Item, owned",
+	CardQueued  = "Item, queued for removal",
+	CardCanBuy  = "Badge, affordable", CardCantBuy = "Badge, too costly",
+	CardLabelBG = "Item name strip",
+	CardPanelBG = "Dialog background", CardMenuBG = "Right-click menu",
+
+	Text = "Button text", TextDim = "Labels and status",
+	Shadow = "Text shadow", ShadowStrong = "Text shadow, strong",
+}
+
+local SECTION_OF = {}
+local function AssignSection(name, ...)
+	for _, k in ipairs({ ... }) do SECTION_OF[k] = name end
+end
+
+AssignSection("Surfaces", "PanelBG", "StatusBar", "CardPanelBG", "CardMenuBG")
+AssignSection("Accent", "Accent",
+	"CategoryFill", "CategoryGloss", "CategoryGlow", "CategoryBorder",
+	"CategoryIdleFill", "CategoryIdleFillHover", "CategoryIdleGloss",
+	"CategoryIdleGlossHover", "CategoryIdleBorder", "CategoryIdleBorderHover",
+	"SelectFill", "SelectGloss", "SelectGlow", "SelectBorder",
+	"ControlFill", "ControlFillHover", "ControlGloss", "ControlGlossHover",
+	"ControlBorder", "ControlBorderHover")
+AssignSection("Buttons",
+	"PositiveFill", "PositiveFillHover", "PositiveGloss", "PositiveGlossHover",
+	"PositiveGlow", "PositiveBorder",
+	"WarningFill", "WarningFillHover", "WarningGloss", "WarningGlossHover", "WarningBorder",
+	"NeutralFill", "NeutralFillHover", "NeutralGloss", "NeutralGlossHover",
+	"NeutralBorder", "NeutralText")
+AssignSection("Items", "CardBG", "CardBorder", "CardHover", "CardEquipped", "CardOwned",
+	"CardQueued", "CardCanBuy", "CardCantBuy", "CardLabelBG")
+AssignSection("Text", "Text", "TextDim", "Shadow", "ShadowStrong")
+
+local SECTION_ORDER = { "Surfaces", "Accent", "Buttons", "Items", "Text", "Other" }
+
+-- Walks the palette once and drops every colour into its section. Sorted within a section
+-- so the order is stable between sessions rather than following pairs().
+local function BuildSections()
+	local buckets = {}
+	for _, name in ipairs(SECTION_ORDER) do buckets[name] = {} end
+
+	for k, v in pairs(PS.Theme) do
+		if istable(v) and v.r ~= nil and v.g ~= nil and v.b ~= nil and not EXCLUDE[k] then
+			local bucket = buckets[SECTION_OF[k] or "Other"]
+			bucket[#bucket + 1] = { key = k, label = LABELS[k] or k }
+		end
+	end
+
+	local out = {}
+	for _, name in ipairs(SECTION_ORDER) do
+		local rows = buckets[name]
+		if #rows > 0 then
+			table.sort(rows, function(a, b) return a.label < b.label end)
+			out[#out + 1] = { name = name, rows = rows }
+		end
+	end
+
+	return out
+end
 
 -- ============================================================================
 -- PREVIEW
@@ -209,7 +273,7 @@ function PANEL:Init()
 	self.Rows = {}
 	local y = 0
 
-	for _, section in ipairs(SECTIONS) do
+	for _, section in ipairs(BuildSections()) do
 		local hdr = self.List:Add("DLabel")
 		hdr:SetText(section.name)
 		hdr:SetFont("DermaDefaultBold")
