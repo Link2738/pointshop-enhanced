@@ -327,16 +327,9 @@ function PANEL:BuildFooter(w, h)
 		PS.Theme.ResetToDefaults()
 	end)
 
-	-- Owner control, gated on the same check the item defaults use. Hidden rather than
-	-- disabled for anyone else; the server rejects the message regardless.
-	if PS_IsItemDefaultOwner and PS_IsItemDefaultOwner(LocalPlayer()) then
-		Btn(306, 180, "Gold", "Save as Server Default", function()
-			net.Start("PS_Theme_SetDefault")
-				net.WriteString(util.TableToJSON(PS.Theme.Serialise()))
-			net.SendToServer()
-			notification.AddLegacy("Saved as server default.", NOTIFY_GENERIC, 3)
-		end)
-	end
+	-- No server-default control here. This panel is a player's own appearance and nothing
+	-- else; anything that changes what OTHER people see belongs on an owner surface, not
+	-- one every player opens.
 
 	Btn(w - 110, 100, "Neutral", "Close", function()
 		self:Close()
