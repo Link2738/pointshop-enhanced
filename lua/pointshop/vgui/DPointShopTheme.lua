@@ -358,7 +358,9 @@ end
 -- The shop's own provider, registered through the public door like any other.
 local function ShopProvider()
 	return {
-		name     = "Shop",
+		-- "PointShop", not "Shop": this is the master tab, and one of its own subtabs is
+		-- already called Shop. Naming both the same would read as a tab containing itself.
+		name     = "PointShop",
 		sections = BuildShopSections(),
 		previews = {
 			{ label = "Shop",          build = BuildShopMock },
@@ -412,60 +414,103 @@ function PANEL:Init()
 		PS.Theme.PaintStatusStrip(pw, 35, "Appearance - changes preview instantly")
 	end
 
-	local listW = 300
-
-	-- Left: the swatch list.
-	self.List = vgui.Create("DScrollPanel", self)
-	self.List:SetPos(10, 45)
-	self.List:SetSize(listW, h - 100)
-
 	self.Providers = CollectProviders()
-	self.ListW = listW
-	self:BuildList()
 
-	-- Right: the preview, one tab per surface.
+	local listW  = 300
+	local tabH   = 30
+	local gap    = 8
+	local top    = 45
+
+	-- Master tab strip: one per provider. Picking one swaps BOTH panes, so the two halves
+	-- always describe the same thing — the failure this replaced was a single flat list of
+	-- every provider's rows next to a preview of one of them.
+	self.MasterY = top
+	self:BuildMasterTabs(w, tabH, gap)
+
+	local bodyY = top + tabH + gap
+
+	-- Left: the swatch list, scoped to the active provider.
 	--
-	-- Tabs rather than both stacked: each mock then gets the full height, so it can be laid
-	-- out at something close to the proportions of the panel it stands for instead of being
-	-- squashed into half the pane.
+	-- Scoped to the MASTER tab, not the subtab. A provider's subtabs are sibling views of one
+	-- palette — the shop's Shop and Customization surfaces share most of their colours — so
+	-- splitting the list between them would just list the same rows twice.
+	self.List = vgui.Create("DScrollPanel", self)
+	self.List:SetPos(10, bodyY)
+	self.List:SetSize(listW, h - bodyY - 55)
+	self.ListW = listW
+
+	-- Right: the active provider's previews as subtabs.
 	local px = listW + 20
-	local pw = w - px - 10
-	local ph = h - 100
 
 	self.Preview = vgui.Create("DPanel", self)
-	self.Preview:SetPos(px, 45)
-	self.Preview:SetSize(pw, ph)
+	self.Preview:SetPos(px, bodyY)
+	self.Preview:SetSize(w - px - 10, h - bodyY - 55)
 	self.Preview.Paint = function() end
 
-	local tabH, gap = 30, 8
+	self.SubTabH, self.SubGap = tabH, gap
 
-	-- The tab strip paints with Selectable.Category, the same painter the shop's own
-	-- category buttons use. Not just for consistency: it means the tabs are themselves part
-	-- of the preview, so a change to the category colours is visible immediately in the
-	-- control the cursor is already on.
+	self:SelectProvider(1)
+	self:BuildFooter(w, h)
+end
+
+-- One button per provider, across the top.
+function PANEL:BuildMasterTabs(w, tabH, gap)
+	self._masterBtns = {}
+
+	local n = #self.Providers
+	if n == 0 then return end
+
+	local tabW = math.floor((w - 20 - gap * (n - 1)) / n)
+
+	for i, provider in ipairs(self.Providers) do
+		local btn = vgui.Create("DButton", self)
+		btn:SetText(provider.name)
+		btn:SetFont("PS_CategoryButton")
+		btn:SetTextColor(PS.Theme.Text)
+		btn:SetSize(tabW, tabH)
+		btn:SetPos(10 + (i - 1) * (tabW + gap), self.MasterY)
+		btn.DoClick = function() self:SelectProvider(i) end
+		btn.Paint = function(s, bw, bh)
+			PS.Theme.PaintSelectable(s, bw, bh, self._activeProvider == i, PS.Theme.Selectable.Category)
+		end
+
+		self._masterBtns[i] = btn
+	end
+end
+
+-- Switches both panes to a provider: its rows on the left, its previews as subtabs.
+function PANEL:SelectProvider(index)
+	local provider = self.Providers[index]
+	if not provider then return end
+
+	self._activeProvider = index
+
+	self:BuildList()
+	self:BuildSubTabs(provider)
+end
+
+-- Preview subtabs for one provider.
+--
+-- Pages are built first and only the ones that succeed get a tab. A provider's preview
+-- builder is third-party code running inside our panel, so it is pcall'd: if it throws, its
+-- tab is dropped and the rest of the menu still opens. Two passes rather than skipping
+-- mid-loop keeps the page list contiguous — a hole in it would end the ipairs that drives
+-- tab switching, and every tab after the failed one would go dead with nothing to say why.
+function PANEL:BuildSubTabs(provider)
+	self.Preview:Clear()
+
+	local pw, ph = self.Preview:GetSize()
+	local tabH, gap = self.SubTabH, self.SubGap
+
 	local body = vgui.Create("DPanel", self.Preview)
 	body:SetPos(0, tabH + gap)
 	body:SetSize(pw, ph - tabH - gap)
 	body.Paint = function() end
 
-	local tabs = {}
-	for _, provider in ipairs(self.Providers) do
-		for _, pv in ipairs(provider.previews) do
-			tabs[#tabs + 1] = pv
-		end
-	end
-
-	-- Pages are built first and only the ones that succeed get a tab.
-	--
-	-- A provider's preview builder is third-party code running inside our panel, so it is
-	-- pcall'd: if it throws, its tab is dropped and the rest of the menu still opens. Doing
-	-- this in two passes rather than skipping mid-loop keeps the page list contiguous —
-	-- a hole in it would end the ipairs that drives tab switching, and every tab after the
-	-- failed one would silently stop responding.
 	self._tabPages = {}
 	local built = {}
 
-	for _, t in ipairs(tabs) do
+	for _, t in ipairs(provider.previews) do
 		local ok, page = pcall(t.build, body, pw, ph - tabH - gap)
 		if ok and IsValid(page) then
 			built[#built + 1] = { label = t.label, page = page }
@@ -475,6 +520,8 @@ function PANEL:Init()
 			if IsValid(page) then page:Remove() end
 		end
 	end
+
+	self._activeTab = 1
 
 	local tabW = math.floor((pw - gap * math.max(#built - 1, 0)) / math.max(#built, 1))
 
@@ -494,51 +541,41 @@ function PANEL:Init()
 			end
 		end
 		btn.Paint = function(s, bw, bh)
-			PS.Theme.PaintSelectable(s, bw, bh, (self._activeTab or 1) == i, PS.Theme.Selectable.Category)
+			PS.Theme.PaintSelectable(s, bw, bh, self._activeTab == i, PS.Theme.Selectable.Category)
 		end
 	end
-
-	self._activeTab = 1
-
-	self:BuildFooter(w, h)
 end
 
--- Fills the left column from the collected providers.
+-- Fills the left column from the active provider.
 --
 -- Separate from Init because Reset has to rebuild it: a slider holds its own copy of the
 -- value and does not notice one changing underneath it.
 function PANEL:BuildList()
+	local provider = self.Providers[self._activeProvider or 1]
+	if not provider then return end
+
 	local listW = self.ListW
 	self.List:Clear()
 
 	local y = 0
 
-	-- Section headers carry the provider name only when there is more than one provider.
-	-- With just the shop installed "Shop / Surfaces" is noise; with a gamemode contributing
-	-- too, "Surfaces" alone stops saying whose surfaces.
-	local multi = #self.Providers > 1
+	-- No provider prefix on the headers. The list only ever shows one provider now, so
+	-- "PointShop / Surfaces" would be repeating what the master tab already says.
+	for _, section in ipairs(provider.sections) do
+		local hdr = self.List:Add("DLabel")
+		hdr:SetText(section.name)
+		hdr:SetFont("DermaDefaultBold")
+		hdr:SetTextColor(PS.Theme.TextDim)
+		hdr:SetPos(4, y)
+		hdr:SizeToContents()
+		y = y + 20
 
-	for _, provider in ipairs(self.Providers) do
-		for _, section in ipairs(provider.sections) do
-			local hdr = self.List:Add("DLabel")
-			hdr:SetText(multi and (provider.name .. " / " .. section.name) or section.name)
-			hdr:SetFont("DermaDefaultBold")
-			hdr:SetTextColor(PS.Theme.TextDim)
-			hdr:SetPos(4, y)
-			hdr:SizeToContents()
-			y = y + 20
-
-			for _, row in ipairs(section.rows) do
-				y = y + self:AddRow(row, y, listW)
-			end
-
-			y = y + 8
+		for _, row in ipairs(section.rows) do
+			y = y + self:AddRow(row, y, listW)
 		end
-	end
-end
 
-function PANEL:Rebuild()
-	self:BuildList()
+		y = y + 8
+	end
 end
 
 -- Renders one row and returns the vertical space it used, so a taller control does not need
@@ -669,33 +706,40 @@ function PANEL:BuildFooter(w, h)
 		return b
 	end
 
-	-- Save and Reset fan out across every provider. Each owns its own store, so one failing
-	-- must not stop the others being written — a provider that errors is reported and the
-	-- loop carries on.
-	local function ForEachProvider(what, fn)
-		for _, provider in ipairs(self.Providers) do
-			local f = provider[fn]
-			if isfunction(f) then
-				local ok, err = pcall(f)
-				if not ok then
-					Warn(provider.name .. " failed to " .. what .. ": " .. tostring(err))
-				end
-			end
+	-- Both scoped to the master tab, not fanned out across every provider.
+	--
+	-- Reset especially: fanning it out means someone undoing a shop colour also wipes their
+	-- aura settings, which they have no reason to expect from a button on a tab that is not
+	-- showing those. Save follows the same rule so the two do not disagree about what "this"
+	-- means — a Save that wrote more than the Reset would undo is its own trap.
+	local function ActiveProvider(what, fn)
+		local provider = self.Providers[self._activeProvider or 1]
+		if not provider then return end
+
+		local f = provider[fn]
+		if not isfunction(f) then return end
+
+		local ok, err = pcall(f)
+		if not ok then
+			Warn(provider.name .. " failed to " .. what .. ": " .. tostring(err))
 		end
+
+		return provider.name
 	end
 
 	Btn(10, 140, "Positive", "Save", function()
-		ForEachProvider("save", "save")
-		notification.AddLegacy("Appearance saved.", NOTIFY_GENERIC, 3)
+		local name = ActiveProvider("save", "save")
+		notification.AddLegacy((name or "Appearance") .. " settings saved.", NOTIFY_GENERIC, 3)
 	end)
 
 	Btn(158, 140, "Warning", "Reset to Default", function()
-		ForEachProvider("reset", "reset")
+		ActiveProvider("reset", "reset")
 
-		-- Sliders hold their own copy of the value, so they do not notice a reset that
-		-- happened underneath them. Rebuilding the list is the honest fix; the alternative
-		-- is every provider having to know to push values back into controls it never saw.
-		self:Rebuild()
+		-- Sliders and checkboxes hold their own copy of the value, so they do not notice a
+		-- reset that happened underneath them. Rebuilding the list is the honest fix; the
+		-- alternative is every provider having to know to push values back into controls it
+		-- never saw.
+		self:BuildList()
 	end)
 
 	-- No server-default control here. This panel is a player's own appearance and nothing
