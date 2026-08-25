@@ -395,14 +395,8 @@ function PANEL:_BuildPlayerItemsWindow(ply, items)
 			btn:SetPos(itemRow:GetWide() - 120, 12)
 		end
 		takeBtn.Paint = function(s, w, h)
-			local isHovered = s:IsHovered()
-			s._hoverAlpha = s._hoverAlpha or 0
-			s._hoverAlpha = Lerp(FrameTime() * 10, s._hoverAlpha, isHovered and 1 or 0)
-
-			local baseRed = 120 + s._hoverAlpha * 40
-			local alpha = s:IsEnabled() and (200 + s._hoverAlpha * 55) or 60
-			draw.RoundedBox(4, 0, 0, w, h, Color(baseRed, 40, 40, alpha))
-			draw.SimpleText(s:IsEnabled() and "Take Item" or "Taken", "DermaDefault", w/2, h/2, PS.Theme.Text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+			PS.Theme.PaintAction(s, w, h, PS.Theme.Action.Danger,
+				s:IsEnabled() and "Take Item" or "Taken")
 		end
 		takeBtn.DoClick = function(s)
 			net.Start('PS_TakeItem')
@@ -628,14 +622,8 @@ function PANEL:PromptGiveItem(ply)
 			btn:SetPos(itemRow:GetWide() - 110, 12)
 		end
 		giveBtn.Paint = function(s, w, h)
-			local isHovered = s:IsHovered()
-			s._hoverAlpha = s._hoverAlpha or 0
-			s._hoverAlpha = Lerp(FrameTime() * 10, s._hoverAlpha, isHovered and 1 or 0)
-			
-			local baseGreen = 60 + s._hoverAlpha * 30
-			local alpha = s:IsEnabled() and (200 + s._hoverAlpha * 55) or 60
-			draw.RoundedBox(4, 0, 0, w, h, Color(40, baseGreen, 40, alpha))
-			draw.SimpleText(s:IsEnabled() and "Give Item" or "Given", "DermaDefault", w/2, h/2, PS.Theme.Text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+			PS.Theme.PaintAction(s, w, h, PS.Theme.Action.Positive,
+				s:IsEnabled() and "Give Item" or "Given")
 		end
 		giveBtn.DoClick = function(s)
 			net.Start('PS_GiveItem')

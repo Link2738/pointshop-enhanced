@@ -53,7 +53,9 @@ local LABELS = {
 	AccentGlossHover = "Tool button sheen, hovered", AccentGlow = "Tool button glow",
 	AccentBorder = "Tool button border",
 
-	ModifyFill  = "Modify entry",
+	ModifyFill  = "Modify / view",
+	ModifyFillHover = "Modify / view, hovered", ModifyBorder = "Modify / view border",
+	PriceAfford = "Price, affordable", PriceCant = "Price, too costly",
 	MenuRowText = "Right-click menu text",
 	PointsText  = "Points balance",
 
@@ -124,7 +126,7 @@ AssignSection("Accent", "Accent",
 	"ControlBorder", "ControlBorderHover")
 AssignSection("Buttons",
 	"AccentFill", "AccentFillHover", "AccentGloss", "AccentGlossHover",
-	"AccentGlow", "AccentBorder", "ModifyFill",
+	"AccentGlow", "AccentBorder", "ModifyFill", "ModifyFillHover", "ModifyBorder",
 	"PositiveFill", "PositiveFillHover", "PositiveGloss", "PositiveGlossHover",
 	"PositiveGlow", "PositiveBorder",
 	"WarningFill", "WarningFillHover", "WarningGloss", "WarningGlossHover", "WarningBorder",
@@ -132,7 +134,7 @@ AssignSection("Buttons",
 	"NeutralBorder", "NeutralText")
 AssignSection("Items", "BadgeGloss", "IconAdmin", "IconGroup", "CardBG", "CardBorder", "CardHover", "CardEquipped", "CardOwned",
 	"CardQueued", "CardCanBuy", "CardCantBuy", "CardLabelBG")
-AssignSection("Text", "Text", "TextDim", "MenuRowText", "PointsText", "Shadow", "ShadowStrong")
+AssignSection("Text", "Text", "TextDim", "MenuRowText", "PointsText", "PriceAfford", "PriceCant", "Shadow", "ShadowStrong")
 
 -- Any name used by AssignSection must appear here: BuildShopSections indexes buckets by
 -- section name, so one that is missing is a nil table indexed on the first row assigned to it.
