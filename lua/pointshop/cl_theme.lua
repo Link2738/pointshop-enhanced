@@ -412,19 +412,31 @@ end
 -- ============================================================================
 -- PERSISTENCE
 --
--- Same shape as pointshop/ps_item_defaults.lua: JSON under data/pointshop/, pcall-guarded
--- parse, and a bad file falls back to defaults quietly rather than taking the UI down with
--- it. A theme is cosmetic - it must never be able to stop someone opening the shop.
+-- Three layers, applied in order, each overriding the one before:
 --
--- Resolution order on load: the player's own file, then the owner's server default, then
--- what is shipped above.
+--   1. SHIPPED   - the palette written above. Every client has this, always. It is the
+--                  look the shop has out of the box, and the floor everything else sits
+--                  on: nothing can remove it, so there is always something valid to draw.
+--   2. SERVER    - one main default the server sends on join (pointshop/sv_theme.lua).
+--                  This is how a server has a house look without shipping a modified
+--                  addon. Absent on a server that has not set one.
+--   3. CUSTOM    - the player's own picks, from their config file.
+--
+-- The config file holds BOTH the defaults it was handed and the custom colours, in
+-- separate sections. Keeping the defaults in the file rather than only in memory means the
+-- player's copy records what they were customising away from, so "reset" is meaningful
+-- even after the server's default changes underneath them.
+--
+-- Same file shape as pointshop/ps_item_defaults.lua: JSON under data/pointshop/, parse
+-- guarded by pcall, and anything unreadable falls back quietly. A theme is cosmetic - it
+-- must never be able to stop someone opening the shop.
 -- ============================================================================
 
 local DATA_PATH = "pointshop/theme.json"
 
--- Snapshot of the shipped values, taken before anything can overwrite them. This is what
--- "Reset to Default" restores, so it has to be a copy - referencing the live Colors would
--- make it track the edits it exists to undo.
+-- Snapshot of the shipped values, taken before anything can overwrite them. A copy, not
+-- references - referencing the live Colors would make this track the very edits it exists
+-- to undo.
 local DEFAULTS = {}
 
 -- Only entries that are actually Colors are themeable; the style tables and the painters
@@ -437,16 +449,6 @@ for k, v in pairs(T) do
 	if IsColourKey(k, v) then
 		DEFAULTS[k] = { v.r, v.g, v.b, v.a }
 	end
-end
-
--- Current values as a plain table, for writing to disk or sending to the server.
-function T.Serialise()
-	local out = {}
-	for k in pairs(DEFAULTS) do
-		local c = T[k]
-		out[k] = { c.r, c.g, c.b, c.a }
-	end
-	return out
 end
 
 -- Writes values into the existing Color tables in place.
@@ -468,32 +470,68 @@ function T.Apply(tbl)
 	end
 end
 
+-- The server's main default, once it has arrived. nil on a server that has not set one.
+local serverDefault = nil
+
+-- Layers 1 and 2 together: what this player sees before any of their own choices. This is
+-- what "reset" means and what `custom` is measured against.
+local function ResolvedDefault()
+	local out = {}
+	for k, v in pairs(DEFAULTS) do
+		out[k] = { v[1], v[2], v[3], v[4] }
+	end
+
+	if istable(serverDefault) then
+		for k, v in pairs(serverDefault) do
+			if out[k] and istable(v) then
+				out[k] = { v[1], v[2], v[3], v[4] }
+			end
+		end
+	end
+
+	return out
+end
+
 function T.ResetToDefaults()
-	T.Apply(DEFAULTS)
+	T.Apply(ResolvedDefault())
+end
+
+-- Only the entries that actually differ from the resolved default.
+--
+-- Storing the difference rather than a full snapshot is what keeps a player tracking the
+-- server's look: if the owner changes a colour the player never touched, they get the new
+-- one. A full snapshot would silently freeze every colour at whatever it was the first
+-- time they hit Save.
+local function CustomOnly()
+	local base = ResolvedDefault()
+	local out = {}
+
+	for k, b in pairs(base) do
+		local c = T[k]
+		if c.r ~= b[1] or c.g ~= b[2] or c.b ~= b[3] or c.a ~= b[4] then
+			out[k] = { c.r, c.g, c.b, c.a }
+		end
+	end
+
+	return out
 end
 
 function T.Save()
 	if not file.IsDir("pointshop", "DATA") then file.CreateDir("pointshop") end
-	file.Write(DATA_PATH, util.TableToJSON(T.Serialise(), true))
+
+	file.Write(DATA_PATH, util.TableToJSON({
+		defaults = ResolvedDefault(),
+		custom   = CustomOnly(),
+	}, true))
 end
 
--- The owner's default, received from the server. Held separately so that clearing a
--- player's own file falls back to it rather than straight to the shipped values.
-local serverDefault = nil
-
-function T.SetServerDefault(tbl)
-	serverDefault = tbl
-	-- Only take effect for players who have not chosen their own.
-	if not file.Exists(DATA_PATH, "DATA") then
-		T.ResetToDefaults()
-		T.Apply(serverDefault)
-	end
-end
-
+-- Reapplies all three layers from scratch. Called on load and whenever the server's default
+-- arrives or changes, so a new server default reaches every colour the player has not
+-- personally overridden.
 function T.Load()
-	T.ResetToDefaults()
+	T.Apply(DEFAULTS)
 
-	if serverDefault then T.Apply(serverDefault) end
+	if istable(serverDefault) then T.Apply(serverDefault) end
 
 	if not file.Exists(DATA_PATH, "DATA") then return end
 
@@ -501,11 +539,20 @@ function T.Load()
 	if not raw or raw == "" then return end
 
 	local ok, tbl = pcall(util.JSONToTable, raw)
-	if ok and istable(tbl) then
-		T.Apply(tbl)
-	else
+	if not (ok and istable(tbl)) then
 		ErrorNoHalt("[PointShop] Could not parse " .. DATA_PATH .. ", using defaults.\n")
+		return
 	end
+
+	-- Only `custom` is applied. The `defaults` section in the file is a record of what the
+	-- player was customising away from - applying it would pin them to a stale copy of a
+	-- server default that has since moved on.
+	T.Apply(tbl.custom)
+end
+
+function T.SetServerDefault(tbl)
+	serverDefault = tbl
+	T.Load()
 end
 
 T.Load()
