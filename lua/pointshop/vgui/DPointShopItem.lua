@@ -16,86 +16,24 @@ local COL_PANEL_BG   = PS.Theme.CardPanelBG
 local COL_MENU_BG    = PS.Theme.CardMenuBG
 local COL_LABEL_BG   = PS.Theme.CardLabelBG
 
--- Not a palette entry: a scratch the scrim helper writes into, not a colour anyone picks.
-local COL_SCRIM      = Color(0,   0,   0)
+-- Scratch colours, written in place by PS.Theme.Alpha rather than rebuilt per frame. The
+-- context menu can be open while cards paint behind it, so they do not share one.
+local sMenuBorder = Color(0, 0, 0)
+local sRowHover   = Color(0, 0, 0)
+local sRowText    = Color(0, 0, 0)
+local sStamp      = Color(0, 0, 0)
+local sStampText  = Color(0, 0, 0)
+local sSwatch     = Color(0, 0, 0)
 
--- ============================================================================
--- STYLED CONFIRMATION DIALOG
--- ============================================================================
-
+-- Confirmation dialog. Was ~70 lines of hand-built frame and two hand-painted buttons, which
+-- is why its Yes and No had drifted into their own green and grey.
 local function CreateStyledConfirmation(title, message, yesCallback, noCallback)
-	local frame = vgui.Create("DFrame")
-	frame:SetSize(400, 180)
-	frame:Center()
-	frame:MakePopup()
-	frame:SetTitle("")
-	frame:ShowCloseButton(false)
-	frame:SetDraggable(false)
-
-	frame.Paint = function(s, w, h)
-		draw.RoundedBox(8, 0, 0, w, h, COL_PANEL_BG)
-		PS_DrawScrim(8, 8, w - 16, h - 16, COL_SCRIM, 0.15, 100)
-		surface.SetDrawColor(60, 120, 180, 100)
-		surface.DrawOutlinedRect(0, 0, w, h)
-		surface.SetDrawColor(60, 120, 180, 50)
-		surface.DrawOutlinedRect(1, 1, w - 2, h - 2)
-		draw.RoundedBoxEx(8, 0, 0, w, 3, Color(60, 140, 200, 255), true, true, false, false)
-		draw.SimpleText(title, "DermaLarge", w/2 + 1, 21, Color(0, 0, 0, 180), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-		draw.SimpleText(title, "DermaLarge", w/2,     20, Color(200, 220, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-	end
-
-	local messageLabel = vgui.Create("DLabel", frame)
-	messageLabel:SetPos(20, 60)
-	messageLabel:SetSize(360, 50)
-	messageLabel:SetText(message)
-	messageLabel:SetFont("DermaDefault")
-	messageLabel:SetTextColor(Color(220, 220, 220))
-	messageLabel:SetWrap(true)
-	messageLabel:SetContentAlignment(5)
-
-	local yesBtn = vgui.Create("DButton", frame)
-	yesBtn:SetPos(30, 120)
-	yesBtn:SetSize(160, 40)
-	yesBtn:SetText("")
-	yesBtn.DoClick = function()
-		frame:Close()
-		if yesCallback then yesCallback() end
-	end
-	yesBtn.Paint = function(s, w, h)
-		s._hoverAlpha = Lerp(FrameTime() * 10, s._hoverAlpha or 0, s:IsHovered() and 1 or 0)
-		local g = 80 + s._hoverAlpha * 30
-		draw.RoundedBox(6, 0, 0, w, h, Color(40, g, 50, 255))
-		draw.RoundedBox(6, 0, 0, w, h/2, Color(60, g + 40, 70, 100))
-		if s._hoverAlpha > 0 then
-			surface.SetDrawColor(80, 200, 100, s._hoverAlpha * 80)
-			surface.DrawOutlinedRect(-1, -1, w + 2, h + 2)
-		end
-		surface.SetDrawColor(100, 180, 120, 200)
-		surface.DrawOutlinedRect(0, 0, w, h)
-		draw.SimpleText("Yes", "DermaLarge", w/2 + 1, h/2 + 1, Color(0, 0, 0, 200), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-		draw.SimpleText("Yes", "DermaLarge", w/2,     h/2,     Color(255, 255, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-	end
-
-	local noBtn = vgui.Create("DButton", frame)
-	noBtn:SetPos(210, 120)
-	noBtn:SetSize(160, 40)
-	noBtn:SetText("")
-	noBtn.DoClick = function()
-		frame:Close()
-		if noCallback then noCallback() end
-	end
-	noBtn.Paint = function(s, w, h)
-		s._hoverAlpha = Lerp(FrameTime() * 10, s._hoverAlpha or 0, s:IsHovered() and 1 or 0)
-		local c = 70 + s._hoverAlpha * 20
-		draw.RoundedBox(6, 0, 0, w, h, Color(c, c, c + 5, 255))
-		draw.RoundedBox(6, 0, 0, w, h/2, Color(c + 20, c + 20, c + 25, 80))
-		surface.SetDrawColor(110, 110, 115, 200)
-		surface.DrawOutlinedRect(0, 0, w, h)
-		draw.SimpleText("No", "DermaLarge", w/2 + 1, h/2 + 1, Color(0, 0, 0, 180), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-		draw.SimpleText("No", "DermaLarge", w/2,     h/2,     Color(255, 255, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-	end
-
-	return frame
+	return PS.UI.Confirm({
+		title = title,
+		text  = message,
+		onYes = yesCallback,
+		onNo  = noCallback,
+	})
 end
 
 -- ============================================================================
@@ -123,17 +61,12 @@ function PANEL:DoClick()
 	menu:MakePopup()
 	menu:SetKeyboardInputEnabled(false)
 
+	-- Flat, like every other surface now. The scrim that used to be here was already known to
+	-- be wrong — the loop it replaced stepped by 2 while drawing 1px rects, so it striped
+	-- rather than shaded — and it is the same second-layer problem the window body had.
 	menu.Paint = function(s, w, h)
 		draw.RoundedBox(6, 0, 0, w, h, COL_MENU_BG)
-
-		-- The loop this replaces stepped `i` by 2 but drew 1px-tall rects, so it shaded
-		-- every other row and left the rows between them clear — a 1px stripe pattern
-		-- rather than the smooth scrim it reads as everywhere else. Almost certainly a
-		-- typo (step 2 with a 1px rect), so this draws it smooth, which makes the panel
-		-- very slightly darker toward the bottom where the gaps used to show through.
-		PS_DrawScrim(3, 0, w - 6, h, COL_SCRIM, 0.1, 60)
-
-		surface.SetDrawColor(60, 120, 180, 120)
+		surface.SetDrawColor(PS.Theme.Alpha(sMenuBorder, PS.Theme.FrameBorder, 120))
 		surface.DrawOutlinedRect(0, 0, w, h)
 	end
 
@@ -148,12 +81,17 @@ function PANEL:DoClick()
 		btn.DoClick = function() menu:Remove() callback() end
 		btn.Paint = function(s, w, h)
 			s._hoverAlpha = Lerp(FrameTime() * 12, s._hoverAlpha or 0, s:IsHovered() and 1 or 0)
+
 			if s._hoverAlpha > 0 then
-				draw.RoundedBox(4, 0, 0, w, h, Color(col.r + 20, col.g + 20, col.b + 20, s._hoverAlpha * 200))
+				sRowHover.r, sRowHover.g, sRowHover.b = col.r + 20, col.g + 20, col.b + 20
+				sRowHover.a = s._hoverAlpha * 200
+				draw.RoundedBox(4, 0, 0, w, h, sRowHover)
 			end
-			draw.SimpleText(text, "DermaDefault", 8, h/2,
-				s._hoverAlpha > 0 and Color(255, 255, 255) or Color(200, 200, 200),
-				TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+
+			-- Brightens to full white on hover. Lerped rather than switched so it tracks the
+			-- fill instead of snapping ahead of it.
+			PS.Theme.Shade(sRowText, PS.Theme.MenuRowText, PS.Theme.Text, s._hoverAlpha)
+			draw.SimpleText(text, "DermaDefault", 8, h/2, sRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 		end
 		yPos = yPos + BH + 3
 	end
@@ -164,20 +102,20 @@ function PANEL:DoClick()
 		line:SetPos(10, yPos)
 		line:SetSize(160, 1)
 		line.Paint = function(s, w, h)
-			surface.SetDrawColor(60, 60, 65, 150)
+				surface.SetDrawColor(PS.Theme.Alpha(sMenuBorder, PS.Theme.CardBorder, 150))
 			surface.DrawRect(0, 0, w, h)
 		end
 		yPos = yPos + 8
 	end
 
 	if LocalPlayer():PS_HasItem(self.Data.ID) then
-		AddMenuButton("Sell", Color(180, 80, 60), function()
+		AddMenuButton("Sell", PS.Theme.WarningFill, function()
 			CreateStyledConfirmation("Sell Item",
 				"Are you sure you want to sell " .. self.Data.Name .. "?",
 				function() LocalPlayer():PS_SellItem(self.Data.ID) end, nil)
 		end)
 	elseif LocalPlayer():PS_HasPoints(points) then
-		AddMenuButton("Buy", Color(60, 160, 80), function()
+		AddMenuButton("Buy", PS.Theme.PositiveFill, function()
 			CreateStyledConfirmation("Buy Item",
 				"Are you sure you want to buy " .. self.Data.Name .. "?",
 				function() LocalPlayer():PS_BuyItem(self.Data.ID) end, nil)
@@ -185,7 +123,7 @@ function PANEL:DoClick()
 	end
 
 	if not LocalPlayer():PS_HasItem(self.Data.ID) and self.Data.Model then
-		AddMenuButton("Inspect", Color(60, 120, 180), function()
+		AddMenuButton("Inspect", PS.Theme.Accent, function()
 			local inspector = vgui.Create("DPointShopInspector")
 			inspector:SetItem(self.Data)
 		end)
@@ -194,18 +132,18 @@ function PANEL:DoClick()
 	if LocalPlayer():PS_HasItem(self.Data.ID) then
 		AddSpacer()
 		if LocalPlayer():PS_HasItemEquipped(self.Data.ID) then
-			AddMenuButton("Holster", Color(100, 100, 100), function()
+			AddMenuButton("Holster", PS.Theme.NeutralFill, function()
 				LocalPlayer():PS_HolsterItem(self.Data.ID)
 			end)
 		else
-			AddMenuButton("Equip", Color(60, 140, 200), function()
+			AddMenuButton("Equip", PS.Theme.CategoryFill, function()
 				LocalPlayer():PS_EquipItem(self.Data.ID)
 			end)
 		end
 
 		if LocalPlayer():PS_HasItemEquipped(self.Data.ID) and self.Data.Modify then
 			AddSpacer()
-			AddMenuButton("Modify...", Color(140, 100, 200), function()
+			AddMenuButton("Modify...", PS.Theme.ModifyFill, function()
 				PS.Items[self.Data.ID]:Modify(LocalPlayer())
 			end)
 		end
@@ -214,7 +152,7 @@ function PANEL:DoClick()
 
 	if PS_IsItemDefaultOwner and PS_IsItemDefaultOwner(LocalPlayer()) then
 		AddSpacer()
-		AddMenuButton("Edit Default...", Color(160, 120, 30), function()
+		AddMenuButton("Edit Default...", PS.Theme.GoldBorder, function()
 			if IsValid(PS._OwnerDefaultsPanel) then PS._OwnerDefaultsPanel:Remove() end
 			local panel = vgui.Create("PSOwnerDefaultsPanel")
 			panel:SetItem(self.Data)
@@ -224,33 +162,20 @@ function PANEL:DoClick()
 		AddSpacer()
 		local isQueued = PS_RemovalQueue and PS_RemovalQueue[self.Data.ID]
 		if isQueued then
-			AddMenuButton("✓ Unmark Removal", Color(80, 140, 80), function()
+			AddMenuButton("✓ Unmark Removal", PS.Theme.PositiveBorder, function()
 				PS_MarkItemForRemoval(self.Data.ID, true)
 			end)
 		else
-			AddMenuButton("Mark for Removal", Color(160, 50, 50), function()
-				-- Confirm before marking
-				local confirm = vgui.Create("DFrame")
-				confirm:SetTitle("Mark for Removal")
-				confirm:SetSize(300, 100)
-				confirm:Center()
-				confirm:MakePopup()
-
-				local lbl = confirm:Add("DLabel")
-				lbl:SetPos(10, 30); lbl:SetSize(280, 20)
-				lbl:SetText("Mark \"" .. self.Data.Name .. "\" for removal?")
-				lbl:SetContentAlignment(5)
-
-				local yes = confirm:Add("DButton")
-				yes:SetPos(10, 60); yes:SetSize(130, 28); yes:SetText("Yes, mark it")
-				yes.DoClick = function()
-					PS_MarkItemForRemoval(self.Data.ID, false)
-					confirm:Remove()
-				end
-
-				local no = confirm:Add("DButton")
-				no:SetPos(155, 60); no:SetSize(130, 28); no:SetText("Cancel")
-				no.DoClick = function() confirm:Remove() end
+			AddMenuButton("Mark for Removal", PS.Theme.DangerBorder, function()
+				-- Was a raw DFrame with default Derma buttons — the one dialog in the shop
+				-- that had never been themed at all, and it showed.
+				PS.UI.Confirm({
+					title = "Mark for Removal",
+					text  = "Mark \"" .. self.Data.Name .. "\" for removal?",
+					yes   = "Yes, mark it",
+					no    = "Cancel",
+					onYes = function() PS_MarkItemForRemoval(self.Data.ID, false) end,
+				})
 			end)
 		end
 	end
@@ -394,8 +319,8 @@ function PANEL:PaintOver()
 	PS_DrawScrimFade(1, h - LABEL_H, w - 2, LABEL_H, COL_LABEL_BG, 230)
 
 	-- Item name
-	draw.SimpleText(self.Data.Name, "PS_ItemText", w/2 + 1, h - LABEL_H/2 + 1, Color(0, 0, 0, 180), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-	draw.SimpleText(self.Data.Name, "PS_ItemText", w/2,     h - LABEL_H/2,     Color(255, 255, 255),  TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+	draw.SimpleText(self.Data.Name, "PS_ItemText", w/2 + 1, h - LABEL_H/2 + 1, PS.Theme.Shadow, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+	draw.SimpleText(self.Data.Name, "PS_ItemText", w/2,     h - LABEL_H/2,     PS.Theme.Text,   TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 
 	local isQueued = PS_RemovalQueue and PS_RemovalQueue[self.Data.ID] ~= nil
 
@@ -406,11 +331,11 @@ function PANEL:PaintOver()
 			local cx, cy = w / 2, h / 2 - 10
 			local ang = -25
 			render.SetScissorRect(1, 1, w - 1, h - 1 - LABEL_H, true)
-			surface.SetDrawColor(180, 40, 40, 60)
+			surface.SetDrawColor(PS.Theme.Alpha(sStamp, PS.Theme.CardQueued, 60))
 			surface.DrawRect(0, 0, w, h - LABEL_H)
 			render.SetScissorRect(0, 0, 0, 0, false)
-			draw.SimpleText("REMOVAL", "PS_CategoryButton", cx + 1, cy + 1, Color(0, 0, 0, 120), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-			draw.SimpleText("REMOVAL", "PS_CategoryButton", cx, cy, Color(220, 80, 80, 200), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+			draw.SimpleText("REMOVAL", "PS_CategoryButton", cx + 1, cy + 1, PS.Theme.Alpha(sStamp, PS.Theme.Shadow, 120), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+			draw.SimpleText("REMOVAL", "PS_CategoryButton", cx, cy, PS.Theme.Alpha(sStampText, PS.Theme.DangerText, 200), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 		cam.End2D()
 	end
 
@@ -439,20 +364,20 @@ function PANEL:PaintOver()
 	local by  = 4
 
 	draw.RoundedBox(4, bx, by, bw, bh, badgeCol)
-	draw.RoundedBox(4, bx, by, bw, bh / 2, Color(255, 255, 255, 20))
-	draw.SimpleText(badgeText, "PS_ItemText", bx + bw/2, by + bh/2, Color(255, 255, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+	draw.RoundedBox(4, bx, by, bw, bh / 2, PS.Theme.BadgeGloss)
+	draw.SimpleText(badgeText, "PS_ItemText", bx + bw/2, by + bh/2, PS.Theme.Text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 
 	-- Admin icon (top-left)
 	if self.Data.AdminOnly then
 		surface.SetMaterial(adminicon)
-		surface.SetDrawColor(255, 220, 80, 230)
+		surface.SetDrawColor(PS.Theme.IconAdmin)
 		surface.DrawTexturedRect(5, 5, 14, 14)
 	end
 
 	-- Group restriction icon
 	if self.Data.AllowedUserGroups and #self.Data.AllowedUserGroups > 0 then
 		surface.SetMaterial(groupicon)
-		surface.SetDrawColor(200, 200, 200, 180)
+		surface.SetDrawColor(PS.Theme.IconGroup)
 		surface.DrawTexturedRect(5, h - LABEL_H - 18, 14, 14)
 	end
 
@@ -460,8 +385,10 @@ function PANEL:PaintOver()
 	local pItems = ply.PS_Items
 	if pItems and pItems[self.Data.ID] and pItems[self.Data.ID].Modifiers and pItems[self.Data.ID].Modifiers.color then
 		local col = pItems[self.Data.ID].Modifiers.color
-		draw.RoundedBox(3, 5, h - LABEL_H - 18, 12, 12, Color(col.r or 255, col.g or 255, col.b or 255, 255))
-		surface.SetDrawColor(0, 0, 0, 120)
+		-- The player's chosen tint. Data, not chrome: read from their item, never themed.
+		sSwatch.r, sSwatch.g, sSwatch.b, sSwatch.a = col.r or 255, col.g or 255, col.b or 255, 255
+		draw.RoundedBox(3, 5, h - LABEL_H - 18, 12, 12, sSwatch)
+		surface.SetDrawColor(PS.Theme.Alpha(sStamp, PS.Theme.Shadow, 120))
 		surface.DrawOutlinedRect(5, h - LABEL_H - 18, 12, 12)
 	end
 end

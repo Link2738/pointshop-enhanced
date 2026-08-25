@@ -66,19 +66,15 @@ function PANEL:Init()
 	self.CurrentCategory = nil
 	self.CategoryButtons = {}
 	
+	local M = PS.Theme.Metrics
+
 	-- Header
 	self.Header = vgui.Create("DPanel", self)
 	self.Header:Dock(TOP)
-	self.Header:SetTall(60)
+	self.Header:SetTall(M.HeaderH)
 	self.Header.Paint = function(s, w, h)
-		surface.SetDrawColor(PS.Theme.MenuHeaderBG)
-		surface.DrawRect(0, 0, w, h)
-		
-		surface.SetDrawColor(60, 140, 200, 255)
-		surface.DrawRect(0, 0, w, 3)
-		
-		draw.SimpleText("PointShop", "PS_LargeTitle", 15, h / 2, Color(255, 255, 255), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-		
+		PS.Theme.PaintHeader(w, h, "PointShop")
+
 		-- Show loading state if initial data hasn't arrived yet
 		local pointsText
 		if LocalPlayer().PS_InitialDataReceived then
@@ -87,177 +83,92 @@ function PANEL:Init()
 			pointsText = "Loading..."
 		end
 
-		-- Right edge derived from how many buttons are actually present rather than
-		-- hardcoded. The admin button is conditional, so a fixed offset is wrong for one of
-		-- the two cases — and with three buttons the old 140 put the text underneath one.
-		draw.SimpleText(pointsText, "PS_Heading3", w - (self.HeaderTextInset or 105), h / 2, Color(255, 255, 0), TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+		-- Right edge derived from the buttons actually present rather than hardcoded. The
+		-- admin button is conditional, so a fixed offset is wrong for one of the two cases.
+		draw.SimpleText(pointsText, "PS_Heading3", w - self.HeaderTextInset, h / 2,
+			PS.Theme.PointsText, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
 	end
 
-	-- Header buttons are laid out right to left: close, appearance, then admin if shown.
-	-- 45px apart, matching the existing close/admin spacing.
+	-- Header buttons, laid out right to left: close, appearance, then admin if shown.
+	--
+	-- Positioned in PerformLayout rather than once here, so they follow the header instead of
+	-- being placed against an Init-time width.
 	local isAdmin = LocalPlayer():IsAdmin() or LocalPlayer():IsSuperAdmin()
-	self.HeaderTextInset = isAdmin and 195 or 150
+
+	local slot = 0
+	local function HeaderButton(icon, style, onClick)
+		local btn = PS.UI.IconButton(self.Header, icon, style, onClick)
+		local mine = slot
+		slot = slot + 1
+
+		btn.PerformLayout = function(s)
+			s:SetPos(self.Header:GetWide() - M.Margin - (mine + 1) * M.IconBtn - mine * 5,
+				(M.HeaderH - M.IconBtn) / 2)
+		end
+		return btn
+	end
+
+	local function GlyphIcon(glyph)
+		return function(w, h)
+			draw.SimpleText(glyph, "PS_Heading2", w / 2 + 1, h / 2 + 1, PS.Theme.Shadow, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+			draw.SimpleText(glyph, "PS_Heading2", w / 2, h / 2, PS.Theme.Text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		end
+	end
+
+	HeaderButton(GlyphIcon("X"), "Danger", function() PS:ToggleMenu() end)
 
 	-- Appearance button. Everyone gets this one — it only changes what they see.
-	local themeBtn = vgui.Create("DButton", self.Header)
-	themeBtn:SetPos(panelWidth - 95, 15)
-	themeBtn:SetSize(35, 35)
-	themeBtn:SetText("")
-	themeBtn:SetTextColor(Color(255, 255, 255))
-	themeBtn.Paint = function(s, w, h)
-		local isHovered = s:IsHovered()
-		s._hoverAlpha = s._hoverAlpha or 0
-		s._hoverAlpha = Lerp(FrameTime() * 10, s._hoverAlpha, isHovered and 1 or 0)
-
-		draw.RoundedBox(6, 0, 0, w, h, Color(70 + s._hoverAlpha * 30, 70 + s._hoverAlpha * 30, 80 + s._hoverAlpha * 30, 200 + s._hoverAlpha * 55))
-		draw.RoundedBox(6, 0, 0, w, h/2, Color(100, 100, 115, 80))
-
-		if s._hoverAlpha > 0 then
-			surface.SetDrawColor(140, 140, 160, s._hoverAlpha * 100)
-			surface.DrawOutlinedRect(-1, -1, w + 2, h + 2)
-		end
-
-		-- Four swatches in a 2x2, drawn from the live palette so the icon itself shows the
-		-- current theme. Cheaper and clearer than hunting for a glyph the font may not have.
+	--
+	-- Its icon is a 2x2 of live palette swatches rather than a glyph, so the button shows the
+	-- current theme. That is also why IconButton takes a draw function and not a string.
+	self.themeBtn = HeaderButton(function(w, h)
 		local sw, pad = 7, 2
-		local ox, oy = w/2 - sw - pad/2, h/2 - sw - pad/2
+		local ox, oy = w / 2 - sw - pad / 2, h / 2 - sw - pad / 2
 		local T = PS.Theme
 		local swatches = { T.Accent, T.PositiveFill, T.WarningFill, T.DangerFill }
 		for i = 1, 4 do
-			local cx = ox + ((i - 1) % 2) * (sw + pad)
-			local cy = oy + math.floor((i - 1) / 2) * (sw + pad)
 			surface.SetDrawColor(swatches[i])
-			surface.DrawRect(cx, cy, sw, sw)
+			surface.DrawRect(ox + ((i - 1) % 2) * (sw + pad),
+				oy + math.floor((i - 1) / 2) * (sw + pad), sw, sw)
 		end
-	end
-	themeBtn.DoClick = function()
-		vgui.Create("DPointShopTheme")
-	end
-	self.themeBtn = themeBtn
+	end, "Neutral", function() vgui.Create("DPointShopTheme") end)
 
-	-- Admin button (only for admins/superadmins)
 	if isAdmin then
-		local adminBtn = vgui.Create("DButton", self.Header)
-		adminBtn:SetPos(panelWidth - 140, 15)
-		adminBtn:SetSize(35, 35)
-		adminBtn:SetText("")
-		adminBtn:SetFont("PS_Heading3")
-		adminBtn:SetTextColor(Color(255, 255, 255))
-		adminBtn.Paint = function(s, w, h)
-			local isHovered = s:IsHovered()
-			s._hoverAlpha = s._hoverAlpha or 0
-			s._hoverAlpha = Lerp(FrameTime() * 10, s._hoverAlpha, isHovered and 1 or 0)
-			
-			local baseBlue = 60 + s._hoverAlpha * 40
-			local baseGreen = 120 + s._hoverAlpha * 40
-			draw.RoundedBox(6, 0, 0, w, h, Color(baseBlue, baseGreen, 180, 200 + s._hoverAlpha * 55))
-			draw.RoundedBox(6, 0, 0, w, h/2, Color(baseBlue + 40, baseGreen + 40, 200, 80))
-			
-			-- Glow on hover
-			if s._hoverAlpha > 0 then
-				surface.SetDrawColor(100, 160, 220, s._hoverAlpha * 100)
-				surface.DrawOutlinedRect(-1, -1, w + 2, h + 2)
-			end
-			
-			-- Admin icon (simple wrench/gear symbol)
-			draw.SimpleText("⚙", "PS_Heading2", w/2 + 1, h/2 + 1, Color(0, 0, 0, 180), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-			draw.SimpleText("⚙", "PS_Heading2", w/2, h/2, Color(255, 255, 255, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-		end
-		adminBtn.DoClick = function()
+		self.adminBtn = HeaderButton(GlyphIcon("⚙"), "Accent", function()
 			vgui.Create("DPointShopAdmin")
-		end
-		self.adminBtn = adminBtn
+		end)
 	end
-	
-	-- Close button
-	local closeBtn = vgui.Create("DButton", self.Header)
-	closeBtn:SetPos(panelWidth - 50, 15)
-	closeBtn:SetSize(35, 35)
-	closeBtn:SetText("")
-	closeBtn:SetFont("PS_Heading2")
-	closeBtn:SetTextColor(Color(255, 255, 255))
-	closeBtn.Paint = function(s, w, h)
-		local isHovered = s:IsHovered()
-		s._hoverAlpha = s._hoverAlpha or 0
-		s._hoverAlpha = Lerp(FrameTime() * 10, s._hoverAlpha, isHovered and 1 or 0)
-		
-		local baseRed = 140 + s._hoverAlpha * 40
-		draw.RoundedBox(6, 0, 0, w, h, Color(baseRed, 40, 40, 200 + s._hoverAlpha * 55))
-		draw.RoundedBox(6, 0, 0, w, h/2, Color(baseRed + 40, 60, 60, 80))
-		
-		-- Glow on hover
-		if s._hoverAlpha > 0 then
-			surface.SetDrawColor(200, 80, 80, s._hoverAlpha * 100)
-			surface.DrawOutlinedRect(-1, -1, w + 2, h + 2)
-		end
-		
-		-- X text with shadow
-		draw.SimpleText("X", "PS_Heading2", w/2 + 1, h/2 + 1, Color(0, 0, 0, 180), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-		draw.SimpleText("X", "PS_Heading2", w/2, h/2, Color(255, 255, 255, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-	end
-	closeBtn.DoClick = function()
-		PS:ToggleMenu()
-	end
+
+	-- Points text clears whatever buttons exist, plus a gap.
+	self.HeaderTextInset = M.Margin + slot * (M.IconBtn + 5) + M.Gap
 
 	-- Category Grid Container (Scrollable)
 	--
 	-- Docks directly under the header now. The search strip that used to sit between them was
 	-- deprecated and removed, so both grids gained its 44px without any layout change.
-	self.CategoryScroll = vgui.Create("DScrollPanel", self)
+	self.CategoryScroll = PS.UI.Scroll(self)
 	self.CategoryScroll:Dock(TOP)
-	self.CategoryScroll:DockMargin(10, 8, 10, 5)
+	self.CategoryScroll:DockMargin(M.Margin, M.Gap, M.Margin, M.Gap)
 	self.CategoryScroll:SetTall(90) -- Reduced height to show scrollbar with fewer categories
-	
-	local catSbar = self.CategoryScroll:GetVBar()
-	catSbar:SetWide(10)
-	catSbar:SetHideButtons(true)
-	function catSbar:Paint(w, h)
-		surface.SetDrawColor(PS.Theme.MenuScrollBG)
-		surface.DrawRect(0, 0, w, h)
-	end
-	function catSbar.btnGrip:Paint(w, h)
-		local col = Color(60, 140, 200, 200)
-		if self:IsHovered() then
-			col = Color(80, 160, 220, 255)
-		end
-		surface.SetDrawColor(col)
-		surface.DrawRect(0, 0, w, h)
-	end
-	
+
 	self.CategoryContainer = vgui.Create("DPanel", self.CategoryScroll)
 	self.CategoryContainer:Dock(FILL)
 	self.CategoryContainer.Paint = function(s, w, h)
 		surface.SetDrawColor(PS.Theme.MenuCategoryBG)
 		surface.DrawRect(0, 0, w, h)
 	end
-	
+
 	-- Item Grid ScrollPanel
-	self.ItemScroll = vgui.Create("DScrollPanel", self)
+	self.ItemScroll = PS.UI.Scroll(self)
 	self.ItemScroll:Dock(FILL)
-	self.ItemScroll:DockMargin(10, 5, 10, 10)
-	
-	local sbar = self.ItemScroll:GetVBar()
-	sbar:SetWide(12)
-	sbar:SetHideButtons(true)
-	function sbar:Paint(w, h)
-		surface.SetDrawColor(PS.Theme.MenuScrollBG)
-		surface.DrawRect(0, 0, w, h)
-	end
-	function sbar.btnGrip:Paint(w, h)
-		local col = Color(60, 140, 200, 200)
-		if self:IsHovered() then
-			col = Color(80, 160, 220, 255)
-		end
-		surface.SetDrawColor(col)
-		surface.DrawRect(0, 0, w, h)
-	end
-	
+	self.ItemScroll:DockMargin(M.Margin, 0, M.Margin, M.Margin)
+
 	-- Item Grid Layout
 	self.ItemGrid = vgui.Create("DIconLayout", self.ItemScroll)
 	self.ItemGrid:Dock(TOP)
-	self.ItemGrid:SetSpaceX(5)
-	self.ItemGrid:SetSpaceY(5)
-	self.ItemGrid:SetBorder(5)
+	self.ItemGrid:SetSpaceX(M.Gap - 3)
+	self.ItemGrid:SetSpaceY(M.Gap - 3)
+	self.ItemGrid:SetBorder(M.Gap - 3)
 	
 	self:PopulateCategories()
 end
@@ -316,20 +227,16 @@ function PANEL:PopulateCategories()
 		local row = math.floor((i - 1) / columns)
 		local col = (i - 1) % columns
 		
-		local btn = vgui.Create("DButton", self.CategoryContainer)
+		-- IsActive is read off the button rather than closed over, because SelectCategory
+		-- sets it on every button in the list and the flag has to be the shared truth.
+		local btn = PS.UI.Tab(self.CategoryContainer, category.Name or "Category",
+			function(s) return s.IsActive end, nil)
 		btn:SetSize(buttonWidth, buttonHeight)
 		btn:SetPos(spacing + col * (buttonWidth + spacing), spacing + row * (buttonHeight + spacing))
-		btn:SetText(category.Name or "Category")
-		btn:SetFont("PS_CategoryButton")
-		btn:SetTextColor(Color(255, 255, 255))
-		
+
 		btn.Category = category
 		btn.IsActive = false
-		
-		btn.Paint = function(s, w, h)
-			PS.Theme.PaintSelectable(s, w, h, s.IsActive, PS.Theme.Selectable.Category)
-		end
-		
+
 		btn.DoClick = function()
 			self:SelectCategory(category)
 		end
@@ -404,25 +311,14 @@ end
 -- did nothing and the shop window couldn't be moved. Removed rather than stubbed — if
 -- per-frame work is needed here later it has to call self.BaseClass.Think(self) first.
 
+-- Flat body, shared border. No scrim: there was a black gradient here that drew a hard bar
+-- across the bottom of anything taller than ~675px, and it meant the body was never the
+-- colour MenuBG named.
+--
+-- MenuBG rather than FrameBG so the shop window stays separately identifiable in the
+-- Appearance editor; the border recipe is shared either way.
 function PANEL:Paint(w, h)
-	-- Flat body. No scrim.
-	--
-	-- There was a black gradient over this, and it was drawing a hard bar across the bottom
-	-- of the window rather than the subtle shade it was meant to be. PS_DrawScrim ramps to
-	-- maxAlpha at row maxAlpha/slope and is FLAT below that: at 100/0.15 the ramp finishes at
-	-- row 667, so on a ~900px panel the bottom ~225px was a solid 39% black rect with a
-	-- visible seam where it began.
-	--
-	-- Removed rather than retuned. It was also a second layer of colour on top of MenuBG, so
-	-- setting that entry never produced the colour it named — which defeats the point of the
-	-- entry existing.
-	draw.RoundedBox(8, 0, 0, w, h, PS.Theme.MenuBG)
-
-	-- Outer border glow with rounded corners
-	surface.SetDrawColor(60, 120, 180, 100)
-	surface.DrawOutlinedRect(0, 0, w, h)
-	surface.SetDrawColor(60, 120, 180, 50)
-	surface.DrawOutlinedRect(1, 1, w - 2, h - 2)
+	PS.Theme.PaintFrame(w, h, PS.Theme.MenuBG)
 end
 
 vgui.Register('DPointShopMenu', PANEL, 'DFrame')

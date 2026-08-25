@@ -53,6 +53,21 @@ local LABELS = {
 	RowAlt   = "List row, alternate",
 	RowHover = "List row, hovered",
 
+	AccentFill       = "Tool button",
+	AccentFillHover  = "Tool button, hovered",
+	AccentGloss      = "Tool button sheen",
+	AccentGlossHover = "Tool button sheen, hovered",
+	AccentGlow       = "Tool button glow",
+	AccentBorder     = "Tool button border",
+
+	ModifyFill  = "Modify entry",
+	MenuRowText = "Right-click menu text",
+	PointsText  = "Points balance",
+
+	BadgeGloss = "Item badge sheen",
+	IconAdmin  = "Admin-only marker",
+	IconGroup  = "Group-restricted marker",
+
 	ScrollTrack     = "Scrollbar track",
 	ScrollGrip      = "Scrollbar grip",
 	ScrollGripHover = "Scrollbar grip, hovered",
@@ -111,14 +126,16 @@ AssignSection("Accent", "Accent",
 	"ControlFill", "ControlFillHover", "ControlGloss", "ControlGlossHover",
 	"ControlBorder", "ControlBorderHover")
 AssignSection("Buttons",
+	"AccentFill", "AccentFillHover", "AccentGloss", "AccentGlossHover",
+	"AccentGlow", "AccentBorder", "ModifyFill",
 	"PositiveFill", "PositiveFillHover", "PositiveGloss", "PositiveGlossHover",
 	"PositiveGlow", "PositiveBorder",
 	"WarningFill", "WarningFillHover", "WarningGloss", "WarningGlossHover", "WarningBorder",
 	"NeutralFill", "NeutralFillHover", "NeutralGloss", "NeutralGlossHover",
 	"NeutralBorder", "NeutralText")
-AssignSection("Items", "CardBG", "CardBorder", "CardHover", "CardEquipped", "CardOwned",
+AssignSection("Items", "BadgeGloss", "IconAdmin", "IconGroup", "CardBG", "CardBorder", "CardHover", "CardEquipped", "CardOwned",
 	"CardQueued", "CardCanBuy", "CardCantBuy", "CardLabelBG")
-AssignSection("Text", "Text", "TextDim", "Shadow", "ShadowStrong")
+AssignSection("Text", "Text", "TextDim", "MenuRowText", "PointsText", "Shadow", "ShadowStrong")
 
 -- Any name used by AssignSection must appear here: BuildShopSections indexes buckets by
 -- section name, so one that is missing is a nil table indexed on the first row assigned to it.

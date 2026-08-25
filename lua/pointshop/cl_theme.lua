@@ -180,6 +180,14 @@ T.DangerFillHover = Color(125, 35, 35, 255)
 T.DangerBorder    = Color(160, 70, 70, 200)
 T.DangerText      = Color(255, 180, 180)
 
+-- Opens another tool rather than confirming or dismissing: the admin button.
+T.AccentFill       = Color(60, 120, 180, 200)
+T.AccentFillHover  = Color(100, 160, 180, 255)
+T.AccentGloss      = Color(100, 160, 200, 80)
+T.AccentGlossHover = Color(140, 200, 200, 80)
+T.AccentGlow       = Color(100, 160, 220)
+T.AccentBorder     = Color(100, 160, 220, 200)
+
 -- Dismiss / cancel
 T.NeutralFill       = Color(65, 65, 65, 255)
 T.NeutralFillHover  = Color(80, 80, 80, 255)
@@ -211,6 +219,17 @@ T.CardCantBuy  = Color(160, 50, 50, 220)
 
 T.CardPanelBG  = Color(40, 40, 45, 255)     -- confirm dialog body
 T.CardMenuBG   = Color(40, 40, 45, 250)     -- right-click menu body
+T.MenuRowText  = Color(200, 200, 200, 255)  -- right-click menu entry, not hovered
+
+-- The one right-click entry with no existing role: Modify opens the customization panel, and
+-- is neither confirming, destructive, nor owner-only. Every other entry in that menu reuses a
+-- role it already had — Sell is Warning, Buy is Positive, Equip is the category accent — so
+-- the menu moves with the theme instead of carrying nine private literals.
+T.ModifyFill  = Color(140, 100, 200, 255)
+
+T.BadgeGloss  = Color(255, 255, 255, 20)    -- sheen across the top of a card badge
+T.IconAdmin   = Color(255, 220, 80, 230)    -- admin-only item marker
+T.IconGroup   = Color(200, 200, 200, 180)   -- group-restricted item marker
 
 -- ============================================================================
 -- TEXT
@@ -218,6 +237,7 @@ T.CardMenuBG   = Color(40, 40, 45, 250)     -- right-click menu body
 
 T.Text         = Color(255, 255, 255, 255)
 T.TextDim      = Color(200, 220, 255)   -- status strip, section labels
+T.PointsText   = Color(255, 255, 0, 255) -- the balance in the shop header
 T.Shadow       = Color(0, 0, 0, 180)
 T.ShadowStrong = Color(0, 0, 0, 200)
 
@@ -317,6 +337,15 @@ T.Action = {
 		gloss = T.NeutralGloss, glossHover = T.NeutralGlossHover,
 		border = T.NeutralBorder, text = T.NeutralText, shadow = T.Shadow,
 	},
+	-- Neutral-but-important: the admin button in the shop header. Blue rather than grey
+	-- because it opens another tool rather than dismissing something.
+	Accent = {
+		radius = 6, lerp = 10, font = "DermaDefault",
+		fill = T.AccentFill, fillHover = T.AccentFillHover,
+		gloss = T.AccentGloss, glossHover = T.AccentGlossHover,
+		glow = T.AccentGlow, glowLayers = { 100 },
+		border = T.AccentBorder, text = T.Text, shadow = T.Shadow,
+	},
 }
 
 -- ============================================================================
@@ -406,8 +435,11 @@ end
 -- There used to be a black gradient between the two. It was removed: it drew a hard bar
 -- across the bottom of anything taller than ~675px, and it meant the body colour was never
 -- the colour anyone set.
-function T.PaintFrame(w, h)
-	draw.RoundedBox(T.Metrics.Radius, 0, 0, w, h, T.FrameBG)
+-- `body` overrides FrameBG for a window that has its own entry — the shop menu keeps MenuBG
+-- so it stays separately identifiable in the Appearance editor. The border recipe is shared
+-- either way, which is the part that was drifting.
+function T.PaintFrame(w, h, body)
+	draw.RoundedBox(T.Metrics.Radius, 0, 0, w, h, body or T.FrameBG)
 
 	surface.SetDrawColor(T.Alpha(sBorder, T.FrameBorder, 100))
 	surface.DrawOutlinedRect(0, 0, w, h)

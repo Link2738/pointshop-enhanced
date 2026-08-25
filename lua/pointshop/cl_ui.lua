@@ -65,6 +65,10 @@ end
 -- `isActive` is a function rather than a flag because the active one changes without this
 -- button being told — clicking a sibling has to redraw this one, and asking at paint time is
 -- the only version that cannot go stale.
+--
+-- It is handed the button, so a caller that stores the flag on the panel can write
+-- `function(s) return s.IsActive end` rather than closing over a local that does not exist
+-- yet at the point the callback is written.
 function UI.Tab(parent, label, isActive, onClick, style)
 	local btn = vgui.Create("DButton", parent)
 	btn:SetText(label or "")
@@ -72,7 +76,7 @@ function UI.Tab(parent, label, isActive, onClick, style)
 	btn:SetTextColor(PS.Theme.Text)
 	btn.DoClick = onClick or function() end
 	btn.Paint = function(s, w, h)
-		PS.Theme.PaintSelectable(s, w, h, isActive and isActive() or false,
+		PS.Theme.PaintSelectable(s, w, h, isActive and isActive(s) or false,
 			PS.Theme.Selectable[style or "Category"])
 	end
 	return btn
