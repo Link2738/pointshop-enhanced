@@ -4,6 +4,76 @@ PS_ITEM_MODIFY = 3
 
 local Player = FindMetaTable('Player')
 
+-- ============================================================================
+-- PLAYERMODEL RESOLUTION
+--
+-- One function decides which playermodel a player wears. Spawn, team change and holster all
+-- call it rather than each running their own search.
+--
+-- They used to run three near-identical loops over the equipped items, each with its own
+-- hand-rolled copy of the AllowedTeams check, and each doing something different when no
+-- model matched: spawn skipped, team change did nothing at all, holster restored a snapshot.
+-- The system only held together because two of those three happened to cover the third's
+-- gap — a death holstered everything, and a respawn refused wrong-team models — so a stale
+-- _PS_ActivePlayerModel was never reachable in practice. It worked, but nothing in the
+-- team-change path said why, and closing either cover would have opened it.
+-- ============================================================================
+
+-- Fills in saved customization for an item whose modifiers are empty.
+local function LoadModifiers(ply, item_id, item)
+	if item.Modifiers and next(item.Modifiers) ~= nil then return item.Modifiers end
+	if not PS_GetCustomization then return item.Modifiers end
+
+	local saved = PS_GetCustomization(ply, item_id)
+	if not (saved and type(saved) == "table" and next(saved) ~= nil) then return item.Modifiers end
+
+	ply.PS_Items[item_id].Modifiers = saved
+	if PS and PS.SavePlayerItem then
+		pcall(function() PS:SavePlayerItem(ply, item_id, ply.PS_Items[item_id]) end)
+	end
+
+	return saved
+end
+
+-- The equipped playermodel valid for this player's team right now, or nil.
+--
+-- Sorted rather than raw pairs(): a player with two models valid for the same team used to
+-- get whichever the hash order surfaced first, which is stable within a session and not
+-- across them. Same input, same model.
+local function FindTeamModel(ply)
+	local ids = {}
+	for item_id, item in pairs(ply.PS_Items or {}) do
+		local ITEM = PS.Items[item_id]
+		if ITEM and item.Equipped and ITEM.TYPE == "playermodel" and PS:CanEquipForTeam(ply, ITEM) then
+			ids[#ids + 1] = item_id
+		end
+	end
+
+	if #ids == 0 then return nil end
+
+	table.sort(ids)
+	return PS.Items[ids[1]], ids[1]
+end
+
+-- Applies the right playermodel, or hands the decision back to the gamemode.
+--
+-- The `else` branch is the part that was missing. Clearing the flag matters as much as
+-- setting it: it is what the ModelFix timer reads to decide whether a non-team model is
+-- legitimate, so a flag left pointing at a model the player is no longer allowed to wear is
+-- a hole waiting for its covers to be removed.
+function Player:PS_ResolvePlayerModel()
+	local ITEM, item_id = FindTeamModel(self)
+
+	if ITEM then
+		ITEM:OnEquip(self, LoadModifiers(self, item_id, self.PS_Items[item_id]))
+		return true
+	end
+
+	self._PS_ActivePlayerModel = nil
+	hook.Run("PlayerSetModel", self)
+	return false
+end
+
 function Player:PS_PlayerSpawn()
 	if not self:PS_CanPerformAction() then return end
 
@@ -17,41 +87,23 @@ function Player:PS_PlayerSpawn()
 
 	timer.Simple(1, function()
 		if !IsValid(self) then return end
+
 		for item_id, item in pairs(self.PS_Items) do
 			local ITEM = PS.Items[item_id]
+
 			-- An item deleted from the server while a player still owns it leaves ITEM
 			-- nil. Without this the next line errors and aborts the WHOLE loop, so one
 			-- stale entry means the player spawns with nothing equipped at all.
-			if ITEM and item.Equipped then
-				-- Skip (but keep equipped) playermodel items from wrong-team categories
-				-- so only the model matching the player's current team gets applied
-				local cat_name = ITEM.Category
-				local CATEGORY = PS:FindCategoryByName(cat_name)
-				if CATEGORY and CATEGORY.AllowedTeams and #CATEGORY.AllowedTeams > 0 then
-					local teamAllowed = false
-					for _, tid in ipairs(CATEGORY.AllowedTeams) do
-						if self:Team() == tid then teamAllowed = true break end
-					end
-					if not teamAllowed then
-						continue  -- stays equipped in data, just not applied this spawn
-					end
-				end
-
-				-- If modifiers are empty, load saved customization from unified storage
-				if (not item.Modifiers) or (type(item.Modifiers) == "table" and next(item.Modifiers) == nil) then
-					if PS_GetCustomization then
-						local saved = PS_GetCustomization(self, item_id)
-						if saved and type(saved) == "table" and next(saved) ~= nil then
-							self.PS_Items[item_id].Modifiers = saved
-							if PS and PS.SavePlayerItem then
-								pcall(function() PS:SavePlayerItem(self, item_id, self.PS_Items[item_id]) end)
-							end
-						end
-					end
-				end
-				ITEM:OnEquip(self, item.Modifiers)
+			--
+			-- Playermodels are skipped here and resolved once below: which one applies
+			-- depends on the player's team, so it is a choice between items rather than a
+			-- decision each item can make for itself.
+			if ITEM and item.Equipped and ITEM.TYPE ~= "playermodel" then
+				ITEM:OnEquip(self, LoadModifiers(self, item_id, item))
 			end
 		end
+
+		self:PS_ResolvePlayerModel()
 	end)
 end
 
@@ -777,44 +829,27 @@ net.Receive('PS_RequestData', function(len, ply)
 	ply:PS_SendItems()
 end)
 
--- Team change handler: re-apply correct team's playermodel
+-- Team change: re-resolve which playermodel applies.
+--
+-- This used to search for a model valid for the new team and apply it, and do nothing at all
+-- when it found none — leaving the previous team's model on and its flag set. The resolver
+-- covers both outcomes, so the "none" case now clears the flag and asks the gamemode for its
+-- own default instead of leaving the decision to whatever ran next.
+--
+-- Still delayed a tick: SetTeam fires this before the rest of the team change has settled,
+-- and CanEquipForTeam reads ply:Team().
 hook.Add("OnPlayerChangedTeam", "PS_ReapplyTeamModel", function(ply, oldTeam, newTeam)
 	if not IsValid(ply) or not ply.PS_Items or not ply:Alive() then return end
-	
-	-- Delay slightly to ensure team change is fully processed
+
 	timer.Simple(0.1, function()
 		if not IsValid(ply) or not ply:Alive() then return end
-		
-		-- Re-apply all equipped items (only the correct team's model will actually apply)
-		for item_id, item_data in pairs(ply.PS_Items) do
-			if item_data.Equipped then
-				local ITEM = PS.Items[item_id]
-				if ITEM and ITEM.TYPE == "playermodel" then
-					local cat_name = ITEM.Category
-					local CATEGORY = PS:FindCategoryByName(cat_name)
-					
-					-- Check if this model is for the new team
-					if CATEGORY and CATEGORY.AllowedTeams and #CATEGORY.AllowedTeams > 0 then
-						local teamAllowed = false
-						for _, tid in ipairs(CATEGORY.AllowedTeams) do
-							if newTeam == tid then
-								teamAllowed = true
-								break
-							end
-						end
-						
-						-- If this model matches the new team, apply it
-						if teamAllowed then
-							ITEM:OnEquip(ply, item_data.Modifiers)
-							
-							if PS.Config.Debug then
-								print("[PS] Team change: Applied " .. ITEM.Name .. " to " .. ply:Nick() .. " (team " .. oldTeam .. " -> " .. newTeam .. ")")
-							end
-							break -- Only apply one playermodel
-						end
-					end
-				end
-			end
+
+		local applied = ply:PS_ResolvePlayerModel()
+
+		if PS.Config.Debug then
+			print(string.format("[PS] Team change %d -> %d for %s: %s",
+				oldTeam, newTeam, ply:Nick(),
+				applied and "applied a shop model" or "handed back to the gamemode"))
 		end
 	end)
 end)

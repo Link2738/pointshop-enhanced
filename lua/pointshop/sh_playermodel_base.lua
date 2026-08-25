@@ -61,28 +61,43 @@ function BASE:OnEquip(ply, modifications)
     end
 end
 
--- Hands the model back to the gamemode rather than replaying a snapshot.
+-- Re-resolves rather than replaying a snapshot.
 --
 -- This restored ply._OldModel, captured in OnEquip behind `if not ply._OldModel`, so it was
 -- written once and never cleared. Equip A, then B, then holster B, and you got whatever you
 -- wore before A. It also survived team changes, so holstering after switching teams handed
 -- back a model for the team you used to be on.
 --
--- hook.Run("PlayerSetModel") asks the gamemode instead. That is the standard hook every
--- gamemode already implements to decide what a player wears, so this stays correct on a
--- gamemode that has never heard of Bear Hunt — which is the same reason the theme and the
--- appearance provider go through hooks rather than calling into it.
+-- PS_ResolvePlayerModel is the one place that decides: it finds another equipped model valid
+-- for this team if there is one, and otherwise clears the flag and runs the standard
+-- PlayerSetModel hook. Taking off model B while still owning team-legal model A now puts A
+-- on, which replaying a snapshot could never do.
 --
--- Falls back to the old behaviour if nothing answers, so a gamemode that does not implement
--- the hook is no worse off than before.
+-- Falls back to the snapshot only if nothing answered the hook, so a gamemode that does not
+-- implement it is no worse off than before.
 function BASE:OnHolster(ply)
     ply._PS_ActivePlayerModel = nil
 
     if SERVER then
         local before = ply:GetModel()
-        hook.Run("PlayerSetModel", ply)
 
-        -- Nothing claimed it. Use the snapshot rather than leaving the shop model on.
+        -- Mark it holstered first, or the resolver finds this item and puts it straight back
+        -- on. The caller updates PS_Items after OnHolster returns.
+        local mine = ply.PS_Items and ply.PS_Items[self.ID or self.Model]
+        local wasEquipped = mine and mine.Equipped
+        if mine then mine.Equipped = false end
+
+        -- Guarded: this file is shared and the resolver lives in the server-side player
+        -- extension. If that has not loaded, fall through to the snapshot below rather than
+        -- erroring out of a holster and leaving the player mid-change.
+        if ply.PS_ResolvePlayerModel then
+            ply:PS_ResolvePlayerModel()
+        else
+            hook.Run("PlayerSetModel", ply)
+        end
+
+        if mine then mine.Equipped = wasEquipped end
+
         if ply:GetModel() == before and ply._OldModel then
             ply:SetModel(ply._OldModel)
         end
