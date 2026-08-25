@@ -8,100 +8,15 @@ end
 
 local PANEL = {}
 
--- Cached at file scope rather than rebuilt inside Paint every frame.
-local COL_PANEL_BG = Color(40, 40, 45, 255)
-local COL_SCRIM    = Color(0, 0, 0)
-
--- Custom styled confirmation dialog
+-- Confirmation dialog. Third verbatim copy of the same ~90 lines, which is why its Yes and
+-- No had drifted into their own green and grey.
 local function CreateStyledConfirmation(title, message, yesCallback, noCallback)
-	local frame = vgui.Create("DFrame")
-	frame:SetSize(400, 180)
-	frame:Center()
-	frame:MakePopup()
-	frame:SetTitle("")
-	frame:ShowCloseButton(false)
-	frame:SetDraggable(false)
-	
-	frame.Paint = function(s, w, h)
-		draw.RoundedBox(8, 0, 0, w, h, COL_PANEL_BG)
-
-		-- Was one 1px rect per row, every frame.
-		PS_DrawScrim(8, 8, w - 16, h - 16, COL_SCRIM, 0.15, 100)
-		
-		surface.SetDrawColor(60, 120, 180, 100)
-		surface.DrawOutlinedRect(0, 0, w, h)
-		surface.SetDrawColor(60, 120, 180, 50)
-		surface.DrawOutlinedRect(1, 1, w - 2, h - 2)
-		
-		draw.RoundedBoxEx(8, 0, 0, w, 3, Color(60, 140, 200, 255), true, true, false, false)
-		
-		draw.SimpleText(title, "DermaLarge", w/2 + 1, 21, Color(0, 0, 0, 180), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-		draw.SimpleText(title, "DermaLarge", w/2, 20, Color(200, 220, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-	end
-	
-	local messageLabel = vgui.Create("DLabel", frame)
-	messageLabel:SetPos(20, 60)
-	messageLabel:SetSize(360, 50)
-	messageLabel:SetText(message)
-	messageLabel:SetFont("DermaDefault")
-	messageLabel:SetTextColor(Color(220, 220, 220))
-	messageLabel:SetWrap(true)
-	messageLabel:SetContentAlignment(5)
-	
-	local yesBtn = vgui.Create("DButton", frame)
-	yesBtn:SetPos(30, 120)
-	yesBtn:SetSize(160, 40)
-	yesBtn:SetText("")
-	yesBtn.DoClick = function()
-		frame:Close()
-		if yesCallback then yesCallback() end
-	end
-	yesBtn.Paint = function(s, w, h)
-		local isHovered = s:IsHovered()
-		s._hoverAlpha = s._hoverAlpha or 0
-		s._hoverAlpha = Lerp(FrameTime() * 10, s._hoverAlpha, isHovered and 1 or 0)
-		
-		local baseGreen = 80 + s._hoverAlpha * 30
-		draw.RoundedBox(6, 0, 0, w, h, Color(40, baseGreen, 50, 255))
-		draw.RoundedBox(6, 0, 0, w, h/2, Color(60, baseGreen + 40, 70, 100))
-		
-		if s._hoverAlpha > 0 then
-			surface.SetDrawColor(80, 200, 100, s._hoverAlpha * 80)
-			surface.DrawOutlinedRect(-1, -1, w + 2, h + 2)
-		end
-		
-		surface.SetDrawColor(100, 180, 120, 200)
-		surface.DrawOutlinedRect(0, 0, w, h)
-		
-		draw.SimpleText("Yes", "DermaLarge", w/2 + 1, h/2 + 1, Color(0, 0, 0, 200), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-		draw.SimpleText("Yes", "DermaLarge", w/2, h/2, Color(255, 255, 255, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-	end
-	
-	local noBtn = vgui.Create("DButton", frame)
-	noBtn:SetPos(210, 120)
-	noBtn:SetSize(160, 40)
-	noBtn:SetText("")
-	noBtn.DoClick = function()
-		frame:Close()
-		if noCallback then noCallback() end
-	end
-	noBtn.Paint = function(s, w, h)
-		local isHovered = s:IsHovered()
-		s._hoverAlpha = s._hoverAlpha or 0
-		s._hoverAlpha = Lerp(FrameTime() * 10, s._hoverAlpha, isHovered and 1 or 0)
-		
-		local baseGray = 70 + s._hoverAlpha * 20
-		draw.RoundedBox(6, 0, 0, w, h, Color(baseGray, baseGray, baseGray + 5, 255))
-		draw.RoundedBox(6, 0, 0, w, h/2, Color(baseGray + 20, baseGray + 20, baseGray + 25, 80))
-		
-		surface.SetDrawColor(110, 110, 115, 200)
-		surface.DrawOutlinedRect(0, 0, w, h)
-		
-		draw.SimpleText("No", "DermaLarge", w/2 + 1, h/2 + 1, Color(0, 0, 0, 180), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-		draw.SimpleText("No", "DermaLarge", w/2, h/2, Color(255, 255, 255, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-	end
-	
-	return frame
+	return PS.UI.Confirm({
+		title = title,
+		text  = message,
+		onYes = yesCallback,
+		onNo  = noCallback,
+	})
 end
 
 function PANEL:Init()
@@ -130,21 +45,11 @@ function PANEL:Init()
 	self.ControlPanel:SetSize(300, 450)
 	self.ControlPanel:SetPos(20, ScrH() / 2 - 225)
 	self.ControlPanel:SetMouseInputEnabled(true)  -- Panel captures mouse
+	-- Body, border and the accent bar along the top, all from the shared painter. The scrim
+	-- that used to sit between them is gone with every other copy of it.
 	self.ControlPanel.Paint = function(s, w, h)
-		-- Rounded background base
-		draw.RoundedBox(8, 0, 0, w, h, COL_PANEL_BG)
-
-		-- Gradient overlay. Was one 1px rect per row, every frame.
-		PS_DrawScrim(8, 8, w - 16, h - 16, COL_SCRIM, 0.15, 100)
-		
-		-- Outer border glow
-		surface.SetDrawColor(60, 120, 180, 100)
-		surface.DrawOutlinedRect(0, 0, w, h)
-		surface.SetDrawColor(60, 120, 180, 50)
-		surface.DrawOutlinedRect(1, 1, w - 2, h - 2)
-		
-		-- Top accent bar
-		draw.RoundedBoxEx(8, 0, 0, w, 3, Color(60, 140, 200, 255), true, true, false, false)
+		PS.Theme.PaintFrame(w, h)
+		draw.RoundedBoxEx(PS.Theme.Metrics.Radius, 0, 0, w, 3, PS.Theme.Accent, true, true, false, false)
 	end
 	
 	-- Item Info Section
@@ -152,14 +57,14 @@ function PANEL:Init()
 	self.ItemName:SetPos(10, 10)
 	self.ItemName:SetSize(280, 30)
 	self.ItemName:SetFont("DermaLarge")
-	self.ItemName:SetTextColor(Color(255, 255, 255))
+	self.ItemName:SetTextColor(PS.Theme.Text)
 	self.ItemName:SetText("")
 	
 	self.ItemDesc = vgui.Create("DLabel", self.ControlPanel)
 	self.ItemDesc:SetPos(10, 45)
 	self.ItemDesc:SetSize(280, 60)
 	self.ItemDesc:SetFont("DermaDefault")
-	self.ItemDesc:SetTextColor(Color(200, 200, 200))
+	self.ItemDesc:SetTextColor(PS.Theme.MenuRowText)
 	self.ItemDesc:SetText("")
 	self.ItemDesc:SetWrap(true)
 	self.ItemDesc:SetAutoStretchVertical(true)
@@ -168,7 +73,7 @@ function PANEL:Init()
 	self.ItemPrice:SetPos(10, 115)
 	self.ItemPrice:SetSize(280, 30)
 	self.ItemPrice:SetFont("DermaLarge")
-	self.ItemPrice:SetTextColor(Color(100, 255, 100))
+	self.ItemPrice:SetTextColor(PS.Theme.PriceAfford)
 	self.ItemPrice:SetText("")
 	
 	-- Camera Controls Section
@@ -176,7 +81,7 @@ function PANEL:Init()
 	cameraLabel:SetPos(10, 160)
 	cameraLabel:SetSize(280, 20)
 	cameraLabel:SetFont("DermaDefaultBold")
-	cameraLabel:SetTextColor(Color(255, 255, 255))
+	cameraLabel:SetTextColor(PS.Theme.Text)
 	cameraLabel:SetText("Camera Controls")
 	
 	-- Horizontal Rotation Slider
@@ -184,7 +89,7 @@ function PANEL:Init()
 	rotHLabel:SetPos(10, 185)
 	rotHLabel:SetSize(100, 20)
 	rotHLabel:SetFont("DermaDefault")
-	rotHLabel:SetTextColor(Color(200, 200, 200))
+	rotHLabel:SetTextColor(PS.Theme.MenuRowText)
 	rotHLabel:SetText("Rotation")
 	
 	self.RotationSlider = vgui.Create("DNumSlider", self.ControlPanel)
@@ -201,7 +106,7 @@ function PANEL:Init()
 	pitchLabel:SetPos(10, 225)
 	pitchLabel:SetSize(100, 20)
 	pitchLabel:SetFont("DermaDefault")
-	pitchLabel:SetTextColor(Color(200, 200, 200))
+	pitchLabel:SetTextColor(PS.Theme.MenuRowText)
 	pitchLabel:SetText("Height")
 	
 	self.PitchSlider = vgui.Create("DNumSlider", self.ControlPanel)
@@ -218,7 +123,7 @@ function PANEL:Init()
 	zoomLabel:SetPos(10, 265)
 	zoomLabel:SetSize(100, 20)
 	zoomLabel:SetFont("DermaDefault")
-	zoomLabel:SetTextColor(Color(200, 200, 200))
+	zoomLabel:SetTextColor(PS.Theme.MenuRowText)
 	zoomLabel:SetText("Distance")
 	
 	self.ZoomSlider = vgui.Create("DNumSlider", self.ControlPanel)
@@ -256,30 +161,7 @@ function PANEL:Init()
 		end
 	end
 	self.BuyButton.Paint = function(s, w, h)
-		local isHovered = s:IsHovered()
-		s._hoverAlpha = s._hoverAlpha or 0
-		s._hoverAlpha = Lerp(FrameTime() * 10, s._hoverAlpha, isHovered and 1 or 0)
-		
-		-- Green gradient background
-		local baseGreen = 80 + s._hoverAlpha * 30
-		draw.RoundedBox(6, 0, 0, w, h, Color(40, baseGreen, 50, 255))
-		draw.RoundedBox(6, 0, 0, w, h/2, Color(60, baseGreen + 40, 70, 100))
-		
-		-- Outer glow on hover
-		if s._hoverAlpha > 0 then
-			surface.SetDrawColor(80, 200, 100, s._hoverAlpha * 80)
-			surface.DrawOutlinedRect(-1, -1, w + 2, h + 2)
-			surface.SetDrawColor(80, 200, 100, s._hoverAlpha * 40)
-			surface.DrawOutlinedRect(-2, -2, w + 4, h + 4)
-		end
-		
-		-- Border
-		surface.SetDrawColor(100, 180, 120, 200)
-		surface.DrawOutlinedRect(0, 0, w, h)
-		
-		-- Text with shadow
-		draw.SimpleText("Purchase Item", "DermaLarge", w/2 + 1, h/2 + 1, Color(0, 0, 0, 200), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-		draw.SimpleText("Purchase Item", "DermaLarge", w/2, h/2, Color(255, 255, 255, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		PS.Theme.PaintAction(s, w, h, PS.Theme.Action.Positive, "Purchase Item")
 	end
 	
 	-- Back Button
@@ -292,22 +174,7 @@ function PANEL:Init()
 		self:Close()
 	end
 	self.BackButton.Paint = function(s, w, h)
-		local isHovered = s:IsHovered()
-		s._hoverAlpha = s._hoverAlpha or 0
-		s._hoverAlpha = Lerp(FrameTime() * 10, s._hoverAlpha, isHovered and 1 or 0)
-		
-		-- Gray gradient
-		local baseGray = 70 + s._hoverAlpha * 20
-		draw.RoundedBox(6, 0, 0, w, h, Color(baseGray, baseGray, baseGray + 5, 255))
-		draw.RoundedBox(6, 0, 0, w, h/2, Color(baseGray + 20, baseGray + 20, baseGray + 25, 80))
-		
-		-- Border
-		surface.SetDrawColor(110, 110, 115, 200)
-		surface.DrawOutlinedRect(0, 0, w, h)
-		
-		-- Text with shadow
-		draw.SimpleText("Back to Shop", "DermaLarge", w/2 + 1, h/2 + 1, Color(0, 0, 0, 180), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-		draw.SimpleText("Back to Shop", "DermaLarge", w/2, h/2, Color(255, 255, 255, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		PS.Theme.PaintAction(s, w, h, PS.Theme.Action.Neutral, "Back to Shop")
 	end
 	
 	-- Close button (X)
@@ -320,23 +187,9 @@ function PANEL:Init()
 		self:Close()
 	end
 	closeBtn.Paint = function(s, w, h)
-		local isHovered = s:IsHovered()
-		s._hoverAlpha = s._hoverAlpha or 0
-		s._hoverAlpha = Lerp(FrameTime() * 10, s._hoverAlpha, isHovered and 1 or 0)
-		
-		local baseRed = 140 + s._hoverAlpha * 40
-		draw.RoundedBox(4, 0, 0, w, h, Color(baseRed, 40, 40, 200 + s._hoverAlpha * 55))
-		draw.RoundedBox(4, 0, 0, w, h/2, Color(baseRed + 40, 60, 60, 80))
-		
-		-- Glow on hover
-		if s._hoverAlpha > 0 then
-			surface.SetDrawColor(200, 80, 80, s._hoverAlpha * 100)
-			surface.DrawOutlinedRect(-1, -1, w + 2, h + 2)
-		end
-		
-		-- X text with shadow
-		draw.SimpleText("X", "DermaDefault", w/2 + 1, h/2 + 1, Color(0, 0, 0, 180), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-		draw.SimpleText("X", "DermaDefault", w/2, h/2, Color(255, 255, 255, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		PS.Theme.PaintAction(s, w, h, PS.Theme.Action.Danger)
+		draw.SimpleText("X", "DermaDefault", w/2 + 1, h/2 + 1, PS.Theme.Shadow, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		draw.SimpleText("X", "DermaDefault", w/2, h/2, PS.Theme.Text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 	end
 	
 	-- Camera control variables
@@ -415,10 +268,10 @@ function PANEL:SetItem(itemData)
 	
 	-- Check if player can afford
 	if LocalPlayer():PS_HasPoints(price) then
-		self.ItemPrice:SetTextColor(Color(100, 255, 100))
+		self.ItemPrice:SetTextColor(PS.Theme.PriceAfford)
 		self.BuyButton:SetEnabled(true)
 	else
-		self.ItemPrice:SetTextColor(Color(255, 100, 100))
+		self.ItemPrice:SetTextColor(PS.Theme.PriceCant)
 		self.BuyButton:SetEnabled(false)
 		self.BuyButton:SetText("Cannot Afford")
 	end
@@ -477,7 +330,7 @@ function PANEL:CreateCustomizationSliders(itemData)
 	self.CustomizeHeading:SetPos(10, y)
 	self.CustomizeHeading:SetSize(280, 18)
 	self.CustomizeHeading:SetFont("DermaDefaultBold")
-	self.CustomizeHeading:SetTextColor(Color(140, 170, 230))
+	self.CustomizeHeading:SetTextColor(PS.Theme.TextDim)
 	self.CustomizeHeading:SetText("Customize (applies when you buy)")
 	y = y + 22
 
@@ -490,7 +343,7 @@ function PANEL:CreateCustomizationSliders(itemData)
 		s:SetMax(max)
 		s:SetDecimals(decimals or 1)
 		s:SetValue(default)
-		s.Label:SetTextColor(Color(200, 200, 200))
+		s.Label:SetTextColor(PS.Theme.MenuRowText)
 		s.OnValueChanged = function() self:UpdateStagedMods() end
 		y = y + 26
 		return s

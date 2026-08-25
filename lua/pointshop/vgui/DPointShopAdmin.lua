@@ -18,8 +18,7 @@ local _adminSummary = {}
 local PS_ADMIN_POINTS_MAX = 1000000
 
 -- Cached at file scope rather than rebuilt inside Paint every frame.
-local COL_PANEL_BG = Color(40, 40, 45, 255)
-local COL_SCRIM    = Color(0, 0, 0)
+-- COL_PANEL_BG and COL_SCRIM removed with the hand-drawn frame and its gradient.
 
 -- Truncates `text` to fit `maxWidth`, appending an ellipsis, and caches the result on the
 -- panel that asked for it.
@@ -76,13 +75,7 @@ function PANEL:Init()
 	self.Header:Dock(TOP)
 	self.Header:SetTall(50)
 	self.Header.Paint = function(s, w, h)
-		surface.SetDrawColor(30, 30, 30, 255)
-		surface.DrawRect(0, 0, w, h)
-		
-		surface.SetDrawColor(60, 140, 200, 255)
-		surface.DrawRect(0, 0, w, 3)
-		
-		draw.SimpleText("PointShop Admin", "PS_LargeTitle", 15, h / 2, Color(255, 255, 255), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		PS.Theme.PaintHeader(w, h, "PointShop Admin")
 	end
 	
 	-- Close button.
@@ -96,16 +89,9 @@ function PANEL:Init()
 		s:SetPos(self.Header:GetWide() - 50, 8)
 	end
 	closeBtn.Paint = function(s, w, h)
-		local isHovered = s:IsHovered()
-		s._hoverAlpha = s._hoverAlpha or 0
-		s._hoverAlpha = Lerp(FrameTime() * 10, s._hoverAlpha, isHovered and 1 or 0)
-		
-		local baseRed = 140 + s._hoverAlpha * 40
-		draw.RoundedBox(6, 0, 0, w, h, Color(baseRed, 40, 40, 200 + s._hoverAlpha * 55))
-		draw.RoundedBox(6, 0, 0, w, h/2, Color(baseRed + 40, 60, 60, 80))
-		
-		draw.SimpleText("X", "PS_Heading2", w/2 + 1, h/2 + 1, Color(0, 0, 0, 180), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-		draw.SimpleText("X", "PS_Heading2", w/2, h/2, Color(255, 255, 255, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		PS.Theme.PaintAction(s, w, h, PS.Theme.Action.Danger)
+		draw.SimpleText("X", "PS_Heading2", w/2 + 1, h/2 + 1, PS.Theme.Shadow, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		draw.SimpleText("X", "PS_Heading2", w/2, h/2, PS.Theme.Text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 	end
 	closeBtn.DoClick = function()
 		self:Close()
@@ -119,12 +105,8 @@ function PANEL:Init()
 	local sbar = self.PlayerList:GetVBar()
 	sbar:SetWide(12)
 	sbar:SetHideButtons(true)
-	sbar.Paint = function(s, w, h)
-		draw.RoundedBox(4, 0, 0, w, h, Color(30, 30, 35, 200))
-	end
-	sbar.btnGrip.Paint = function(s, w, h)
-		draw.RoundedBox(4, 2, 0, w - 4, h, Color(60, 120, 180, 255))
-	end
+	sbar.Paint = function(s, w, h) PS.Theme.PaintScrollTrack(w, h) end
+	sbar.btnGrip.Paint = function(s, w, h) PS.Theme.PaintScrollGrip(s, w, h) end
 	
 	-- List container
 	self.ListContainer = vgui.Create("DListLayout", self.PlayerList)
@@ -182,15 +164,15 @@ function PANEL:PopulatePlayerList()
 	headerPanel:SetTall(40)
 	headerPanel:Dock(TOP)
 	headerPanel.Paint = function(s, w, h)
-		surface.SetDrawColor(45, 45, 50, 255)
+		surface.SetDrawColor(PS.Theme.RowAlt)
 		surface.DrawRect(0, 0, w, h)
-		surface.SetDrawColor(60, 120, 180, 255)
+		surface.SetDrawColor(PS.Theme.Accent)
 		surface.DrawRect(0, h - 2, w, 2)
 		
-		draw.SimpleText("Player", "DermaDefaultBold", 15, h / 2, Color(200, 200, 200), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-		draw.SimpleText("Points", "DermaDefaultBold", w - 550, h / 2, Color(200, 200, 200), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-		draw.SimpleText("Items", "DermaDefaultBold", w - 450, h / 2, Color(200, 200, 200), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-		draw.SimpleText("Actions", "DermaDefaultBold", w - 410, h / 2, Color(200, 200, 200), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText("Player", "DermaDefaultBold", 15, h / 2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText("Points", "DermaDefaultBold", w - 550, h / 2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText("Items", "DermaDefaultBold", w - 450, h / 2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText("Actions", "DermaDefaultBold", w - 410, h / 2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 	end
 	
 	-- Player rows
@@ -212,14 +194,13 @@ function PANEL:AddPlayerRow(ply)
 	row.TargetPlayer = ply
 	
 	row.Paint = function(s, w, h)
-		local col = s:IsHovered() and Color(50, 50, 55, 255) or Color(40, 40, 45, 255)
-		draw.RoundedBox(4, 0, 0, w, h, col)
+		PS.Theme.PaintRow(s, w, h)
 		
 		-- Player name
 		local name = IsValid(ply) and ply:Nick() or "Unknown"
 		-- w - 650 leaves space for the points, items and actions columns.
 		local displayName = FitText(s, name, "DermaDefault", w - 650)
-		draw.SimpleText(displayName, "DermaDefault", 15, h / 2, Color(255, 255, 255), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText(displayName, "DermaDefault", 15, h / 2, PS.Theme.Text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 		
 		-- Points and item count.
 		--
@@ -234,8 +215,8 @@ function PANEL:AddPlayerRow(ply)
 		local points = summary and summary.points or "?"
 		local itemCount = summary and summary.items or "?"
 
-		draw.SimpleText(points, "DermaDefault", w - 550, h / 2, Color(255, 255, 0), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-		draw.SimpleText(itemCount, "DermaDefault", w - 450, h / 2, Color(180, 180, 255), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText(points, "DermaDefault", w - 550, h / 2, PS.Theme.PointsText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText(itemCount, "DermaDefault", w - 450, h / 2, PS.Theme.TextDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 	end
 	
 	-- View Items button
@@ -246,13 +227,7 @@ function PANEL:AddPlayerRow(ply)
 		s:SetPos(row:GetWide() - 410, 10)
 	end
 	viewBtn.Paint = function(s, w, h)
-		local isHovered = s:IsHovered()
-		s._hoverAlpha = s._hoverAlpha or 0
-		s._hoverAlpha = Lerp(FrameTime() * 10, s._hoverAlpha, isHovered and 1 or 0)
-		
-		local basePurple = 100 + s._hoverAlpha * 30
-		draw.RoundedBox(4, 0, 0, w, h, Color(basePurple, 40, basePurple, 200 + s._hoverAlpha * 55))
-		draw.SimpleText("View Items", "DermaDefault", w/2, h/2, Color(255, 255, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		PS.Theme.PaintAction(s, w, h, PS.Theme.Action.Modify, "View Items")
 	end
 	viewBtn.DoClick = function()
 		self:OpenPlayerItemsWindow(ply)
@@ -266,13 +241,7 @@ function PANEL:AddPlayerRow(ply)
 		s:SetPos(row:GetWide() - 330, 10)
 	end
 	giveBtn.Paint = function(s, w, h)
-		local isHovered = s:IsHovered()
-		s._hoverAlpha = s._hoverAlpha or 0
-		s._hoverAlpha = Lerp(FrameTime() * 10, s._hoverAlpha, isHovered and 1 or 0)
-		
-		local baseGreen = 60 + s._hoverAlpha * 30
-		draw.RoundedBox(4, 0, 0, w, h, Color(40, baseGreen, 40, 200 + s._hoverAlpha * 55))
-		draw.SimpleText("Give Points", "DermaDefault", w/2, h/2, Color(255, 255, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		PS.Theme.PaintAction(s, w, h, PS.Theme.Action.Positive, "Give Points")
 	end
 	giveBtn.DoClick = function()
 		self:PromptGivePoints(ply)
@@ -286,13 +255,7 @@ function PANEL:AddPlayerRow(ply)
 		s:SetPos(row:GetWide() - 255, 10)
 	end
 	setBtn.Paint = function(s, w, h)
-		local isHovered = s:IsHovered()
-		s._hoverAlpha = s._hoverAlpha or 0
-		s._hoverAlpha = Lerp(FrameTime() * 10, s._hoverAlpha, isHovered and 1 or 0)
-		
-		local baseBlue = 80 + s._hoverAlpha * 30
-		draw.RoundedBox(4, 0, 0, w, h, Color(40, 60, baseBlue, 200 + s._hoverAlpha * 55))
-		draw.SimpleText("Set Points", "DermaDefault", w/2, h/2, Color(255, 255, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		PS.Theme.PaintAction(s, w, h, PS.Theme.Action.Accent, "Set Points")
 	end
 	setBtn.DoClick = function()
 		self:PromptSetPoints(ply)
@@ -311,13 +274,7 @@ function PANEL:AddPlayerRow(ply)
 		s:SetPos(row:GetWide() - 180, 10)
 	end
 	giveItemBtn.Paint = function(s, w, h)
-		local isHovered = s:IsHovered()
-		s._hoverAlpha = s._hoverAlpha or 0
-		s._hoverAlpha = Lerp(FrameTime() * 10, s._hoverAlpha, isHovered and 1 or 0)
-		
-		local baseOrange = 150 + s._hoverAlpha * 30
-		draw.RoundedBox(4, 0, 0, w, h, Color(baseOrange, 100, 40, 200 + s._hoverAlpha * 55))
-		draw.SimpleText("Give Item", "DermaDefault", w/2, h/2, Color(255, 255, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		PS.Theme.PaintAction(s, w, h, PS.Theme.Action.Warning, "Give Item")
 	end
 	giveItemBtn.DoClick = function()
 		self:PromptGiveItem(ply)
@@ -371,12 +328,8 @@ function PANEL:_BuildPlayerItemsWindow(ply, items)
 	local sbar = scroll:GetVBar()
 	sbar:SetWide(12)
 	sbar:SetHideButtons(true)
-	sbar.Paint = function(s, w, h)
-		draw.RoundedBox(4, 0, 0, w, h, Color(30, 30, 35, 200))
-	end
-	sbar.btnGrip.Paint = function(s, w, h)
-		draw.RoundedBox(4, 2, 0, w - 4, h, Color(60, 120, 180, 255))
-	end
+	sbar.Paint = function(s, w, h) PS.Theme.PaintScrollTrack(w, h) end
+	sbar.btnGrip.Paint = function(s, w, h) PS.Theme.PaintScrollGrip(s, w, h) end
 
 	local list = vgui.Create("DListLayout", scroll)
 	list:Dock(FILL)
@@ -386,11 +339,11 @@ function PANEL:_BuildPlayerItemsWindow(ply, items)
 	header:SetTall(45)
 	header:Dock(TOP)
 	header.Paint = function(s, w, h)
-		surface.SetDrawColor(50, 50, 55, 255)
+		surface.SetDrawColor(PS.Theme.RowHover)
 		surface.DrawRect(0, 0, w, h)
-		draw.SimpleText("Item Name", "DermaDefaultBold", 15, h/2, Color(200, 200, 200), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-		draw.SimpleText("Equipped", "DermaDefaultBold", w - 275, h/2, Color(200, 200, 200), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-		draw.SimpleText("Actions", "DermaDefaultBold", w - 150, h/2, Color(200, 200, 200), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText("Item Name", "DermaDefaultBold", 15, h/2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText("Equipped", "DermaDefaultBold", w - 275, h/2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText("Actions", "DermaDefaultBold", w - 150, h/2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 	end
 
 	-- Sorted for a stable order; pairs() over the inventory table meant the list
@@ -415,7 +368,7 @@ function PANEL:_BuildPlayerItemsWindow(ply, items)
 		-- the player's own shop, so there was no in-game way to take it back. Shown as
 		-- an orphan instead; Take still works, because the server takes by ID.
 		local displayName = ITEM and ITEM.Name or (itemID .. "  (orphaned - no item file)")
-		local nameCol = ITEM and Color(255, 255, 255) or Color(255, 140, 60)
+		local nameCol = ITEM and PS.Theme.Text or PS.Theme.WarningBorder
 
 		local itemRow = vgui.Create("DPanel", list)
 		itemRow:SetTall(50)
@@ -423,15 +376,14 @@ function PANEL:_BuildPlayerItemsWindow(ply, items)
 		itemRow:DockMargin(0, 1, 0, 1)
 
 		itemRow.Paint = function(s, w, h)
-			local col = s:IsHovered() and Color(50, 50, 55, 255) or Color(40, 40, 45, 255)
-			draw.RoundedBox(4, 0, 0, w, h, col)
+			PS.Theme.PaintRow(s, w, h)
 
 			-- Item name - clip if too long
 			local shown = FitText(s, displayName, "DermaDefault", w - 300)
 			draw.SimpleText(shown, "DermaDefault", 15, h/2, nameCol, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 
 			local equipped = itemData.Equipped and "Yes" or "No"
-			local equipCol = itemData.Equipped and Color(100, 255, 100) or Color(150, 150, 150)
+			local equipCol = itemData.Equipped and PS.Theme.PriceAfford or PS.Theme.MenuRowText
 			draw.SimpleText(equipped, "DermaDefault", w - 275, h/2, equipCol, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 		end
 
@@ -450,7 +402,7 @@ function PANEL:_BuildPlayerItemsWindow(ply, items)
 			local baseRed = 120 + s._hoverAlpha * 40
 			local alpha = s:IsEnabled() and (200 + s._hoverAlpha * 55) or 60
 			draw.RoundedBox(4, 0, 0, w, h, Color(baseRed, 40, 40, alpha))
-			draw.SimpleText(s:IsEnabled() and "Take Item" or "Taken", "DermaDefault", w/2, h/2, Color(255, 255, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+			draw.SimpleText(s:IsEnabled() and "Take Item" or "Taken", "DermaDefault", w/2, h/2, PS.Theme.Text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 		end
 		takeBtn.DoClick = function(s)
 			net.Start('PS_TakeItem')
@@ -619,12 +571,8 @@ function PANEL:PromptGiveItem(ply)
 	local sbar = scroll:GetVBar()
 	sbar:SetWide(12)
 	sbar:SetHideButtons(true)
-	sbar.Paint = function(s, w, h)
-		draw.RoundedBox(4, 0, 0, w, h, Color(30, 30, 35, 200))
-	end
-	sbar.btnGrip.Paint = function(s, w, h)
-		draw.RoundedBox(4, 2, 0, w - 4, h, Color(60, 120, 180, 255))
-	end
+	sbar.Paint = function(s, w, h) PS.Theme.PaintScrollTrack(w, h) end
+	sbar.btnGrip.Paint = function(s, w, h) PS.Theme.PaintScrollGrip(s, w, h) end
 	
 	local list = vgui.Create("DListLayout", scroll)
 	list:Dock(FILL)
@@ -634,11 +582,11 @@ function PANEL:PromptGiveItem(ply)
 	header:SetTall(45)
 	header:Dock(TOP)
 	header.Paint = function(s, w, h)
-		surface.SetDrawColor(50, 50, 55, 255)
+		surface.SetDrawColor(PS.Theme.RowHover)
 		surface.DrawRect(0, 0, w, h)
-		draw.SimpleText("Item Name", "DermaDefaultBold", 15, h/2, Color(200, 200, 200), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-		draw.SimpleText("Category", "DermaDefaultBold", w - 200, h/2, Color(200, 200, 200), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-		draw.SimpleText("Actions", "DermaDefaultBold", w - 120, h/2, Color(200, 200, 200), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText("Item Name", "DermaDefaultBold", 15, h/2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText("Category", "DermaDefaultBold", w - 200, h/2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText("Actions", "DermaDefaultBold", w - 120, h/2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 	end
 	
 	-- Sorted by category then name. pairs() over PS.Items gave a different order on every
@@ -662,15 +610,14 @@ function PANEL:PromptGiveItem(ply)
 		itemRow:DockMargin(0, 1, 0, 1)
 		
 		itemRow.Paint = function(s, w, h)
-			local col = s:IsHovered() and Color(50, 50, 55, 255) or Color(40, 40, 45, 255)
-			draw.RoundedBox(4, 0, 0, w, h, col)
+			PS.Theme.PaintRow(s, w, h)
 			
 			-- Item name - clip if too long
 			local displayName = FitText(s, ITEM.Name, "DermaDefault", w - 250)
-			draw.SimpleText(displayName, "DermaDefault", 15, h/2, Color(255, 255, 255), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+			draw.SimpleText(displayName, "DermaDefault", 15, h/2, PS.Theme.Text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 			
 			local category = ITEM.Category or "Misc"
-			draw.SimpleText(category, "DermaDefault", w - 200, h/2, Color(180, 180, 255), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+			draw.SimpleText(category, "DermaDefault", w - 200, h/2, PS.Theme.TextDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 		end
 		
 		-- Give button
@@ -688,7 +635,7 @@ function PANEL:PromptGiveItem(ply)
 			local baseGreen = 60 + s._hoverAlpha * 30
 			local alpha = s:IsEnabled() and (200 + s._hoverAlpha * 55) or 60
 			draw.RoundedBox(4, 0, 0, w, h, Color(40, baseGreen, 40, alpha))
-			draw.SimpleText(s:IsEnabled() and "Give Item" or "Given", "DermaDefault", w/2, h/2, Color(255, 255, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+			draw.SimpleText(s:IsEnabled() and "Give Item" or "Given", "DermaDefault", w/2, h/2, PS.Theme.Text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 		end
 		giveBtn.DoClick = function(s)
 			net.Start('PS_GiveItem')
@@ -712,17 +659,7 @@ function PANEL:PromptGiveItem(ply)
 end
 
 function PANEL:Paint(w, h)
-	draw.RoundedBox(8, 0, 0, w, h, COL_PANEL_BG)
-
-	-- Gradient overlay.
-	-- Was a loop drawing one 1px rect per row: ~585 draw calls a frame at the default size.
-	PS_DrawScrim(8, 8, w - 16, h - 16, COL_SCRIM, 0.15, 100)
-
-	-- Border glow
-	surface.SetDrawColor(60, 120, 180, 100)
-	surface.DrawOutlinedRect(0, 0, w, h)
-	surface.SetDrawColor(60, 120, 180, 50)
-	surface.DrawOutlinedRect(1, 1, w - 2, h - 2)
+	PS.Theme.PaintFrame(w, h)
 end
 
 vgui.Register('DPointShopAdmin', PANEL, 'DFrame')

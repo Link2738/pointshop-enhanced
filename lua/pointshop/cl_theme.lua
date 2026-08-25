@@ -187,6 +187,14 @@ T.AccentGlossHover = Color(140, 200, 200, 80)
 T.AccentGlow       = Color(100, 160, 220)
 T.AccentBorder     = Color(100, 160, 220, 200)
 
+-- Opens the customization panel. Neither confirming, destructive, nor owner-only, so it is
+-- its own role. Every other right-click entry reuses a role that already existed — Sell is
+-- Warning, Buy is Positive, Equip is the category accent — so the menu moves with the theme
+-- instead of carrying nine private literals.
+T.ModifyFill      = Color(140, 100, 200, 255)
+T.ModifyFillHover = Color(170, 100, 230, 255)
+T.ModifyBorder    = Color(180, 140, 240, 200)
+
 -- Dismiss / cancel
 T.NeutralFill       = Color(65, 65, 65, 255)
 T.NeutralFillHover  = Color(80, 80, 80, 255)
@@ -248,6 +256,7 @@ Derive("CategoryIdleFill", "CategoryIdleFillHover", "CategoryIdleGloss",
 	"CategoryIdleGlossHover", "CategoryIdleBorder", "CategoryIdleBorderHover")
 Derive("GoldFill", "GoldFillHover", "GoldBorder", "GoldDivider")
 Derive("DangerFill", "DangerFillHover", "DangerBorder")
+Derive("ModifyFill", "ModifyFillHover", "ModifyBorder")
 
 -- NOT derived, deliberately: GoldText, GoldLabel, DangerText, NeutralText.
 --
@@ -316,11 +325,12 @@ T.CardCantBuy  = Color(160, 50, 50, 220)
 T.CardMenuBG   = Color(40, 40, 45, 250)
 T.MenuRowText  = Color(200, 200, 200, 255)  -- right-click menu entry, not hovered
 
--- The one right-click entry with no existing role: Modify opens the customization panel, and
--- is neither confirming, destructive, nor owner-only. Every other entry in that menu reuses a
--- role it already had — Sell is Warning, Buy is Positive, Equip is the category accent — so
--- the menu moves with the theme instead of carrying nine private literals.
-T.ModifyFill  = Color(140, 100, 200, 255)
+
+-- The Inspector's price readout. Green when you can afford it, red when you cannot — the
+-- only place in the shop where a colour reports a fact about the player rather than naming a
+-- surface, which is why it is not derived from anything.
+T.PriceAfford = Color(100, 255, 100, 255)
+T.PriceCant   = Color(255, 100, 100, 255)
 
 T.BadgeGloss  = Color(255, 255, 255, 20)    -- sheen across the top of a card badge
 T.IconAdmin   = Color(255, 220, 80, 230)    -- admin-only item marker
@@ -434,6 +444,13 @@ T.Action = {
 	},
 	-- Neutral-but-important: the admin button in the shop header. Blue rather than grey
 	-- because it opens another tool rather than dismissing something.
+	-- Opens the customization panel. Neither confirming, destructive, nor owner-only, so it
+	-- is its own role rather than borrowed from one of those.
+	Modify = {
+		radius = 4, lerp = 10, font = "DermaDefault",
+		fill = T.ModifyFill, fillHover = T.ModifyFillHover,
+		border = T.ModifyBorder, text = T.Text, shadow = T.Shadow,
+	},
 	Accent = {
 		radius = 6, lerp = 10, font = "DermaDefault",
 		fill = T.AccentFill, fillHover = T.AccentFillHover,
@@ -492,15 +509,30 @@ function T.PaintSelectable(panel, w, h, isActive, style)
 	surface.DrawOutlinedRect(0, 0, w, h)
 end
 
+-- Multiplies a scratch colour's alpha in place. Used for the disabled state, which is the
+-- same colours at reduced opacity rather than a second palette.
+local function Fade(col, mul)
+	col.a = col.a * mul
+	return col
+end
+
 -- A labelled action button. Caller passes the label so the style stays reusable.
+--
+-- Honours the panel's enabled state. Admin's Take Item and Give Item both stay on screen
+-- after they have been used — disabling the button rather than closing the window, so an
+-- admin clearing an inventory does not pay a server round trip per item — and they need to
+-- read as spent. Same colours at 30% alpha, and no hover animation, since a disabled control
+-- that still lights up under the cursor is claiming it will do something.
 function T.PaintAction(panel, w, h, style, label)
-	local hover = HoverAlpha(panel, style.lerp)
+	local enabled = panel:IsEnabled()
+	local hover = enabled and HoverAlpha(panel, style.lerp) or 0
+	local dim = enabled and 1 or 0.3
 	local r = style.radius
 
-	draw.RoundedBox(r, 0, 0, w, h, T.Shade(sFill, style.fill, style.fillHover, hover))
+	draw.RoundedBox(r, 0, 0, w, h, Fade(T.Shade(sFill, style.fill, style.fillHover, hover), dim))
 
 	if style.gloss then
-		draw.RoundedBox(r, 0, 0, w, h / 2, T.Shade(sGloss, style.gloss, style.glossHover, hover))
+		draw.RoundedBox(r, 0, 0, w, h / 2, Fade(T.Shade(sGloss, style.gloss, style.glossHover, hover), dim))
 	end
 
 	-- Concentric halos, each one step further out and fainter than the last.
@@ -511,12 +543,14 @@ function T.PaintAction(panel, w, h, style, label)
 		end
 	end
 
-	surface.SetDrawColor(style.border)
+	surface.SetDrawColor(Fade(T.Alpha(sBorder, style.border, style.border.a or 255), dim))
 	surface.DrawOutlinedRect(0, 0, w, h)
 
 	if label then
-		draw.SimpleText(label, style.font, w / 2 + 1, h / 2 + 1, style.shadow, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-		draw.SimpleText(label, style.font, w / 2, h / 2, style.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		draw.SimpleText(label, style.font, w / 2 + 1, h / 2 + 1,
+			Fade(T.Alpha(sGloss, style.shadow, style.shadow.a or 255), dim), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		draw.SimpleText(label, style.font, w / 2, h / 2,
+			Fade(T.Alpha(sFill, style.text, style.text.a or 255), dim), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 	end
 end
 
