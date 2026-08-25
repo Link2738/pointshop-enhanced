@@ -7,6 +7,14 @@ include "sh_init.lua"
 include "sv_player_extension.lua"
 include "sv_manifest.lua"
 
+-- Owner-settable default UI palette.
+--
+-- Uses PS_IsItemDefaultOwner, which is defined in ps_item_defaults.lua — loaded from
+-- lua/autorun/server/, so AFTER this file. That is fine because the only call is inside a
+-- net handler and Lua resolves the global at call time, but it is why the gate there is
+-- written defensively rather than assuming the function exists.
+include "sv_theme.lua"
+
 -- net hooks
 
 -- Per-player action rate limiter. Prevents spam that could cause race conditions or server load.

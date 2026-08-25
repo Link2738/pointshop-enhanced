@@ -90,13 +90,59 @@ function PANEL:Init()
 		else
 			pointsText = "Loading..."
 		end
-		draw.SimpleText(pointsText, "PS_Heading3", w - 140, h / 2, Color(255, 255, 0), TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+
+		-- Right edge derived from how many buttons are actually present rather than
+		-- hardcoded. The admin button is conditional, so a fixed offset is wrong for one of
+		-- the two cases — and with three buttons the old 140 put the text underneath one.
+		draw.SimpleText(pointsText, "PS_Heading3", w - (self.HeaderTextInset or 105), h / 2, Color(255, 255, 0), TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
 	end
-	
+
+	-- Header buttons are laid out right to left: close, appearance, then admin if shown.
+	-- 45px apart, matching the existing close/admin spacing.
+	local isAdmin = LocalPlayer():IsAdmin() or LocalPlayer():IsSuperAdmin()
+	self.HeaderTextInset = isAdmin and 195 or 150
+
+	-- Appearance button. Everyone gets this one — it only changes what they see.
+	local themeBtn = vgui.Create("DButton", self.Header)
+	themeBtn:SetPos(panelWidth - 95, 15)
+	themeBtn:SetSize(35, 35)
+	themeBtn:SetText("")
+	themeBtn:SetTextColor(Color(255, 255, 255))
+	themeBtn.Paint = function(s, w, h)
+		local isHovered = s:IsHovered()
+		s._hoverAlpha = s._hoverAlpha or 0
+		s._hoverAlpha = Lerp(FrameTime() * 10, s._hoverAlpha, isHovered and 1 or 0)
+
+		draw.RoundedBox(6, 0, 0, w, h, Color(70 + s._hoverAlpha * 30, 70 + s._hoverAlpha * 30, 80 + s._hoverAlpha * 30, 200 + s._hoverAlpha * 55))
+		draw.RoundedBox(6, 0, 0, w, h/2, Color(100, 100, 115, 80))
+
+		if s._hoverAlpha > 0 then
+			surface.SetDrawColor(140, 140, 160, s._hoverAlpha * 100)
+			surface.DrawOutlinedRect(-1, -1, w + 2, h + 2)
+		end
+
+		-- Four swatches in a 2x2, drawn from the live palette so the icon itself shows the
+		-- current theme. Cheaper and clearer than hunting for a glyph the font may not have.
+		local sw, pad = 7, 2
+		local ox, oy = w/2 - sw - pad/2, h/2 - sw - pad/2
+		local T = PS.Theme
+		local swatches = { T.Accent, T.PositiveFill, T.WarningFill, T.DangerFill }
+		for i = 1, 4 do
+			local cx = ox + ((i - 1) % 2) * (sw + pad)
+			local cy = oy + math.floor((i - 1) / 2) * (sw + pad)
+			surface.SetDrawColor(swatches[i])
+			surface.DrawRect(cx, cy, sw, sw)
+		end
+	end
+	themeBtn.DoClick = function()
+		vgui.Create("DPointShopTheme")
+	end
+	self.themeBtn = themeBtn
+
 	-- Admin button (only for admins/superadmins)
-	if LocalPlayer():IsAdmin() or LocalPlayer():IsSuperAdmin() then
+	if isAdmin then
 		local adminBtn = vgui.Create("DButton", self.Header)
-		adminBtn:SetPos(panelWidth - 95, 15)
+		adminBtn:SetPos(panelWidth - 140, 15)
 		adminBtn:SetSize(35, 35)
 		adminBtn:SetText("")
 		adminBtn:SetFont("PS_Heading3")
@@ -325,29 +371,7 @@ function PANEL:PopulateCategories()
 		btn.IsActive = false
 		
 		btn.Paint = function(s, w, h)
-			local isHovered = s:IsHovered()
-			s._hoverAlpha = s._hoverAlpha or 0
-			s._hoverAlpha = Lerp(FrameTime() * 8, s._hoverAlpha, isHovered and 1 or 0)
-			
-			if s.IsActive then
-				-- Active: blue gradient
-				draw.RoundedBox(6, 0, 0, w, h, Color(60, 140, 200, 255))
-				draw.RoundedBox(6, 0, 0, w, h/2, Color(80, 160, 220, 100))
-				
-				-- Glow
-				surface.SetDrawColor(80, 160, 220, 100 + s._hoverAlpha * 50)
-				surface.DrawOutlinedRect(-1, -1, w + 2, h + 2)
-			else
-				-- Inactive: dark gradient
-				local baseCol = 60 + s._hoverAlpha * 15
-				draw.RoundedBox(6, 0, 0, w, h, Color(baseCol, baseCol, baseCol + 5, 255))
-				draw.RoundedBox(6, 0, 0, w, h/2, Color(baseCol + 20, baseCol + 20, baseCol + 25, 60))
-			end
-			
-			-- Border
-			local borderCol = s.IsActive and Color(100, 180, 240, 200) or Color(90, 90, 95, 150 + s._hoverAlpha * 100)
-			surface.SetDrawColor(borderCol)
-			surface.DrawOutlinedRect(0, 0, w, h)
+			PS.Theme.PaintSelectable(s, w, h, s.IsActive, PS.Theme.Selectable.Category)
 		end
 		
 		btn.DoClick = function()

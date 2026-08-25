@@ -4,49 +4,10 @@
 
 local PANEL = {}
 
--- Scratch colours for the hover animations below. One per layer that animates, owned by
--- this file, written in place by PS.Theme.Shade rather than allocated per frame.
---
--- Separate tables rather than one shared scratch: several of these are live at the same
--- moment inside a single paint call — a button's fill, its gloss and its border all animate
--- together — and a draw call reads the table it was handed, so sharing one would let the
--- last write repaint the earlier ones.
-local sFill   = Color(0, 0, 0)
-local sGloss  = Color(0, 0, 0)
-local sBorder = Color(0, 0, 0)
-local sGlow   = Color(0, 0, 0)
-
--- The skin and bodygroup pickers are the same control: a row of small numbered buttons,
--- one of which is selected. They had a verbatim copy of this painter each, which is how the
--- two rows in the screenshot stayed identical only by luck. One function now, so a theme
--- change or a fix lands on both.
-local function PaintValueButton(panel, w, h, isSelected)
-    local T = PS.Theme
-
-    panel._hoverAlpha = panel._hoverAlpha or 0
-    panel._hoverAlpha = Lerp(FrameTime() * 8, panel._hoverAlpha, panel:IsHovered() and 1 or 0)
-
-    local hover = panel._hoverAlpha
-
-    if isSelected then
-        draw.RoundedBox(4, 0, 0, w, h, T.SelectFill)
-        draw.RoundedBox(4, 0, 0, w, h / 2, T.SelectGloss)
-
-        -- Only the halo's opacity animates, so this is an alpha change rather than a blend.
-        surface.SetDrawColor(T.Alpha(sGlow, T.SelectGlow, 50 + hover * 50))
-        surface.DrawOutlinedRect(-1, -1, w + 2, h + 2)
-    else
-        draw.RoundedBox(4, 0, 0, w, h, T.Shade(sFill, T.ControlFill, T.ControlFillHover, hover))
-        draw.RoundedBox(4, 0, 0, w, h / 2, T.Shade(sGloss, T.ControlGloss, T.ControlGlossHover, hover))
-    end
-
-    if isSelected then
-        surface.SetDrawColor(T.SelectBorder)
-    else
-        surface.SetDrawColor(T.Shade(sBorder, T.ControlBorder, T.ControlBorderHover, hover))
-    end
-    surface.DrawOutlinedRect(0, 0, w, h)
-end
+-- The skin and bodygroup pickers are the same control as the shop's category strip: a row
+-- of buttons, one of which is selected. All three now paint through PS.Theme.PaintSelectable
+-- (pointshop/cl_theme.lua), which is also what the theme editor's mockup calls - so the
+-- preview cannot drift from the real thing.
 
 -- Global table to store pending saved data that arrives before panel is created
 PS_PendingCustomizationData = PS_PendingCustomizationData or {}
@@ -680,7 +641,7 @@ function PANEL:CreateBodygroupButtons()
             end
 
             btn.Paint = function(panel, pw, ph)
-                PaintValueButton(panel, pw, ph, self._skinValue == val)
+                PS.Theme.PaintSelectable(panel, pw, ph, self._skinValue == val, PS.Theme.Selectable.Value)
             end
 
             self.skinButtons[val] = btn
@@ -753,7 +714,7 @@ function PANEL:CreateBodygroupButtons()
                 end
                 
                 btn.Paint = function(panel, w, h)
-                    PaintValueButton(panel, w, h, self._bodygroupValues[bgID] == val)
+                    PS.Theme.PaintSelectable(panel, w, h, self._bodygroupValues[bgID] == val, PS.Theme.Selectable.Value)
                 end
                 
                 self.bodygroupButtons[bgID][val] = btn
@@ -881,31 +842,7 @@ function PANEL:CreateButtons()
         self:ApplyCustomization()
     end
     self.applyButton.Paint = function(panel, w, h)
-        local T = PS.Theme
-        panel._hoverAlpha = panel._hoverAlpha or 0
-        panel._hoverAlpha = Lerp(FrameTime() * 10, panel._hoverAlpha, panel:IsHovered() and 1 or 0)
-
-        local hover = panel._hoverAlpha
-
-        -- Green gradient background
-        draw.RoundedBox(6, 0, 0, w, h, T.Shade(sFill, T.PositiveFill, T.PositiveFillHover, hover))
-        draw.RoundedBox(6, 0, 0, w, h/2, T.Shade(sGloss, T.PositiveGloss, T.PositiveGlossHover, hover))
-
-        -- Outer glow on hover
-        if hover > 0 then
-            surface.SetDrawColor(T.Alpha(sGlow, T.PositiveGlow, hover * 80))
-            surface.DrawOutlinedRect(-1, -1, w + 2, h + 2)
-            surface.SetDrawColor(T.Alpha(sGlow, T.PositiveGlow, hover * 40))
-            surface.DrawOutlinedRect(-2, -2, w + 4, h + 4)
-        end
-
-        -- Border
-        surface.SetDrawColor(T.PositiveBorder)
-        surface.DrawOutlinedRect(0, 0, w, h)
-
-        -- Text with shadow
-        draw.SimpleText("Save & Close", "DermaDefaultBold", w/2 + 1, h/2 + 1, T.ShadowStrong, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-        draw.SimpleText("Save & Close", "DermaDefaultBold", w/2, h/2, T.Text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        PS.Theme.PaintAction(panel, w, h, PS.Theme.Action.Positive, "Save & Close")
     end
     
     y = y + 32
@@ -924,23 +861,7 @@ function PANEL:CreateButtons()
             end
         end
         self.resetButton.Paint = function(panel, w, h)
-            local T = PS.Theme
-            panel._hoverAlpha = panel._hoverAlpha or 0
-            panel._hoverAlpha = Lerp(FrameTime() * 10, panel._hoverAlpha, panel:IsHovered() and 1 or 0)
-
-            local hover = panel._hoverAlpha
-
-            -- Orange/yellow gradient for reset
-            draw.RoundedBox(4, 0, 0, w, h, T.Shade(sFill, T.WarningFill, T.WarningFillHover, hover))
-            draw.RoundedBox(4, 0, 0, w, h/2, T.Shade(sGloss, T.WarningGloss, T.WarningGlossHover, hover))
-
-            -- Border
-            surface.SetDrawColor(T.WarningBorder)
-            surface.DrawOutlinedRect(0, 0, w, h)
-
-            -- Text with shadow
-            draw.SimpleText("Reset Values", "DermaDefault", w/2 + 1, h/2 + 1, T.Shadow, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-            draw.SimpleText("Reset Values", "DermaDefault", w/2, h/2, T.Text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            PS.Theme.PaintAction(panel, w, h, PS.Theme.Action.Warning, "Reset Values")
         end
         y = y + 28
     end
@@ -978,13 +899,7 @@ function PANEL:CreateButtons()
         notification.AddLegacy("Saved as item default.", NOTIFY_GENERIC, 3)
     end
     self._saveDefaultBtn.Paint = function(s, w, h)
-        local T = PS.Theme
-        s._hoverAlpha = Lerp(FrameTime() * 10, s._hoverAlpha or 0, s:IsHovered() and 1 or 0)
-        draw.RoundedBox(4, 0, 0, w, h, T.Shade(sFill, T.GoldFill, T.GoldFillHover, s._hoverAlpha))
-        surface.SetDrawColor(T.GoldBorder)
-        surface.DrawOutlinedRect(0, 0, w, h)
-        draw.SimpleText("Save as Default", "DermaDefault", w/2 + 1, h/2 + 1, T.Shadow, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-        draw.SimpleText("Save as Default", "DermaDefault", w/2, h/2, T.GoldText, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        PS.Theme.PaintAction(s, w, h, PS.Theme.Action.Gold, "Save as Default")
     end
     y = y + 28
 
@@ -1001,13 +916,7 @@ function PANEL:CreateButtons()
         notification.AddLegacy("Default cleared.", NOTIFY_GENERIC, 3)
     end
     self._clearDefaultBtn.Paint = function(s, w, h)
-        local T = PS.Theme
-        s._hoverAlpha = Lerp(FrameTime() * 10, s._hoverAlpha or 0, s:IsHovered() and 1 or 0)
-        draw.RoundedBox(4, 0, 0, w, h, T.Shade(sFill, T.DangerFill, T.DangerFillHover, s._hoverAlpha))
-        surface.SetDrawColor(T.DangerBorder)
-        surface.DrawOutlinedRect(0, 0, w, h)
-        draw.SimpleText("Clear Default", "DermaDefault", w/2 + 1, h/2 + 1, T.Shadow, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-        draw.SimpleText("Clear Default", "DermaDefault", w/2, h/2, T.DangerText, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        PS.Theme.PaintAction(s, w, h, PS.Theme.Action.Danger, "Clear Default")
     end
     y = y + 28
 
@@ -1020,18 +929,7 @@ function PANEL:CreateButtons()
         self:Close()
     end
     self.discardButton.Paint = function(panel, w, h)
-        local T = PS.Theme
-        panel._hoverAlpha = panel._hoverAlpha or 0
-        panel._hoverAlpha = Lerp(FrameTime() * 10, panel._hoverAlpha, panel:IsHovered() and 1 or 0)
-
-        local hover = panel._hoverAlpha
-
-        draw.RoundedBox(4, 0, 0, w, h, T.Shade(sFill, T.NeutralFill, T.NeutralFillHover, hover))
-        draw.RoundedBox(4, 0, 0, w, h/2, T.Shade(sGloss, T.NeutralGloss, T.NeutralGlossHover, hover))
-        surface.SetDrawColor(T.NeutralBorder)
-        surface.DrawOutlinedRect(0, 0, w, h)
-        draw.SimpleText("Discard Changes", "DermaDefault", w/2 + 1, h/2 + 1, T.Shadow, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-        draw.SimpleText("Discard Changes", "DermaDefault", w/2, h/2, T.NeutralText, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        PS.Theme.PaintAction(panel, w, h, PS.Theme.Action.Neutral, "Discard Changes")
     end
     y = y + 28
 
@@ -1803,30 +1701,11 @@ end
 -- ============================================================================
 
 function PANEL:Paint(w, h)
-    draw.RoundedBox(4, 0, 0, w, h, PS.Theme.PanelBG)
-    -- Top edge highlight
-    surface.SetDrawColor(PS.Theme.Alpha(sBorder, PS.Theme.Accent, 80))
-    surface.DrawRect(0, 0, w, 1)
+    PS.Theme.PaintPanelBody(w, h)
 end
 
 function PANEL:PaintOver(w, h)
-    -- Styled status bar at top
-    local barHeight = 35
-
-    -- Status bar gradient background.
-    -- Was one 1px rect per row. The ramp runs 150 down to 150 - (35 * 1.5) = 97.5, so it
-    -- never reached zero inside the bar — hence the explicit bottom alpha rather than a
-    -- plain fade-out.
-    PS_DrawScrimFade(0, 0, w, barHeight, PS.Theme.StatusBar, 150, 150 - (barHeight * 1.5))
-
-    -- Bottom border of status bar
-    surface.SetDrawColor(PS.Theme.Alpha(sBorder, PS.Theme.Accent, 150))
-    surface.DrawRect(10, barHeight, w - 20, 2)
-
-    -- Status text with shadow
-    local statusText = "Preview enabled. Use controls to customize."
-    draw.SimpleText(statusText, "DermaDefault", w/2 + 1, 16, PS.Theme.Shadow, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
-    draw.SimpleText(statusText, "DermaDefault", w/2, 15, PS.Theme.TextDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
+    PS.Theme.PaintStatusStrip(w, 35, "Preview enabled. Use controls to customize.")
 end
 
 

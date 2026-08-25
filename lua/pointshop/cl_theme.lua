@@ -67,6 +67,21 @@ T.ControlGlossHover  = Color(90, 90, 95, 50)
 T.ControlBorder      = Color(100, 100, 110, 150)
 T.ControlBorderHover = Color(100, 100, 110, 250)
 
+-- Category button in the shop's category strip. Structurally the same widget as the value
+-- button above - fill, sheen, halo, border, selected or not - but a different blue and a
+-- larger radius, so it gets its own entries rather than being forced to share.
+T.CategoryFill   = Color(60, 140, 200, 255)
+T.CategoryGloss  = Color(80, 160, 220, 100)
+T.CategoryGlow   = Color(80, 160, 220)
+T.CategoryBorder = Color(100, 180, 240, 200)
+
+T.CategoryIdleFill        = Color(60, 60, 65, 255)
+T.CategoryIdleFillHover   = Color(75, 75, 80, 255)
+T.CategoryIdleGloss       = Color(80, 80, 85, 60)
+T.CategoryIdleGlossHover  = Color(95, 95, 100, 60)
+T.CategoryIdleBorder      = Color(90, 90, 95, 150)
+T.CategoryIdleBorderHover = Color(90, 90, 95, 250)
+
 -- ============================================================================
 -- ACTION BUTTONS
 --
@@ -117,6 +132,30 @@ T.NeutralBorder     = Color(120, 120, 120, 200)
 T.NeutralText       = Color(220, 220, 220, 255)
 
 -- ============================================================================
+-- ITEM CARD
+--
+-- The border is the card's whole state readout - equipped, owned, affordable, not - so
+-- these four are the most load-bearing colours in the shop for telling at a glance what you
+-- are looking at, and the first place a colour-vision problem would bite.
+-- ============================================================================
+
+T.CardBG       = Color(35, 35, 40, 255)
+T.CardEquipped = Color(200, 170, 50, 255)
+T.CardOwned    = Color(60, 140, 200, 255)
+T.CardQueued   = Color(180, 40, 40, 255)    -- pending removal
+T.CardBorder   = Color(70, 70, 75, 200)     -- no particular state
+T.CardHover    = Color(90, 90, 95, 180)     -- alpha scaled by hover
+T.CardLabelBG  = Color(18, 18, 22)
+
+-- Badge pill only. These are NOT border states — affordability shows in the badge while the
+-- border is showing ownership, and the two are independent.
+T.CardCanBuy   = Color(50, 160, 70, 220)
+T.CardCantBuy  = Color(160, 50, 50, 220)
+
+T.CardPanelBG  = Color(40, 40, 45, 255)     -- confirm dialog body
+T.CardMenuBG   = Color(40, 40, 45, 250)     -- right-click menu body
+
+-- ============================================================================
 -- TEXT
 -- ============================================================================
 
@@ -153,3 +192,325 @@ function T.Alpha(target, col, alpha)
 	target.a = alpha
 	return target
 end
+
+-- ============================================================================
+-- WIDGET STYLES
+--
+-- Each entry holds REFERENCES to the Colors above, not copies. That is what makes live
+-- theming work: the editor writes new channel values into a palette Color in place, and
+-- every style pointing at it paints the new colour on the next frame. Rebuilding these
+-- tables with fresh Colors would break that silently - the styles would keep the old ones.
+--
+-- Non-colour fields (radius, lerp speed, glow strength) live here too, because they are
+-- what actually distinguishes one instance of an archetype from another.
+-- ============================================================================
+
+T.Selectable = {
+	-- Skin and bodygroup pickers in the customization panel.
+	Value = {
+		radius = 4, lerp = 8,
+		activeFill = T.SelectFill, activeGloss = T.SelectGloss,
+		activeGlow = T.SelectGlow, glowBase = 50, glowRange = 50,
+		activeBorder = T.SelectBorder,
+		fill  = T.ControlFill,  fillHover  = T.ControlFillHover,
+		gloss = T.ControlGloss, glossHover = T.ControlGlossHover,
+		border = T.ControlBorder, borderHover = T.ControlBorderHover,
+	},
+	-- Category strip in the shop menu.
+	Category = {
+		radius = 6, lerp = 8,
+		activeFill = T.CategoryFill, activeGloss = T.CategoryGloss,
+		activeGlow = T.CategoryGlow, glowBase = 100, glowRange = 50,
+		activeBorder = T.CategoryBorder,
+		fill  = T.CategoryIdleFill,  fillHover  = T.CategoryIdleFillHover,
+		gloss = T.CategoryIdleGloss, glossHover = T.CategoryIdleGlossHover,
+		border = T.CategoryIdleBorder, borderHover = T.CategoryIdleBorderHover,
+	},
+}
+
+-- `gloss` and `glow` are optional - a style without them simply skips those layers, which
+-- is how the gold and danger buttons stay flat while the rest have a sheen.
+T.Action = {
+	Positive = {
+		radius = 6, lerp = 10, font = "DermaDefaultBold",
+		fill = T.PositiveFill, fillHover = T.PositiveFillHover,
+		gloss = T.PositiveGloss, glossHover = T.PositiveGlossHover,
+		glow = T.PositiveGlow, glowLayers = { 80, 40 },
+		border = T.PositiveBorder, text = T.Text, shadow = T.ShadowStrong,
+	},
+	Warning = {
+		radius = 4, lerp = 10, font = "DermaDefault",
+		fill = T.WarningFill, fillHover = T.WarningFillHover,
+		gloss = T.WarningGloss, glossHover = T.WarningGlossHover,
+		border = T.WarningBorder, text = T.Text, shadow = T.Shadow,
+	},
+	Gold = {
+		radius = 4, lerp = 10, font = "DermaDefault",
+		fill = T.GoldFill, fillHover = T.GoldFillHover,
+		border = T.GoldBorder, text = T.GoldText, shadow = T.Shadow,
+	},
+	Danger = {
+		radius = 4, lerp = 10, font = "DermaDefault",
+		fill = T.DangerFill, fillHover = T.DangerFillHover,
+		border = T.DangerBorder, text = T.DangerText, shadow = T.Shadow,
+	},
+	Neutral = {
+		radius = 4, lerp = 10, font = "DermaDefault",
+		fill = T.NeutralFill, fillHover = T.NeutralFillHover,
+		gloss = T.NeutralGloss, glossHover = T.NeutralGlossHover,
+		border = T.NeutralBorder, text = T.NeutralText, shadow = T.Shadow,
+	},
+}
+
+-- ============================================================================
+-- PAINTERS
+--
+-- The real panels and the theme editor's mockup both call these. That is the point: a
+-- mockup that redrew the widgets itself would drift from the shop the first time either
+-- side was touched, and the drift would be invisible until someone noticed the preview was
+-- lying. Sharing the paint code makes that impossible rather than merely unlikely.
+--
+-- Scratch colours are file-scope and shared across painters, which is safe only because
+-- every write below is consumed by its draw call before the next write happens. Do not
+-- hold one of these past a draw call.
+-- ============================================================================
+
+local sFill   = Color(0, 0, 0)
+local sGloss  = Color(0, 0, 0)
+local sBorder = Color(0, 0, 0)
+local sGlow   = Color(0, 0, 0)
+
+-- Advances and returns the panel's own hover animation. Stored on the panel rather than
+-- passed in, so a caller only has to hand over the style.
+local function HoverAlpha(panel, speed)
+	panel._hoverAlpha = Lerp(FrameTime() * speed, panel._hoverAlpha or 0, panel:IsHovered() and 1 or 0)
+	return panel._hoverAlpha
+end
+
+-- A button that is either selected or not: value buttons, category buttons.
+function T.PaintSelectable(panel, w, h, isActive, style)
+	local hover = HoverAlpha(panel, style.lerp)
+	local r = style.radius
+
+	if isActive then
+		draw.RoundedBox(r, 0, 0, w, h, style.activeFill)
+		draw.RoundedBox(r, 0, 0, w, h / 2, style.activeGloss)
+
+		-- Only the halo's opacity animates, so this is an alpha change rather than a blend.
+		surface.SetDrawColor(T.Alpha(sGlow, style.activeGlow, style.glowBase + hover * style.glowRange))
+		surface.DrawOutlinedRect(-1, -1, w + 2, h + 2)
+
+		surface.SetDrawColor(style.activeBorder)
+	else
+		draw.RoundedBox(r, 0, 0, w, h, T.Shade(sFill, style.fill, style.fillHover, hover))
+		draw.RoundedBox(r, 0, 0, w, h / 2, T.Shade(sGloss, style.gloss, style.glossHover, hover))
+
+		surface.SetDrawColor(T.Shade(sBorder, style.border, style.borderHover, hover))
+	end
+
+	surface.DrawOutlinedRect(0, 0, w, h)
+end
+
+-- A labelled action button. Caller passes the label so the style stays reusable.
+function T.PaintAction(panel, w, h, style, label)
+	local hover = HoverAlpha(panel, style.lerp)
+	local r = style.radius
+
+	draw.RoundedBox(r, 0, 0, w, h, T.Shade(sFill, style.fill, style.fillHover, hover))
+
+	if style.gloss then
+		draw.RoundedBox(r, 0, 0, w, h / 2, T.Shade(sGloss, style.gloss, style.glossHover, hover))
+	end
+
+	-- Concentric halos, each one step further out and fainter than the last.
+	if style.glow and hover > 0 then
+		for i = 1, #style.glowLayers do
+			surface.SetDrawColor(T.Alpha(sGlow, style.glow, hover * style.glowLayers[i]))
+			surface.DrawOutlinedRect(-i, -i, w + i * 2, h + i * 2)
+		end
+	end
+
+	surface.SetDrawColor(style.border)
+	surface.DrawOutlinedRect(0, 0, w, h)
+
+	if label then
+		draw.SimpleText(label, style.font, w / 2 + 1, h / 2 + 1, style.shadow, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		draw.SimpleText(label, style.font, w / 2, h / 2, style.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+	end
+end
+
+-- Panel body: rounded background with a single-pixel accent along the top edge.
+function T.PaintPanelBody(w, h)
+	draw.RoundedBox(4, 0, 0, w, h, T.PanelBG)
+	surface.SetDrawColor(T.Alpha(sBorder, T.Accent, 80))
+	surface.DrawRect(0, 0, w, 1)
+end
+
+-- Status strip across the top of a panel: a gradient that fades downward, an accent rule
+-- under it, and centred text with a shadow.
+--
+-- The fade's end alpha is passed explicitly rather than running to zero. The ramp is
+-- 150 down to 150 - barH * 1.5, which for a 35px bar stops at 97.5 - so it never reaches
+-- transparent inside the bar, and letting it fade out fully would be a different look.
+function T.PaintStatusStrip(w, barH, text)
+	PS_DrawScrimFade(0, 0, w, barH, T.StatusBar, 150, 150 - (barH * 1.5))
+
+	surface.SetDrawColor(T.Alpha(sBorder, T.Accent, 150))
+	surface.DrawRect(10, barH, w - 20, 2)
+
+	if text then
+		draw.SimpleText(text, "DermaDefault", w / 2 + 1, 16, T.Shadow, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
+		draw.SimpleText(text, "DermaDefault", w / 2, 15, T.TextDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
+	end
+end
+
+-- Item card. `state` is one of "Equipped", "Owned", "CanBuy", "CantBuy", or nil for a card
+-- with no state, which falls back to the plain border.
+--
+-- The doubled outline is not decoration: the outer pass at 40% alpha softens the edge so a
+-- saturated border does not alias into a hard jagged line against the card behind it.
+function T.PaintItemCard(panel, w, h, state, label)
+	local labelH = 38
+
+	draw.RoundedBox(6, 0, 0, w, h, T.CardBG)
+
+	local border = state and T["Card" .. state]
+	local alpha
+
+	if border then
+		alpha = border.a or 255
+	else
+		-- No state: a plain border that brightens under the cursor, so an unowned card the
+		-- player is pointing at still reads as the one they have picked out.
+		local hover = HoverAlpha(panel, 8)
+		if hover > 0 then
+			border, alpha = T.CardHover, (T.CardHover.a or 255) * hover
+		else
+			border, alpha = T.CardBorder, T.CardBorder.a or 255
+		end
+	end
+
+	surface.SetDrawColor(T.Alpha(sBorder, border, alpha * 0.4))
+	surface.DrawOutlinedRect(-1, -1, w + 2, h + 2)
+	surface.SetDrawColor(T.Alpha(sBorder, border, alpha))
+	surface.DrawOutlinedRect(0, 0, w, h)
+
+	-- A queued item gets a second border inside the first. Removal is destructive and
+	-- irreversible from the player's side, so it is worth more than a colour change.
+	if state == "Queued" then
+		surface.SetDrawColor(T.Alpha(sBorder, T.CardQueued, 120))
+		surface.DrawOutlinedRect(2, 2, w - 4, h - 4)
+	end
+
+	if label then
+		PS_DrawScrimFade(1, h - labelH, w - 2, labelH, T.CardLabelBG, 230)
+		draw.SimpleText(label, "PS_ItemText", w / 2 + 1, h - labelH / 2 + 1, T.Shadow, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		draw.SimpleText(label, "PS_ItemText", w / 2, h - labelH / 2, T.Text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+	end
+end
+
+-- ============================================================================
+-- PERSISTENCE
+--
+-- Same shape as pointshop/ps_item_defaults.lua: JSON under data/pointshop/, pcall-guarded
+-- parse, and a bad file falls back to defaults quietly rather than taking the UI down with
+-- it. A theme is cosmetic - it must never be able to stop someone opening the shop.
+--
+-- Resolution order on load: the player's own file, then the owner's server default, then
+-- what is shipped above.
+-- ============================================================================
+
+local DATA_PATH = "pointshop/theme.json"
+
+-- Snapshot of the shipped values, taken before anything can overwrite them. This is what
+-- "Reset to Default" restores, so it has to be a copy - referencing the live Colors would
+-- make it track the edits it exists to undo.
+local DEFAULTS = {}
+
+-- Only entries that are actually Colors are themeable; the style tables and the painters
+-- live on the same table and must not be walked into.
+local function IsColourKey(k, v)
+	return istable(v) and v.r ~= nil and v.g ~= nil and v.b ~= nil and isstring(k)
+end
+
+for k, v in pairs(T) do
+	if IsColourKey(k, v) then
+		DEFAULTS[k] = { v.r, v.g, v.b, v.a }
+	end
+end
+
+-- Current values as a plain table, for writing to disk or sending to the server.
+function T.Serialise()
+	local out = {}
+	for k in pairs(DEFAULTS) do
+		local c = T[k]
+		out[k] = { c.r, c.g, c.b, c.a }
+	end
+	return out
+end
+
+-- Writes values into the existing Color tables in place.
+--
+-- In place is load-bearing, not a micro-optimisation: every widget style holds a reference
+-- to these exact tables, so replacing one would leave the styles pointing at the old table
+-- and the change would appear to do nothing.
+function T.Apply(tbl)
+	if not istable(tbl) then return end
+
+	for k, v in pairs(tbl) do
+		local c = T[k]
+		if c and DEFAULTS[k] and istable(v) then
+			c.r = math.Clamp(tonumber(v[1]) or c.r, 0, 255)
+			c.g = math.Clamp(tonumber(v[2]) or c.g, 0, 255)
+			c.b = math.Clamp(tonumber(v[3]) or c.b, 0, 255)
+			c.a = math.Clamp(tonumber(v[4]) or c.a, 0, 255)
+		end
+	end
+end
+
+function T.ResetToDefaults()
+	T.Apply(DEFAULTS)
+end
+
+function T.Save()
+	if not file.IsDir("pointshop", "DATA") then file.CreateDir("pointshop") end
+	file.Write(DATA_PATH, util.TableToJSON(T.Serialise(), true))
+end
+
+-- The owner's default, received from the server. Held separately so that clearing a
+-- player's own file falls back to it rather than straight to the shipped values.
+local serverDefault = nil
+
+function T.SetServerDefault(tbl)
+	serverDefault = tbl
+	-- Only take effect for players who have not chosen their own.
+	if not file.Exists(DATA_PATH, "DATA") then
+		T.ResetToDefaults()
+		T.Apply(serverDefault)
+	end
+end
+
+function T.Load()
+	T.ResetToDefaults()
+
+	if serverDefault then T.Apply(serverDefault) end
+
+	if not file.Exists(DATA_PATH, "DATA") then return end
+
+	local raw = file.Read(DATA_PATH, "DATA")
+	if not raw or raw == "" then return end
+
+	local ok, tbl = pcall(util.JSONToTable, raw)
+	if ok and istable(tbl) then
+		T.Apply(tbl)
+	else
+		ErrorNoHalt("[PointShop] Could not parse " .. DATA_PATH .. ", using defaults.\n")
+	end
+end
+
+T.Load()
+
+net.Receive("PS_Theme_Default", function()
+	local ok, tbl = pcall(util.JSONToTable, net.ReadString())
+	if ok and istable(tbl) then T.SetServerDefault(tbl) end
+end)

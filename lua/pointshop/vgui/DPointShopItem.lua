@@ -5,16 +5,19 @@ local groupicon  = Material("icon16/group.png")
 
 local LABEL_H = 38
 
-local COL_BG         = Color(35, 35, 40,  255)
-local COL_EQUIPPED   = Color(200, 170, 50, 255)
-local COL_OWNED      = Color(60,  140, 200, 255)
-local COL_CAN_BUY    = Color(50,  160, 70,  220)
-local COL_CANT_BUY   = Color(160, 50,  50,  220)
-local COL_BORDER_DEF = Color(70,  70,  75,  200)
-local COL_PANEL_BG   = Color(40,  40,  45,  255)
-local COL_MENU_BG    = Color(40,  40,  45,  250)
+-- Aliases onto the shared palette (pointshop/cl_theme.lua), which is included before this
+-- file. They are references, not copies, so the editor writing new channel values into a
+-- palette Color reaches these too and the card repaints without a reload.
+local COL_EQUIPPED   = PS.Theme.CardEquipped
+local COL_OWNED      = PS.Theme.CardOwned
+local COL_CAN_BUY    = PS.Theme.CardCanBuy
+local COL_CANT_BUY   = PS.Theme.CardCantBuy
+local COL_PANEL_BG   = PS.Theme.CardPanelBG
+local COL_MENU_BG    = PS.Theme.CardMenuBG
+local COL_LABEL_BG   = PS.Theme.CardLabelBG
+
+-- Not a palette entry: a scratch the scrim helper writes into, not a colour anyone picks.
 local COL_SCRIM      = Color(0,   0,   0)
-local COL_LABEL_BG   = Color(18,  18,  22)
 
 -- ============================================================================
 -- STYLED CONFIRMATION DIALOG
@@ -352,41 +355,22 @@ function PANEL:Paint(w, h)
 	if not self.Data then return end
 
 	self:ResolveDrawState()
-	local isOwned, isEquipped = self._isOwned, self._isEquipped
 
-	self._hoverAlpha = Lerp(FrameTime() * 8, self._hoverAlpha, self.Hovered and 1 or 0)
-
-	-- Base background
-	draw.RoundedBox(6, 0, 0, w, h, COL_BG)
-
-	local isQueued = self._isQueued
-
-	-- State-based border
-	local bc
-	if isQueued then
-		bc = Color(180, 40, 40)
-	elseif isEquipped then
-		bc = COL_EQUIPPED
-	elseif isOwned then
-		bc = COL_OWNED
-	elseif self._hoverAlpha > 0 then
-		bc = Color(90, 90, 95, self._hoverAlpha * 180)
+	-- Highest-priority state wins the border: a queued item is queued whether or not it is
+	-- also equipped, and hover only shows when nothing else has claimed it.
+	local state
+	if self._isQueued then
+		state = "Queued"
+	elseif self._isEquipped then
+		state = "Equipped"
+	elseif self._isOwned then
+		state = "Owned"
 	end
 
-	if bc then
-		surface.SetDrawColor(bc.r, bc.g, bc.b, (bc.a or 255) * 0.4)
-		surface.DrawOutlinedRect(-1, -1, w + 2, h + 2)
-		surface.SetDrawColor(bc)
-		surface.DrawOutlinedRect(0, 0, w, h)
-		if isQueued then
-			-- Second inner border for emphasis
-			surface.SetDrawColor(180, 40, 40, 120)
-			surface.DrawOutlinedRect(2, 2, w - 4, h - 4)
-		end
-	else
-		surface.SetDrawColor(COL_BORDER_DEF)
-		surface.DrawOutlinedRect(0, 0, w, h)
-	end
+	-- Background and border, shared with the theme editor's preview so the two cannot
+	-- disagree about what an owned or equipped card looks like. Hover is handled inside,
+	-- which is why _hoverAlpha is no longer advanced here.
+	PS.Theme.PaintItemCard(self, w, h, state)
 end
 
 function PANEL:PaintOver()

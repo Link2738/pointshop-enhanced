@@ -113,6 +113,7 @@ include "vgui/DPointShopPreview.lua"
 
 include "vgui/DPointShopGivePoints.lua"
 include "vgui/DPointShopAdmin.lua"
+include "vgui/DPointShopTheme.lua"
 
 PS.ShopMenu = nil
 PS.ClientsideModels = {}
