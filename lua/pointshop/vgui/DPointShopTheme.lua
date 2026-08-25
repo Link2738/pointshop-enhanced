@@ -48,10 +48,6 @@ local SECTIONS = {
 			{ key = "PositiveBorder", label = "Confirm border" },
 			{ key = "WarningFill",    label = "Reset" },
 			{ key = "WarningBorder",  label = "Reset border" },
-			{ key = "GoldFill",       label = "Owner action" },
-			{ key = "GoldBorder",     label = "Owner action border" },
-			{ key = "DangerFill",     label = "Destructive" },
-			{ key = "DangerBorder",   label = "Destructive border" },
 			{ key = "NeutralFill",    label = "Dismiss" },
 			{ key = "NeutralBorder",  label = "Dismiss border" },
 		},
@@ -59,10 +55,8 @@ local SECTIONS = {
 	{
 		name = "Text",
 		rows = {
-			{ key = "Text",      label = "Button text" },
-			{ key = "TextDim",   label = "Labels and status" },
-			{ key = "GoldText",  label = "Owner action text" },
-			{ key = "DangerText", label = "Destructive text" },
+			{ key = "Text",    label = "Button text" },
+			{ key = "TextDim", label = "Labels and status" },
 		},
 	},
 }
@@ -156,12 +150,12 @@ local function BuildCustomizationMock(parent, x, y, w)
 		end
 	end
 
+	-- The server-default controls are deliberately absent. That panel is owner-only and off
+	-- limits — it is not previewed here and nothing in this editor themes it.
 	local actions = {
-		{ style = "Positive", label = "Save & Close",     h = 28 },
-		{ style = "Warning",  label = "Reset Values",     h = 24 },
-		{ style = "Gold",     label = "Save as Default",  h = 24 },
-		{ style = "Danger",   label = "Clear Default",    h = 24 },
-		{ style = "Neutral",  label = "Discard Changes",  h = 24 },
+		{ style = "Positive", label = "Save & Close",    h = 28 },
+		{ style = "Warning",  label = "Reset Values",    h = 24 },
+		{ style = "Neutral",  label = "Discard Changes", h = 24 },
 	}
 
 	local ay = 78
