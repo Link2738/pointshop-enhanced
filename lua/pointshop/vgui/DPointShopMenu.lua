@@ -46,8 +46,7 @@ surface.CreateFont( "PS_CategoryButton", {
 -- Removed: BGColor1/2/3. All three were assigned and never read. One of them was (57,56,54),
 -- the only warm grey anywhere in the shop — which is how it survived: nothing ever drew it.
 
--- Not a palette entry: a scratch the gradient helper writes into, not a colour anyone picks.
-local COL_SCRIM = Color(0, 0, 0)
+-- COL_SCRIM removed with the body gradient it was the colour for.
 
 local PANEL = {}
 
@@ -406,12 +405,18 @@ end
 -- per-frame work is needed here later it has to call self.BaseClass.Think(self) first.
 
 function PANEL:Paint(w, h)
-	-- Rounded background base
+	-- Flat body. No scrim.
+	--
+	-- There was a black gradient over this, and it was drawing a hard bar across the bottom
+	-- of the window rather than the subtle shade it was meant to be. PS_DrawScrim ramps to
+	-- maxAlpha at row maxAlpha/slope and is FLAT below that: at 100/0.15 the ramp finishes at
+	-- row 667, so on a ~900px panel the bottom ~225px was a solid 39% black rect with a
+	-- visible seam where it began.
+	--
+	-- Removed rather than retuned. It was also a second layer of colour on top of MenuBG, so
+	-- setting that entry never produced the colour it named — which defeats the point of the
+	-- entry existing.
 	draw.RoundedBox(8, 0, 0, w, h, PS.Theme.MenuBG)
-
-	-- Gradient overlay (drawn inside rounded area).
-	-- Was a loop drawing one 1px rect per row: ~885 draw calls a frame on a 900px panel.
-	PS_DrawScrim(8, 8, w - 16, h - 16, COL_SCRIM, 0.15, 100)
 
 	-- Outer border glow with rounded corners
 	surface.SetDrawColor(60, 120, 180, 100)
