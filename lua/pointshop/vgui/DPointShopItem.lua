@@ -66,7 +66,7 @@ function PANEL:DoClick()
 	-- rather than shaded — and it is the same second-layer problem the window body had.
 	menu.Paint = function(s, w, h)
 		draw.RoundedBox(6, 0, 0, w, h, COL_MENU_BG)
-		surface.SetDrawColor(PS.Theme.Alpha(sMenuBorder, PS.Theme.FrameBorder, 120))
+		surface.SetDrawColor(PS.Theme.Alpha(sMenuBorder, PS.Theme.Accent, 120))
 		surface.DrawOutlinedRect(0, 0, w, h)
 	end
 

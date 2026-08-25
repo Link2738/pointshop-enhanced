@@ -37,14 +37,12 @@ local EXCLUDE = {
 }
 
 local LABELS = {
-	StatusBar = "Status strip", Accent = "Accent line",
+	StatusBar = "Status strip", Accent = "Accent (borders, stripes, lines)",
 
 	MenuCategoryBG = "Category strip background",
 
 	FrameBG     = "Window body",
-	FrameBorder = "Window border",
 	HeaderBG    = "Window header bar",
-	HeaderRule  = "Header stripe",
 
 	RowBG    = "List row",
 	RowAlt   = "List row, alternate",
@@ -110,7 +108,7 @@ local function AssignSection(name, ...)
 	for _, k in ipairs({ ... }) do SECTION_OF[k] = name end
 end
 
-AssignSection("Surfaces", "StatusBar", "CardMenuBG", "MenuCategoryBG", "FrameBG", "FrameBorder", "HeaderBG", "HeaderRule")
+AssignSection("Surfaces", "StatusBar", "CardMenuBG", "MenuCategoryBG", "FrameBG", "HeaderBG")
 AssignSection("Lists", "RowBG", "RowAlt", "RowHover",
 	"ScrollTrack", "ScrollGrip", "ScrollGripHover")
 AssignSection("Accent", "Accent",

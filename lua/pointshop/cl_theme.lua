@@ -52,12 +52,15 @@ local T = PS.Theme
 -- Collapsed onto (40,40,45), the value four of the five already used. The customization
 -- panel was (30,30,35) and gets very slightly lighter, which is the point: it was the one
 -- disagreeing.
-T.FrameBG     = Color(40, 40, 45, 255)     -- every window body
-T.FrameBorder = Color(60, 120, 180, 255)   -- alpha applied per pass by PaintFrame
-T.HeaderBG    = Color(30, 30, 30, 255)     -- every header bar
-T.HeaderRule  = Color(60, 140, 200, 255)   -- the stripe along the top of a header
+T.FrameBG  = Color(40, 40, 45, 255)     -- every window body
+T.HeaderBG = Color(30, 30, 30, 255)     -- every header bar
 
-T.StatusBar = Color(20, 40, 60)        -- status strip gradient base
+-- The window border and the header stripe are not their own colours: they are the accent,
+-- and they read as it. FrameBorder and HeaderRule were separate entries holding (60,120,180)
+-- and (60,140,200), which meant setting the accent left both behind.
+--
+-- Both now draw from T.Accent, with their own alphas applied at paint time.
+T.StatusBar = Color(20, 40, 60)         -- status strip gradient base, a surface not an accent
 
 -- Still its own: the strip behind the category buttons is a recessed container within a
 -- window rather than a window, and nothing else in the shop draws one.
@@ -439,9 +442,9 @@ end
 function T.PaintFrame(w, h, body)
 	draw.RoundedBox(T.Metrics.Radius, 0, 0, w, h, body or T.FrameBG)
 
-	surface.SetDrawColor(T.Alpha(sBorder, T.FrameBorder, 100))
+	surface.SetDrawColor(T.Alpha(sBorder, T.Accent, 100))
 	surface.DrawOutlinedRect(0, 0, w, h)
-	surface.SetDrawColor(T.Alpha(sBorder, T.FrameBorder, 50))
+	surface.SetDrawColor(T.Alpha(sBorder, T.Accent, 50))
 	surface.DrawOutlinedRect(1, 1, w - 2, h - 2)
 end
 
@@ -450,7 +453,7 @@ function T.PaintHeader(w, h, title)
 	surface.SetDrawColor(T.HeaderBG)
 	surface.DrawRect(0, 0, w, h)
 
-	surface.SetDrawColor(T.HeaderRule)
+	surface.SetDrawColor(T.Accent)
 	surface.DrawRect(0, 0, w, 3)
 
 	if title then
