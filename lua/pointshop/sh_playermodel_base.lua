@@ -61,11 +61,35 @@ function BASE:OnEquip(ply, modifications)
     end
 end
 
+-- Hands the model back to the gamemode rather than replaying a snapshot.
+--
+-- This restored ply._OldModel, captured in OnEquip behind `if not ply._OldModel`, so it was
+-- written once and never cleared. Equip A, then B, then holster B, and you got whatever you
+-- wore before A. It also survived team changes, so holstering after switching teams handed
+-- back a model for the team you used to be on.
+--
+-- hook.Run("PlayerSetModel") asks the gamemode instead. That is the standard hook every
+-- gamemode already implements to decide what a player wears, so this stays correct on a
+-- gamemode that has never heard of Bear Hunt — which is the same reason the theme and the
+-- appearance provider go through hooks rather than calling into it.
+--
+-- Falls back to the old behaviour if nothing answers, so a gamemode that does not implement
+-- the hook is no worse off than before.
 function BASE:OnHolster(ply)
-    ply._PS_ActivePlayerModel = nil  -- Clear PointShop model tracking
-    if ply._OldModel then
-        ply:SetModel(ply._OldModel)
+    ply._PS_ActivePlayerModel = nil
+
+    if SERVER then
+        local before = ply:GetModel()
+        hook.Run("PlayerSetModel", ply)
+
+        -- Nothing claimed it. Use the snapshot rather than leaving the shop model on.
+        if ply:GetModel() == before and ply._OldModel then
+            ply:SetModel(ply._OldModel)
+        end
     end
+
+    ply._OldModel = nil
+
     -- Reset all color/bodygroup state so the default model is clean. Neutral through the
     -- modulation path sets modulation to white and clears the proxy, which is both
     -- channels — the same "clear what you are not using" rule, used to clear both.
