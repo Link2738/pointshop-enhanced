@@ -42,7 +42,20 @@ local LABELS = {
 	MenuBG         = "Shop window body",
 	MenuHeaderBG   = "Shop header bar",
 	MenuCategoryBG = "Category strip background",
-	MenuScrollBG   = "Scrollbar track",
+	MenuScrollBG   = "Scrollbar track (shop)",
+
+	FrameBG     = "Window body",
+	FrameBorder = "Window border",
+	HeaderBG    = "Window header bar",
+	HeaderRule  = "Header stripe",
+
+	RowBG    = "List row",
+	RowAlt   = "List row, alternate",
+	RowHover = "List row, hovered",
+
+	ScrollTrack     = "Scrollbar track",
+	ScrollGrip      = "Scrollbar grip",
+	ScrollGripHover = "Scrollbar grip, hovered",
 
 	CategoryFill   = "Category, active",        CategoryGloss  = "Category, active sheen",
 	CategoryGlow   = "Category, active glow",   CategoryBorder = "Category, active border",
@@ -86,7 +99,10 @@ local function AssignSection(name, ...)
 end
 
 AssignSection("Surfaces", "PanelBG", "StatusBar", "CardPanelBG", "CardMenuBG",
-	"MenuBG", "MenuHeaderBG", "MenuCategoryBG", "MenuScrollBG")
+	"MenuBG", "MenuHeaderBG", "MenuCategoryBG", "MenuScrollBG",
+	"FrameBG", "FrameBorder", "HeaderBG", "HeaderRule")
+AssignSection("Lists", "RowBG", "RowAlt", "RowHover",
+	"ScrollTrack", "ScrollGrip", "ScrollGripHover")
 AssignSection("Accent", "Accent",
 	"CategoryFill", "CategoryGloss", "CategoryGlow", "CategoryBorder",
 	"CategoryIdleFill", "CategoryIdleFillHover", "CategoryIdleGloss",
@@ -104,7 +120,9 @@ AssignSection("Items", "CardBG", "CardBorder", "CardHover", "CardEquipped", "Car
 	"CardQueued", "CardCanBuy", "CardCantBuy", "CardLabelBG")
 AssignSection("Text", "Text", "TextDim", "Shadow", "ShadowStrong")
 
-local SECTION_ORDER = { "Surfaces", "Accent", "Buttons", "Items", "Text", "Other" }
+-- Any name used by AssignSection must appear here: BuildShopSections indexes buckets by
+-- section name, so one that is missing is a nil table indexed on the first row assigned to it.
+local SECTION_ORDER = { "Surfaces", "Accent", "Buttons", "Lists", "Items", "Text", "Other" }
 
 -- Walks the palette once and drops every colour into its section. Sorted within a section
 -- so the order is stable between sessions rather than following pairs().

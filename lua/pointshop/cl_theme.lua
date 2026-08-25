@@ -59,6 +59,48 @@ T.MenuHeaderBG   = Color(30, 30, 30, 255)   -- header bar behind the title and b
 T.MenuCategoryBG = Color(40, 40, 40, 255)   -- container behind the category buttons
 T.MenuScrollBG   = Color(30, 30, 30, 255)   -- scrollbar tracks, category and item grid
 
+-- Shared frame surfaces. Every window that is not the shop itself — Admin, Inspector, the
+-- confirmation dialogs — draws through these, so they agree by construction rather than by
+-- four files happening to hold the same numbers.
+T.FrameBG     = Color(40, 40, 45, 255)
+T.FrameBorder = Color(60, 120, 180, 255)   -- alpha applied per pass by PaintFrame
+T.HeaderBG    = Color(30, 30, 30, 255)
+T.HeaderRule  = Color(60, 140, 200, 255)   -- the stripe along the top of a header
+
+-- List rows.
+T.RowBG    = Color(40, 40, 45, 255)
+T.RowAlt   = Color(44, 44, 50, 255)        -- every other row
+T.RowHover = Color(50, 50, 55, 255)
+
+-- Scrollbars.
+T.ScrollTrack     = Color(30, 30, 35, 200)
+T.ScrollGrip      = Color(60, 120, 180, 255)
+T.ScrollGripHover = Color(80, 160, 220, 255)
+
+-- ============================================================================
+-- METRICS
+--
+-- Sizes, not colours, and here for the same reason the colours are: they were magic numbers
+-- repeated per file, which is why header heights and row heights disagree between panels
+-- that are meant to look like the same program.
+--
+-- Not exposed in the Appearance editor. The palette generator only picks up Colors, so this
+-- table is invisible to it — which is correct: a player choosing their own row height is a
+-- layout engine, not a theme.
+-- ============================================================================
+
+T.Metrics = {
+	HeaderH   = 50,   -- header bar height
+	RowH      = 44,   -- list row
+	ButtonH   = 28,   -- action button
+	IconBtn   = 35,   -- square header buttons
+	Margin    = 10,   -- panel edge to content
+	Gap       = 8,    -- between sibling controls
+	Radius    = 8,    -- frames and dialogs
+	RadiusSm  = 4,    -- rows, buttons, small boxes
+	ScrollW   = 12,
+}
+
 -- ============================================================================
 -- ACCENT
 --
@@ -352,6 +394,64 @@ function T.PaintAction(panel, w, h, style, label)
 		draw.SimpleText(label, style.font, w / 2 + 1, h / 2 + 1, style.shadow, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 		draw.SimpleText(label, style.font, w / 2, h / 2, style.text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 	end
+end
+
+-- Window body plus its border.
+--
+-- Every panel in the shop drew this by hand: rounded body, then two outlined rects one pixel
+-- apart at alpha 100 and 50. The doubled outline is not decoration — a single hard line
+-- aliases badly against whatever is behind a floating window, and the fainter second pass
+-- softens it.
+--
+-- There used to be a black gradient between the two. It was removed: it drew a hard bar
+-- across the bottom of anything taller than ~675px, and it meant the body colour was never
+-- the colour anyone set.
+function T.PaintFrame(w, h)
+	draw.RoundedBox(T.Metrics.Radius, 0, 0, w, h, T.FrameBG)
+
+	surface.SetDrawColor(T.Alpha(sBorder, T.FrameBorder, 100))
+	surface.DrawOutlinedRect(0, 0, w, h)
+	surface.SetDrawColor(T.Alpha(sBorder, T.FrameBorder, 50))
+	surface.DrawOutlinedRect(1, 1, w - 2, h - 2)
+end
+
+-- Header bar: flat background, accent stripe along the top, left-aligned title.
+function T.PaintHeader(w, h, title)
+	surface.SetDrawColor(T.HeaderBG)
+	surface.DrawRect(0, 0, w, h)
+
+	surface.SetDrawColor(T.HeaderRule)
+	surface.DrawRect(0, 0, w, 3)
+
+	if title then
+		draw.SimpleText(title, "PS_LargeTitle", 15, h / 2, T.Text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+	end
+end
+
+function T.PaintScrollTrack(w, h)
+	draw.RoundedBox(T.Metrics.RadiusSm, 0, 0, w, h, T.ScrollTrack)
+end
+
+function T.PaintScrollGrip(panel, w, h)
+	local col = panel:IsHovered() and T.ScrollGripHover or T.ScrollGrip
+	draw.RoundedBox(T.Metrics.RadiusSm, 2, 0, w - 4, h, col)
+end
+
+-- List row. `index` drives the alternating stripe; nil for a list that does not alternate.
+function T.PaintRow(panel, w, h, index, selected)
+	local col
+
+	if selected then
+		col = T.RowHover
+	elseif panel:IsHovered() then
+		col = T.RowHover
+	elseif index and index % 2 == 0 then
+		col = T.RowAlt
+	else
+		col = T.RowBG
+	end
+
+	draw.RoundedBox(T.Metrics.RadiusSm, 0, 0, w, h, col)
 end
 
 -- Panel body: rounded background with a single-pixel accent along the top edge.

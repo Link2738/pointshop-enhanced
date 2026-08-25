@@ -24,6 +24,10 @@ include "cl_player_extension.lua"
 -- time — they read PS.Theme inside their paint functions, which always run later.
 include "cl_theme.lua"
 
+-- Widget layer. After cl_theme.lua, which it paints through, and before the vgui files that
+-- build with it.
+include "cl_ui.lua"
+
 -- ============================================================================
 -- SHARED DRAW HELPERS
 -- ============================================================================
