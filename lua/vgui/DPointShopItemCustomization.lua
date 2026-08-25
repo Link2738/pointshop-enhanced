@@ -589,11 +589,48 @@ function PANEL:CreatePlayermodelControls()
     self:SetControlsEnabled(false)
 end
 
+-- The entity whose bodygroups and skins this panel is describing.
+--
+-- The ITEM's model, not the player's. Reading them off LocalPlayer() only ever worked when
+-- the item was already equipped AND the model had finished applying, and the caller was
+-- guessing at that second part with a 0.1s timer. Open Modify on a playermodel you are not
+-- currently wearing and it found nothing, so the buttons never appeared.
+--
+-- A no-draw ClientsideModel is the cheapest way to ask a model about itself. It exists only
+-- for the length of this function.
+function PANEL:WithItemModel(fn)
+    local path = self.itemModelPath
+
+    -- Accessories and anything without its own model still describe the player.
+    if self.itemType ~= "playermodel" or not path or path == "" then
+        local ply = LocalPlayer()
+        if not IsValid(ply) then return end
+        return fn(ply)
+    end
+
+    local probe = ClientsideModel(path, RENDERGROUP_OTHER)
+    if not IsValid(probe) then
+        -- Bad or unmounted model path. Fall back rather than showing nothing.
+        local ply = LocalPlayer()
+        if not IsValid(ply) then return end
+        return fn(ply)
+    end
+
+    probe:SetNoDraw(true)
+
+    local ok, err = pcall(fn, probe)
+    probe:Remove()
+
+    if not ok then error(err) end
+end
+
 function PANEL:CreateBodygroupButtons()
     if not self.bodygroupScroll then return end
-    
-    -- For playermodels, use the real player
-    local ent = LocalPlayer()
+
+    self:WithItemModel(function(ent) self:_BuildBodygroupButtons(ent) end)
+end
+
+function PANEL:_BuildBodygroupButtons(ent)
     if not IsValid(ent) then return end
 
     -- Clear existing skin buttons
@@ -603,7 +640,20 @@ function PANEL:CreateBodygroupButtons()
         end
     end
     self.skinButtons = {}
-    self._skinValue = ent:GetSkin() or 0
+
+    -- COUNTS come from `ent`, which is the item's model. The current VALUE comes from the
+    -- player, and only when they are actually wearing this model — a probe model's skin is
+    -- always 0, so taking it from there would silently reset the selection to 0 every time
+    -- the panel opened.
+    --
+    -- Pending saved data overwrites this a moment later where it exists; this is the value
+    -- shown until then.
+    local ply = LocalPlayer()
+    if IsValid(ply) and ply:GetModel() == ent:GetModel() then
+        self._skinValue = ply:GetSkin() or 0
+    else
+        self._skinValue = self._skinValue or 0
+    end
 
     -- Create skin buttons
     local skinMax = ent:SkinCount() - 1
@@ -1466,13 +1516,12 @@ function PANEL:SetItem(item)
         if not IsValid(self) then return end
         self:EnablePreview()
         
-        -- For playermodels, create bodygroup buttons after preview model exists
+        -- No longer waits on anything. This used to sleep 0.1s hoping the preview model had
+        -- finished applying to the player, because the buttons were read off the player.
+        -- They are read off the item's own model now, which is available immediately and does
+        -- not depend on what the player happens to be wearing.
         if self.itemType == "playermodel" then
-            timer.Simple(0.1, function()
-                if IsValid(self) then
-                    self:CreateBodygroupButtons()
-                end
-            end)
+            self:CreateBodygroupButtons()
         end
     end)
 end
