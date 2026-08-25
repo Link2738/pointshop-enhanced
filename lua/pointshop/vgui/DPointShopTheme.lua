@@ -48,12 +48,10 @@ local LABELS = {
 	RowAlt   = "List row, alternate",
 	RowHover = "List row, hovered",
 
-	AccentFill       = "Tool button",
-	AccentFillHover  = "Tool button, hovered",
-	AccentGloss      = "Tool button sheen",
-	AccentGlossHover = "Tool button sheen, hovered",
-	AccentGlow       = "Tool button glow",
-	AccentBorder     = "Tool button border",
+	AccentFill = "Tool button",
+	AccentFillHover = "Tool button, hovered", AccentGloss = "Tool button sheen",
+	AccentGlossHover = "Tool button sheen, hovered", AccentGlow = "Tool button glow",
+	AccentBorder = "Tool button border",
 
 	ModifyFill  = "Modify entry",
 	MenuRowText = "Right-click menu text",
@@ -67,29 +65,35 @@ local LABELS = {
 	ScrollGrip      = "Scrollbar grip",
 	ScrollGripHover = "Scrollbar grip, hovered",
 
-	CategoryFill   = "Category, active",        CategoryGloss  = "Category, active sheen",
-	CategoryGlow   = "Category, active glow",   CategoryBorder = "Category, active border",
-	CategoryIdleFill        = "Category, idle",        CategoryIdleFillHover   = "Category, idle hovered",
-	CategoryIdleGloss       = "Category, idle sheen",  CategoryIdleGlossHover  = "Category, idle sheen hovered",
-	CategoryIdleBorder      = "Category, idle border", CategoryIdleBorderHover = "Category, idle border hovered",
+	CategoryFill = "Category, active", CategoryIdleFill = "Category, idle",
+	CategoryGloss = "Category sheen", CategoryGlow = "Category glow",
+	CategoryBorder = "Category border",
+	CategoryIdleFillHover = "Category idle, hovered",
+	CategoryIdleGloss = "Category idle sheen",
+	CategoryIdleGlossHover = "Category idle sheen, hovered",
+	CategoryIdleBorder = "Category idle border",
+	CategoryIdleBorderHover = "Category idle border, hovered",
 
-	SelectFill  = "Value button, selected",       SelectGloss  = "Value button, selected sheen",
-	SelectGlow  = "Value button, selected glow",  SelectBorder = "Value button, selected border",
-	ControlFill        = "Value button, idle",        ControlFillHover   = "Value button, idle hovered",
-	ControlGloss       = "Value button, idle sheen",  ControlGlossHover  = "Value button, idle sheen hovered",
-	ControlBorder      = "Value button, idle border", ControlBorderHover = "Value button, idle border hovered",
+	SelectFill = "Value button, selected", ControlFill = "Value button, idle",
+	SelectGloss = "Value button sheen", SelectGlow = "Value button glow",
+	SelectBorder = "Value button border",
+	ControlFillHover = "Value button idle, hovered", ControlGloss = "Value button idle sheen",
+	ControlGlossHover = "Value button idle sheen, hovered",
+	ControlBorder = "Value button idle border",
+	ControlBorderHover = "Value button idle border, hovered",
 
-	PositiveFill  = "Confirm",       PositiveFillHover  = "Confirm hovered",
-	PositiveGloss = "Confirm sheen", PositiveGlossHover = "Confirm sheen hovered",
-	PositiveGlow  = "Confirm glow",  PositiveBorder     = "Confirm border",
+	PositiveFill = "Confirm",
+	PositiveFillHover = "Confirm, hovered", PositiveGloss = "Confirm sheen",
+	PositiveGlossHover = "Confirm sheen, hovered", PositiveGlow = "Confirm glow",
+	PositiveBorder = "Confirm border",
 
-	WarningFill  = "Reset",       WarningFillHover  = "Reset hovered",
-	WarningGloss = "Reset sheen", WarningGlossHover = "Reset sheen hovered",
-	WarningBorder = "Reset border",
+	WarningFill = "Reset",
+	WarningFillHover = "Reset, hovered", WarningGloss = "Reset sheen",
+	WarningGlossHover = "Reset sheen, hovered", WarningBorder = "Reset border",
 
-	NeutralFill  = "Dismiss",       NeutralFillHover  = "Dismiss hovered",
-	NeutralGloss = "Dismiss sheen", NeutralGlossHover = "Dismiss sheen hovered",
-	NeutralBorder = "Dismiss border", NeutralText = "Dismiss text",
+	NeutralFill = "Dismiss", NeutralText = "Dismiss text",
+	NeutralFillHover = "Dismiss, hovered", NeutralGloss = "Dismiss sheen",
+	NeutralGlossHover = "Dismiss sheen, hovered", NeutralBorder = "Dismiss border",
 
 	CardBG      = "Item background", CardBorder  = "Item border",
 	CardHover   = "Item border, hovered",
@@ -141,12 +145,29 @@ local function BuildShopSections()
 	for _, name in ipairs(SECTION_ORDER) do buckets[name] = {} end
 
 	for k, v in pairs(PS.Theme) do
-		if istable(v) and v.r ~= nil and v.g ~= nil and v.b ~= nil and not EXCLUDE[k] then
+		local derived = PS.Theme.Derived[k]
+
+		-- Derived variants are hidden by default. A button's sheen, glow, hovered fill and
+		-- border all follow its base, so showing them is six rows describing one decision —
+		-- and it lets someone set a fill without its sheen, which is precisely how the
+		-- category button ended up black with a blue top half.
+		--
+		-- Advanced reveals them for anyone who does want the sheen a different hue.
+		if istable(v) and v.r ~= nil and v.g ~= nil and v.b ~= nil
+			and not EXCLUDE[k] and (PS.Theme.ShowAdvanced or not derived) then
+
 			local bucket = buckets[SECTION_OF[k] or "Other"]
 			bucket[#bucket + 1] = {
-				label = LABELS[k] or k,
+				label = (derived and "  " or "") .. (LABELS[k] or k),
 				type  = "color",
 				get   = function() return PS.Theme[k] end,
+
+				-- A base resyncs everything that follows it. A variant edited by hand
+				-- re-measures instead, so it becomes the new relationship rather than being
+				-- overwritten the next time its base moves.
+				onChange = derived
+					and function() PS.Theme.RemeasureDerived(k) end
+					or  PS.Theme.SyncDerived,
 			}
 		end
 	end
@@ -468,9 +489,29 @@ function PANEL:Init()
 	-- Scoped to the MASTER tab, not the subtab. A provider's subtabs are sibling views of one
 	-- palette — the shop's Shop and Customization surfaces share most of their colours — so
 	-- splitting the list between them would just list the same rows twice.
+	-- Advanced reveals the derived variants — a button's sheen, glow, hovered fill and
+	-- border — for anyone who wants one of them off its base's hue. Off by default, because
+	-- for almost everyone they are six rows describing one decision.
+	--
+	-- Toggling rebuilds from the providers rather than filtering what is already there: the
+	-- rows are generated, so the honest way to change what is generated is to generate again.
+	local adv = vgui.Create("DCheckBoxLabel", self)
+	adv:SetPos(12, bodyY + 2)
+	adv:SetSize(listW - 20, 16)
+	adv:SetText("Advanced")
+	adv:SetTextColor(PS.Theme.TextDim)
+	adv:SetValue(PS.Theme.ShowAdvanced and true or false)
+	adv.OnChange = function(_, on)
+		PS.Theme.ShowAdvanced = on
+		self.Providers = CollectProviders()
+		self:BuildList()
+	end
+
+	local listY = bodyY + 24
+
 	self.List = vgui.Create("DScrollPanel", self)
-	self.List:SetPos(10, bodyY)
-	self.List:SetSize(listW, h - bodyY - 55)
+	self.List:SetPos(10, listY)
+	self.List:SetSize(listW, h - listY - 55)
 	self.ListW = listW
 
 	-- Right: the active provider's previews as subtabs.
@@ -722,6 +763,14 @@ function PANEL:OpenMixer(row)
 		-- In place. Every widget style holds a reference to this exact table, so writing
 		-- channels is what makes the preview update; replacing it would orphan them.
 		col.r, col.g, col.b = newCol.r, newCol.g, newCol.b
+
+		-- Optional per-row hook. The shop uses it to recompute the variants that follow this
+		-- colour — a button's sheen, glow, hovered fill and border all move with its base,
+		-- and they are stale the instant it changes.
+		if isfunction(row.onChange) then
+			local ok, err = pcall(row.onChange)
+			if not ok then Warn("row '" .. row.label .. "' onChange errored: " .. tostring(err)) end
+		end
 	end
 end
 

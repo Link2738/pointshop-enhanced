@@ -196,6 +196,100 @@ T.NeutralBorder     = Color(120, 120, 120, 200)
 T.NeutralText       = Color(220, 220, 220, 255)
 
 -- ============================================================================
+-- DERIVED VARIANTS
+--
+-- Every button family above spells out six colours - fill, fill-hovered, sheen,
+-- sheen-hovered, glow, border - and they are all the same colour. Confirm is green; its
+-- border is a lighter green, its sheen a lighter green at low alpha, its glow a brighter
+-- green. Six knobs describing one decision.
+--
+-- Worse, they were six SEPARATE knobs, so setting a fill without its sheen was not just
+-- possible but the default outcome. That is exactly how the category button ended up black
+-- with a blue top half.
+--
+-- So: one editable colour per family, and the variants follow it.
+--
+-- The offsets are MEASURED from the values above rather than written out here. Those values
+-- are the design; this just records how far each variant sits from its base and reapplies
+-- that when the base moves. Until a base is touched, every variant reproduces its shipped
+-- value exactly - the measurement is against itself.
+-- ============================================================================
+
+local DERIVED = {}   -- [variantKey] = { base = <key>, dr, dg, db, da }
+
+T.Derived = {}       -- set of variant keys, for the editor to skip
+
+local function Derive(base, ...)
+	local b = T[base]
+
+	for _, key in ipairs({ ... }) do
+		local v = T[key]
+		if v then
+			DERIVED[key] = {
+				base = base,
+				dr = v.r - b.r, dg = v.g - b.g, db = v.b - b.b, da = v.a - b.a,
+			}
+			T.Derived[key] = true
+		end
+	end
+end
+
+Derive("PositiveFill", "PositiveFillHover", "PositiveGloss", "PositiveGlossHover",
+	"PositiveGlow", "PositiveBorder")
+Derive("WarningFill", "WarningFillHover", "WarningGloss", "WarningGlossHover", "WarningBorder")
+Derive("NeutralFill", "NeutralFillHover", "NeutralGloss", "NeutralGlossHover", "NeutralBorder")
+Derive("AccentFill", "AccentFillHover", "AccentGloss", "AccentGlossHover", "AccentGlow",
+	"AccentBorder")
+Derive("SelectFill", "SelectGloss", "SelectGlow", "SelectBorder")
+Derive("ControlFill", "ControlFillHover", "ControlGloss", "ControlGlossHover",
+	"ControlBorder", "ControlBorderHover")
+Derive("CategoryFill", "CategoryGloss", "CategoryGlow", "CategoryBorder")
+Derive("CategoryIdleFill", "CategoryIdleFillHover", "CategoryIdleGloss",
+	"CategoryIdleGlossHover", "CategoryIdleBorder", "CategoryIdleBorderHover")
+Derive("GoldFill", "GoldFillHover", "GoldBorder", "GoldDivider")
+Derive("DangerFill", "DangerFillHover", "DangerBorder")
+
+-- NOT derived, deliberately: GoldText, GoldLabel, DangerText, NeutralText.
+--
+-- They are label colours, and a label has to stay readable against its fill. Offsetting text
+-- from the fill means darkening a button darkens its text with it, and the two meet in the
+-- middle as something illegible. Contrast is the one relationship that must not be preserved
+-- when the base moves.
+
+-- Recomputes every variant from its base, in place.
+--
+-- In place matters for the same reason it does everywhere else here: the widget style tables
+-- hold references to these exact Color tables, so replacing one would leave the styles
+-- pointing at the old value.
+function T.SyncDerived()
+	for key, d in pairs(DERIVED) do
+		local b, v = T[d.base], T[key]
+		v.r = math.Clamp(b.r + d.dr, 0, 255)
+		v.g = math.Clamp(b.g + d.dg, 0, 255)
+		v.b = math.Clamp(b.b + d.db, 0, 255)
+		v.a = math.Clamp(b.a + d.da, 0, 255)
+	end
+end
+
+-- Re-measures one variant's offset from its base.
+--
+-- Called when someone edits a variant directly in the editor's advanced view. Without it,
+-- their change would survive exactly until the next time the base moved and SyncDerived
+-- overwrote it — a setting that silently undoes itself is worse than one that is not offered.
+--
+-- Re-measuring instead means a hand-edited variant becomes the new relationship: move the
+-- base afterwards and the edit travels with it.
+function T.RemeasureDerived(key)
+	local d = DERIVED[key]
+	if not d then return end
+
+	local b, v = T[d.base], T[key]
+	d.dr, d.dg, d.db, d.da = v.r - b.r, v.g - b.g, v.b - b.b, v.a - b.a
+end
+
+function T.IsDerived(key) return DERIVED[key] ~= nil end
+
+-- ============================================================================
 -- ITEM CARD
 --
 -- The border is the card's whole state readout - equipped, owned, affordable, not - so
@@ -616,6 +710,9 @@ function T.Apply(tbl)
 			c.a = math.Clamp(tonumber(v[4]) or c.a, 0, 255)
 		end
 	end
+
+	-- A base may have moved, so the variants that follow it are now stale.
+	T.SyncDerived()
 end
 
 -- The server's main default, once it has arrived. nil on a server that has not set one.
