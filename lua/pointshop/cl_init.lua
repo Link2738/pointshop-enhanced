@@ -18,6 +18,12 @@
 include "sh_init.lua"
 include "cl_player_extension.lua"
 
+-- UI palette. Above the vgui includes so the panels below can reach PS.Theme, and above
+-- the draw helpers for the same reason. The panels in lua/vgui/ are autoloaded by the
+-- engine rather than included here, so they cannot rely on this having run at their load
+-- time — they read PS.Theme inside their paint functions, which always run later.
+include "cl_theme.lua"
+
 -- ============================================================================
 -- SHARED DRAW HELPERS
 -- ============================================================================
