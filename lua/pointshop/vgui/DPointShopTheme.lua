@@ -102,14 +102,18 @@ local SECTION_ORDER = { "Surfaces", "Accent", "Buttons", "Items", "Text", "Other
 
 -- Walks the palette once and drops every colour into its section. Sorted within a section
 -- so the order is stable between sessions rather than following pairs().
-local function BuildSections()
+local function BuildShopSections()
 	local buckets = {}
 	for _, name in ipairs(SECTION_ORDER) do buckets[name] = {} end
 
 	for k, v in pairs(PS.Theme) do
 		if istable(v) and v.r ~= nil and v.g ~= nil and v.b ~= nil and not EXCLUDE[k] then
 			local bucket = buckets[SECTION_OF[k] or "Other"]
-			bucket[#bucket + 1] = { key = k, label = LABELS[k] or k }
+			bucket[#bucket + 1] = {
+				label = LABELS[k] or k,
+				type  = "color",
+				get   = function() return PS.Theme[k] end,
+			}
 		end
 	end
 
@@ -124,6 +128,105 @@ local function BuildSections()
 
 	return out
 end
+
+-- ============================================================================
+-- PROVIDER CONTRACT
+--
+-- This panel is not the shop's private settings screen. It is a host: anything installed
+-- alongside the shop can register appearance sections and get a live-previewed colour
+-- editor without writing one. The shop registers itself through the same door as everyone
+-- else, so there is no privileged path that could quietly diverge from the public one.
+--
+--     hook.Add("PS_CollectAppearanceProviders", "MyAddon", function(add)
+--         add({
+--             name     = "My Addon",
+--             sections = { { name = "Colours", rows = { ... } } },
+--             previews = { { label = "Preview", build = function(parent, w, h) end } },
+--             save     = function() end,
+--             reset    = function() end,
+--         })
+--     end)
+--
+-- Rows are one of:
+--
+--     { label = "…", type = "color",  get = function() return <Color> end }
+--     { label = "…", type = "slider", get = function() return <number> end,
+--       set = function(n) end, min = <n>, max = <n>, decimals = <n> }
+--
+-- A colour row's get() must return the LIVE Color table, not a copy. The editor writes
+-- channels into it in place, and that is what makes a change show up on the next frame
+-- without anything having to be told about it.
+--
+-- Everything below is validated rather than trusted. This contract is public, so a provider
+-- may be third-party code with a typo in it, and one bad provider must not cost the player
+-- their whole appearance menu — it gets skipped, with a console line saying which and why.
+-- ============================================================================
+
+local function Warn(msg)
+	ErrorNoHalt("[PointShop] Appearance provider ignored: " .. msg .. "\n")
+end
+
+local function ValidRow(row, where)
+	if not istable(row) then return false end
+	if not isstring(row.label) then Warn(where .. " has a row with no label") return false end
+	if not isfunction(row.get) then Warn(where .. " row '" .. row.label .. "' has no get()") return false end
+
+	if row.type == "color" then
+		local c = row.get()
+		if not (istable(c) and c.r and c.g and c.b) then
+			Warn(where .. " row '" .. row.label .. "' get() did not return a Color")
+			return false
+		end
+		return true
+	end
+
+	if row.type == "slider" then
+		if not isfunction(row.set) then Warn(where .. " slider '" .. row.label .. "' has no set()") return false end
+		if not (isnumber(row.min) and isnumber(row.max)) then
+			Warn(where .. " slider '" .. row.label .. "' needs numeric min and max")
+			return false
+		end
+		return true
+	end
+
+	Warn(where .. " row '" .. row.label .. "' has unknown type " .. tostring(row.type))
+	return false
+end
+
+-- Returns a cleaned copy, or nil if the provider is unusable. Rows that fail are dropped
+-- individually so one bad entry does not discard a provider's whole section.
+local function Validate(p)
+	if not istable(p) then Warn("not a table") return end
+	if not isstring(p.name) then Warn("no name") return end
+	if not istable(p.sections) then Warn(p.name .. " has no sections") return end
+
+	local out = { name = p.name, sections = {}, previews = {}, save = p.save, reset = p.reset }
+
+	for _, section in ipairs(p.sections) do
+		if istable(section) and istable(section.rows) then
+			local rows = {}
+			for _, row in ipairs(section.rows) do
+				if ValidRow(row, p.name) then rows[#rows + 1] = row end
+			end
+			if #rows > 0 then
+				out.sections[#out.sections + 1] = { name = section.name or p.name, rows = rows }
+			end
+		end
+	end
+
+	if #out.sections == 0 then Warn(p.name .. " contributed no usable rows") return end
+
+	for _, pv in ipairs(p.previews or {}) do
+		if istable(pv) and isfunction(pv.build) then
+			out.previews[#out.previews + 1] = { label = pv.label or p.name, build = pv.build }
+		end
+	end
+
+	return out
+end
+
+-- ShopProvider and CollectProviders live below the preview builders, which they reference —
+-- a Lua local is not in scope above its own declaration.
 
 -- ============================================================================
 -- PREVIEW
@@ -244,6 +347,47 @@ local function BuildCustomizationMock(parent, w, h)
 end
 
 -- ============================================================================
+-- PROVIDER COLLECTION
+-- ============================================================================
+
+-- The shop's own provider, registered through the public door like any other.
+local function ShopProvider()
+	return {
+		name     = "Shop",
+		sections = BuildShopSections(),
+		previews = {
+			{ label = "Shop",          build = BuildShopMock },
+			{ label = "Customization", build = BuildCustomizationMock },
+		},
+		save  = function() PS.Theme.Save() end,
+		reset = function() PS.Theme.ResetToDefaults() end,
+	}
+end
+
+-- Collected fresh every time the panel opens, so an addon that loaded late still appears,
+-- and a provider is free to vary its rows by whatever state it likes.
+--
+-- Wrapped in pcall: a provider that errors while BUILDING its section list would otherwise
+-- take the hook down and every provider after it with no indication why.
+local function CollectProviders()
+	local raw = { ShopProvider() }
+
+	hook.Run("PS_CollectAppearanceProviders", function(p) raw[#raw + 1] = p end)
+
+	local out = {}
+	for _, p in ipairs(raw) do
+		local ok, cleaned = pcall(Validate, p)
+		if not ok then
+			Warn("a provider errored while being validated: " .. tostring(cleaned))
+		elseif cleaned then
+			out[#out + 1] = cleaned
+		end
+	end
+
+	return out
+end
+
+-- ============================================================================
 -- PANEL
 -- ============================================================================
 
@@ -270,25 +414,9 @@ function PANEL:Init()
 	self.List:SetPos(10, 45)
 	self.List:SetSize(listW, h - 100)
 
-	self.Rows = {}
-	local y = 0
-
-	for _, section in ipairs(BuildSections()) do
-		local hdr = self.List:Add("DLabel")
-		hdr:SetText(section.name)
-		hdr:SetFont("DermaDefaultBold")
-		hdr:SetTextColor(PS.Theme.TextDim)
-		hdr:SetPos(4, y)
-		hdr:SizeToContents()
-		y = y + 20
-
-		for _, row in ipairs(section.rows) do
-			self:AddRow(row, y, listW)
-			y = y + 26
-		end
-
-		y = y + 8
-	end
+	self.Providers = CollectProviders()
+	self.ListW = listW
+	self:BuildList()
 
 	-- Right: the preview, one tab per surface.
 	--
@@ -315,21 +443,41 @@ function PANEL:Init()
 	body:SetSize(pw, ph - tabH - gap)
 	body.Paint = function() end
 
-	local tabs = {
-		{ label = "Shop",          build = BuildShopMock },
-		{ label = "Customization", build = BuildCustomizationMock },
-	}
+	local tabs = {}
+	for _, provider in ipairs(self.Providers) do
+		for _, pv in ipairs(provider.previews) do
+			tabs[#tabs + 1] = pv
+		end
+	end
 
+	-- Pages are built first and only the ones that succeed get a tab.
+	--
+	-- A provider's preview builder is third-party code running inside our panel, so it is
+	-- pcall'd: if it throws, its tab is dropped and the rest of the menu still opens. Doing
+	-- this in two passes rather than skipping mid-loop keeps the page list contiguous —
+	-- a hole in it would end the ipairs that drives tab switching, and every tab after the
+	-- failed one would silently stop responding.
 	self._tabPages = {}
-	local tabW = math.floor((pw - gap) / #tabs)
+	local built = {}
 
-	for i, t in ipairs(tabs) do
-		local page = t.build(body, pw, ph - tabH - gap)
-		page:SetVisible(i == 1)
-		self._tabPages[i] = page
+	for _, t in ipairs(tabs) do
+		local ok, page = pcall(t.build, body, pw, ph - tabH - gap)
+		if ok and IsValid(page) then
+			built[#built + 1] = { label = t.label, page = page }
+			self._tabPages[#built] = page
+		else
+			Warn("preview '" .. tostring(t.label) .. "' failed to build: " .. tostring(page))
+			if IsValid(page) then page:Remove() end
+		end
+	end
+
+	local tabW = math.floor((pw - gap * math.max(#built - 1, 0)) / math.max(#built, 1))
+
+	for i, b in ipairs(built) do
+		b.page:SetVisible(i == 1)
 
 		local btn = vgui.Create("DButton", self.Preview)
-		btn:SetText(t.label)
+		btn:SetText(b.label)
 		btn:SetFont("PS_CategoryButton")
 		btn:SetTextColor(PS.Theme.Text)
 		btn:SetSize(tabW, tabH)
@@ -350,11 +498,53 @@ function PANEL:Init()
 	self:BuildFooter(w, h)
 end
 
--- One swatch row: label, a colour button, and a mixer that opens on click.
-function PANEL:AddRow(row, y, listW)
-	local col = PS.Theme[row.key]
-	if not col then return end
+-- Fills the left column from the collected providers.
+--
+-- Separate from Init because Reset has to rebuild it: a slider holds its own copy of the
+-- value and does not notice one changing underneath it.
+function PANEL:BuildList()
+	local listW = self.ListW
+	self.List:Clear()
 
+	local y = 0
+
+	-- Section headers carry the provider name only when there is more than one provider.
+	-- With just the shop installed "Shop / Surfaces" is noise; with a gamemode contributing
+	-- too, "Surfaces" alone stops saying whose surfaces.
+	local multi = #self.Providers > 1
+
+	for _, provider in ipairs(self.Providers) do
+		for _, section in ipairs(provider.sections) do
+			local hdr = self.List:Add("DLabel")
+			hdr:SetText(multi and (provider.name .. " / " .. section.name) or section.name)
+			hdr:SetFont("DermaDefaultBold")
+			hdr:SetTextColor(PS.Theme.TextDim)
+			hdr:SetPos(4, y)
+			hdr:SizeToContents()
+			y = y + 20
+
+			for _, row in ipairs(section.rows) do
+				y = y + self:AddRow(row, y, listW)
+			end
+
+			y = y + 8
+		end
+	end
+end
+
+function PANEL:Rebuild()
+	self:BuildList()
+end
+
+-- Renders one row and returns the vertical space it used, so a taller control does not need
+-- the caller to know which type it was.
+function PANEL:AddRow(row, y, listW)
+	if row.type == "slider" then return self:AddSliderRow(row, y, listW) end
+	return self:AddColourRow(row, y, listW)
+end
+
+-- Label, a swatch of the current colour, and a mixer that opens on click.
+function PANEL:AddColourRow(row, y, listW)
 	local label = self.List:Add("DLabel")
 	label:SetText(row.label)
 	label:SetTextColor(PS.Theme.Text)
@@ -366,13 +556,39 @@ function PANEL:AddRow(row, y, listW)
 	swatch:SetPos(listW - 80, y)
 	swatch:SetSize(60, 22)
 	swatch.Paint = function(s, w, h)
-		draw.RoundedBox(3, 0, 0, w, h, col)
+		-- Read through get() every frame rather than caching. A provider may change the
+		-- colour from outside this panel, and the swatch should not be the one thing on
+		-- screen still showing the old value.
+		draw.RoundedBox(3, 0, 0, w, h, row.get())
 		surface.SetDrawColor(0, 0, 0, 200)
 		surface.DrawOutlinedRect(0, 0, w, h)
 	end
-	swatch.DoClick = function() self:OpenMixer(row, col) end
+	swatch.DoClick = function() self:OpenMixer(row) end
 
-	self.Rows[row.key] = swatch
+	return 26
+end
+
+-- Label above, slider below. Two lines because the list column is 300px and a slider
+-- squeezed alongside a label has almost no travel left to be precise with.
+function PANEL:AddSliderRow(row, y, listW)
+	local slider = self.List:Add("DNumSlider")
+	slider:SetPos(4, y)
+	slider:SetSize(listW - 20, 34)
+	slider:SetText(row.label)
+	slider:SetMin(row.min)
+	slider:SetMax(row.max)
+	slider:SetDecimals(row.decimals or 2)
+	slider:SetValue(row.get())
+	slider.Label:SetTextColor(PS.Theme.Text)
+
+	slider.OnValueChanged = function(_, v)
+		-- Guarded: a provider's set() is third-party code firing on every drag frame, and an
+		-- error there would otherwise spam and leave the slider half-applied.
+		local ok, err = pcall(row.set, v)
+		if not ok then Warn("slider '" .. row.label .. "' set() errored: " .. tostring(err)) end
+	end
+
+	return 38
 end
 
 -- Mixer popup for one entry.
@@ -382,7 +598,10 @@ end
 -- write. The customization panel hit this and solved it with a seeding window; the same
 -- guard applies here, or seeding the mixer would immediately overwrite the colour it was
 -- seeded from.
-function PANEL:OpenMixer(row, col)
+function PANEL:OpenMixer(row)
+	local col = row.get()
+	if not istable(col) then return end
+
 	local frame = vgui.Create("DFrame", self)
 	frame:SetSize(260, 220)
 	frame:SetTitle(row.label)
@@ -426,13 +645,33 @@ function PANEL:BuildFooter(w, h)
 		return b
 	end
 
+	-- Save and Reset fan out across every provider. Each owns its own store, so one failing
+	-- must not stop the others being written — a provider that errors is reported and the
+	-- loop carries on.
+	local function ForEachProvider(what, fn)
+		for _, provider in ipairs(self.Providers) do
+			local f = provider[fn]
+			if isfunction(f) then
+				local ok, err = pcall(f)
+				if not ok then
+					Warn(provider.name .. " failed to " .. what .. ": " .. tostring(err))
+				end
+			end
+		end
+	end
+
 	Btn(10, 140, "Positive", "Save", function()
-		PS.Theme.Save()
+		ForEachProvider("save", "save")
 		notification.AddLegacy("Appearance saved.", NOTIFY_GENERIC, 3)
 	end)
 
 	Btn(158, 140, "Warning", "Reset to Default", function()
-		PS.Theme.ResetToDefaults()
+		ForEachProvider("reset", "reset")
+
+		-- Sliders hold their own copy of the value, so they do not notice a reset that
+		-- happened underneath them. Rebuilding the list is the honest fix; the alternative
+		-- is every provider having to know to push values back into controls it never saw.
+		self:Rebuild()
 	end)
 
 	-- No server-default control here. This panel is a player's own appearance and nothing
