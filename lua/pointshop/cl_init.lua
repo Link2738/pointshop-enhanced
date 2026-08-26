@@ -30,6 +30,7 @@ include "cl_theme.lua"
 -- Widget layer. After cl_theme.lua, which it paints through, and before the vgui files that
 -- build with it.
 include "cl_ui.lua"
+include "cl_tune.lua"
 
 -- ============================================================================
 -- SHARED DRAW HELPERS

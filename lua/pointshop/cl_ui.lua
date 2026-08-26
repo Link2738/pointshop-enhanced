@@ -64,6 +64,10 @@ local ICON = {
 	ShadowY = 1,
 }
 
+-- Exposed so the tuning panel can read the shipped values and revert to them.
+UI.IconDefaults = ICON
+UI.IconCVars = nil
+
 local IconCV
 if PS.Config and PS.Config.Debug then
 	IconCV = {}
@@ -73,6 +77,8 @@ if PS.Config and PS.Config.Debug then
 		IconCV[k] = CreateClientConVar("ps_icon_" .. string.lower(k), tostring(v), false, false)
 	end
 end
+
+UI.IconCVars = IconCV
 
 local function Icon(k)
 	if IconCV then return IconCV[k]:GetInt() end
