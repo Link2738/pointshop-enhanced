@@ -49,17 +49,17 @@ end
 -- shadow offset. Handing the caller the surface is simpler than a config table trying to
 -- describe every case.
 
--- Icons, by name rather than by character. Call sites say UI.GlyphIcon("gear").
+-- Icons, by name rather than by character. Call sites say UI.GlyphIcon("bolt").
 --
 -- x and y are per icon because they need to be: the three glyphs come from different
 -- fallback fonts and sit differently in their boxes, so one shared offset cannot fix all
 -- three. Window dressing, so they are constants -- nothing to read or network at runtime.
 --
--- Under PS.Config.Debug each gets live convars (ps_icon_gear_x, ps_icon_gear_y, ...) and
+-- Under PS.Config.Debug each gets live convars (ps_icon_bolt_x, ps_icon_bolt_y, ...) and
 -- the tuning panel drives them. Write what you settle on back into this table.
 UI.Icons = {
 	close = { glyph = "X",  x = 0, y = 0 },
-	gear  = { glyph = "⚙", x = 0, y = 0 },
+	bolt  = { glyph = "⚡", x = 0, y = 0 },
 	star  = { glyph = "★", x = 0, y = 0 },
 }
 

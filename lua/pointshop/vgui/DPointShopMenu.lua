@@ -132,7 +132,7 @@ function PANEL:Init()
 	end, "Neutral", function() vgui.Create("DPointShopTheme") end)
 
 	if isAdmin then
-		self.adminBtn = HeaderButton(GlyphIcon("gear"), "Accent", function()
+		self.adminBtn = HeaderButton(GlyphIcon("bolt"), "Accent", function()
 			vgui.Create("DPointShopAdmin")
 		end)
 	end

@@ -19,7 +19,7 @@ local SHARED = {
 }
 
 -- Fixed order, so the panel does not reshuffle between opens the way pairs() would.
-local ORDER = { "close", "gear", "star" }
+local ORDER = { "close", "bolt", "star" }
 
 local panel
 
