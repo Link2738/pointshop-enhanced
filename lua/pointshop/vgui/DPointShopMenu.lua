@@ -113,7 +113,7 @@ function PANEL:Init()
 	-- close button -- three places to fix a centring problem.
 	local GlyphIcon = PS.UI.GlyphIcon
 
-	HeaderButton(GlyphIcon("X"), "Danger", function() PS:ToggleMenu() end)
+	HeaderButton(GlyphIcon("close"), "Danger", function() PS:ToggleMenu() end)
 
 	-- Appearance button. Everyone gets this one — it only changes what they see.
 	--
@@ -132,7 +132,7 @@ function PANEL:Init()
 	end, "Neutral", function() vgui.Create("DPointShopTheme") end)
 
 	if isAdmin then
-		self.adminBtn = HeaderButton(GlyphIcon("⚙"), "Accent", function()
+		self.adminBtn = HeaderButton(GlyphIcon("gear"), "Accent", function()
 			vgui.Create("DPointShopAdmin")
 		end)
 	end
@@ -162,10 +162,10 @@ function PANEL:Init()
 		end)
 
 		if #tools == 1 then
-			self.ownerBtn = HeaderButton(GlyphIcon("★"), "Accent", tools[1].open)
+			self.ownerBtn = HeaderButton(GlyphIcon("star"), "Accent", tools[1].open)
 		elseif #tools > 1 then
 			table.sort(tools, function(a, b) return a.name < b.name end)
-			self.ownerBtn = HeaderButton(GlyphIcon("★"), "Accent", function()
+			self.ownerBtn = HeaderButton(GlyphIcon("star"), "Accent", function()
 				local m = DermaMenu()
 				for _, t in ipairs(tools) do m:AddOption(t.name, t.open) end
 				m:Open()

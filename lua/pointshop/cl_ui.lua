@@ -49,53 +49,67 @@ end
 -- shadow offset. Handing the caller the surface is simpler than a config table trying to
 -- describe every case.
 
--- Icon placement. Window dressing: once these are right they never change again, so they
--- are constants and there is nothing to read or network at runtime.
+-- Icons, by name rather than by character. Call sites say UI.GlyphIcon("gear").
 --
--- Under PS.Config.Debug each also becomes a live convar (ps_icon_buttony, ps_icon_nudgex,
--- ps_icon_nudgey, ps_icon_shadowx, ps_icon_shadowy) so a value can be found by eye instead
--- of by edit-and-restart. Write the number you settle on into ICON below; the convars are
--- a tuning aid, not a feature, and they do not exist with Debug off.
-local ICON = {
-	ButtonY = 0,   -- header button, up (-) or down (+)
-	NudgeX  = 0,   -- glyph inside its button
-	NudgeY  = 0,
-	ShadowX = 1,
-	ShadowY = 1,
+-- x and y are per icon because they need to be: the three glyphs come from different
+-- fallback fonts and sit differently in their boxes, so one shared offset cannot fix all
+-- three. Window dressing, so they are constants -- nothing to read or network at runtime.
+--
+-- Under PS.Config.Debug each gets live convars (ps_icon_gear_x, ps_icon_gear_y, ...) and
+-- the tuning panel drives them. Write what you settle on back into this table.
+UI.Icons = {
+	close = { glyph = "X",  x = 0, y = 0 },
+	gear  = { glyph = "⚙", x = 0, y = 0 },
+	star  = { glyph = "★", x = 0, y = 0 },
 }
 
--- Exposed so the tuning panel can read the shipped values and revert to them.
-UI.IconDefaults = ICON
+-- Shared by every icon: the button's place in the header, and the shadow behind the glyph.
+UI.IconShared = { ButtonY = 0, ShadowX = 1, ShadowY = 1 }
+
 UI.IconCVars = nil
 
-local IconCV
 if PS.Config and PS.Config.Debug then
-	IconCV = {}
-	for k, v in pairs(ICON) do
-		-- Not saved to the client config: a tuning value that persists is one you forget you
-		-- set, and then the shipped constant is not what you are looking at.
-		IconCV[k] = CreateClientConVar("ps_icon_" .. string.lower(k), tostring(v), false, false)
+	-- Not saved to the client config: a tuning value that persists is one you forget you
+	-- set, and then what you are looking at is not the shipped constant.
+	local function CV(n, v)
+		return CreateClientConVar("ps_icon_" .. n, tostring(v), false, false)
+	end
+
+	UI.IconCVars = { shared = {}, icons = {} }
+	for k, v in pairs(UI.IconShared) do
+		UI.IconCVars.shared[k] = CV(string.lower(k), v)
+	end
+	for name, def in pairs(UI.Icons) do
+		UI.IconCVars.icons[name] = { x = CV(name .. "_x", def.x), y = CV(name .. "_y", def.y) }
 	end
 end
 
-UI.IconCVars = IconCV
+local function Shared(k)
+	local cv = UI.IconCVars
+	if cv then return cv.shared[k]:GetInt() end
+	return UI.IconShared[k]
+end
 
-local function Icon(k)
-	if IconCV then return IconCV[k]:GetInt() end
-	return ICON[k]
+local function Offset(name)
+	local cv = UI.IconCVars
+	if cv and cv.icons[name] then return cv.icons[name].x:GetInt(), cv.icons[name].y:GetInt() end
+	local d = UI.Icons[name]
+	return d and d.x or 0, d and d.y or 0
 end
 
 function UI.IconBtnY()
-	return math.floor((M().HeaderH - M().IconBtn) / 2) + Icon("ButtonY")
+	return math.floor((M().HeaderH - M().IconBtn) / 2) + Shared("ButtonY")
 end
 
-function UI.GlyphIcon(glyph, font)
+function UI.GlyphIcon(name, font)
 	font = font or "PS_Heading2"
+	local def = UI.Icons[name]
+	local glyph = def and def.glyph or name   -- a raw character still works
 
 	return function(w, h)
-		local cx = w / 2 + Icon("NudgeX")
-		local cy = h / 2 + Icon("NudgeY")
-		draw.SimpleText(glyph, font, cx + Icon("ShadowX"), cy + Icon("ShadowY"),
+		local ox, oy = Offset(name)
+		local cx, cy = w / 2 + ox, h / 2 + oy
+		draw.SimpleText(glyph, font, cx + Shared("ShadowX"), cy + Shared("ShadowY"),
 			PS.Theme.Shadow, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 		draw.SimpleText(glyph, font, cx, cy,
 			PS.Theme.Text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
@@ -216,7 +230,7 @@ function UI.Frame(opts)
 	frame.Header = header
 
 	if opts.closable ~= false then
-		local close = UI.IconButton(header, UI.GlyphIcon("X"), "Danger", function()
+		local close = UI.IconButton(header, UI.GlyphIcon("close"), "Danger", function()
 			if opts.onClose then opts.onClose(frame) end
 			frame:Close()
 		end)
