@@ -48,32 +48,18 @@ end
 -- hand-drawn shapes and swatch grids, not text, and the ones that ARE text want their own
 -- shadow offset. Handing the caller the surface is simpler than a config table trying to
 -- describe every case.
--- An icon drawn from a text glyph, optically centred.
+
+-- Icon buttons.
 --
--- TEXT_ALIGN_CENTER centres on the font's LINE BOX, not on the glyph's ink. For a letter
--- those are close enough -- "X" fills its box and reads as centred. For a symbol they are
--- not: the ink sits wherever the designer put it inside a box sized for text, so a gear or
--- a star lands visibly off the button's middle.
+-- Header is 50, button is 35, so the centre is 7.5. A panel on a half pixel is DRAWN on a
+-- half pixel: corners smear and its contents shift with it. IconBtnY picks a side.
 --
--- Neither symbol exists in the UI font either, so both come from whatever the engine falls
--- back to: a different face, different metrics, chosen per machine.
+-- Inside the button the glyph is NOT snapped, because 17.5 is the real middle of 35.
 --
--- Ink bounds cannot be measured from Lua, so a symbol that genuinely sits high or low in
--- its box can be corrected here. Empty on purpose: the icons looked off because the BUTTON
--- was landing on a half pixel, not because the glyphs needed moving, and nudging them was
--- treating the symptom. See UI.IconBtnY.
+-- GlyphNudge is for a symbol that genuinely sits high in its own box. Empty: the icons
+-- looked wrong because of the half pixel above, not because of the glyphs.
 UI.GlyphNudge = {}
 
--- Vertical position for an icon button inside a header bar.
---
--- The header is 50 and the button is 35, so the exact centre is 7.5 -- and a panel placed
--- on a half pixel is DRAWN on a half pixel, which smears its rounded corners and drags
--- whatever is inside it half a pixel off centre as well. That is what made the icons look
--- wrong. The glyphs were fine.
---
--- Floored rather than rounded, so the button sits a half pixel high rather than low. With
--- a header this size one of the two is unavoidable, and high reads better against a bar
--- with a divider under its bottom edge.
 function UI.IconBtnY()
 	return math.floor((M().HeaderH - M().IconBtn) / 2)
 end
@@ -81,13 +67,9 @@ end
 function UI.GlyphIcon(glyph, font)
 	font = font or "PS_Heading2"
 	local n = UI.GlyphNudge[glyph] or { 0, 0 }
-	local dx, dy = n[1], n[2]
 
 	return function(w, h)
-		-- The button's true middle, NOT floored. It is 35 square, so the middle is 17.5, and
-		-- snapping that to a whole pixel puts the glyph half a pixel off the thing it is
-		-- meant to be centred in. The renderer handles the half fine.
-		local cx, cy = w / 2 + dx, h / 2 + dy
+		local cx, cy = w / 2 + n[1], h / 2 + n[2]
 		draw.SimpleText(glyph, font, cx + 1, cy + 1, PS.Theme.Shadow, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 		draw.SimpleText(glyph, font, cx, cy, PS.Theme.Text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 	end
