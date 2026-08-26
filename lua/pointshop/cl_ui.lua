@@ -48,6 +48,40 @@ end
 -- hand-drawn shapes and swatch grids, not text, and the ones that ARE text want their own
 -- shadow offset. Handing the caller the surface is simpler than a config table trying to
 -- describe every case.
+-- An icon drawn from a text glyph, optically centred.
+--
+-- TEXT_ALIGN_CENTER centres on the font's LINE BOX, not on the glyph's ink. For a letter
+-- those are close enough -- "X" fills its box and reads as centred. For a symbol they are
+-- not: the ink sits wherever the designer put it inside a box sized for text, so a gear or
+-- a star lands visibly off the button's middle.
+--
+-- Neither symbol exists in the UI font either, so both come from whatever the engine falls
+-- back to: a different face, different metrics, chosen per machine.
+--
+-- Ink bounds cannot be measured from Lua, so the correction is a nudge per glyph. Ugly, but
+-- honest -- the alternative is drawing each icon as geometry, which for a gear is a lot of
+-- arithmetic to solve a two-pixel problem.
+--
+-- The floor matters as much as the nudge: the icon button is 35 wide, so w / 2 is 17.5 and
+-- the renderer resolves the half-pixel however it likes. Flooring picks a side and keeps it.
+UI.GlyphNudge = {
+	["X"] = { 0, 0 },
+	["⚙"] = { 0, -1 },   -- gear
+	["★"] = { 0, -1 },   -- star
+}
+
+function UI.GlyphIcon(glyph, font)
+	font = font or "PS_Heading2"
+	local n = UI.GlyphNudge[glyph] or { 0, 0 }
+	local dx, dy = n[1], n[2]
+
+	return function(w, h)
+		local cx, cy = math.floor(w / 2) + dx, math.floor(h / 2) + dy
+		draw.SimpleText(glyph, font, cx + 1, cy + 1, PS.Theme.Shadow, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		draw.SimpleText(glyph, font, cx, cy, PS.Theme.Text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+	end
+end
+
 function UI.IconButton(parent, icon, style, onClick)
 	local btn = vgui.Create("DButton", parent)
 	btn:SetText("")
@@ -162,10 +196,7 @@ function UI.Frame(opts)
 	frame.Header = header
 
 	if opts.closable ~= false then
-		local close = UI.IconButton(header, function(w, h)
-			draw.SimpleText("X", "PS_Heading2", w / 2 + 1, h / 2 + 1, PS.Theme.Shadow, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-			draw.SimpleText("X", "PS_Heading2", w / 2, h / 2, PS.Theme.Text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-		end, "Danger", function()
+		local close = UI.IconButton(header, UI.GlyphIcon("X"), "Danger", function()
 			if opts.onClose then opts.onClose(frame) end
 			frame:Close()
 		end)

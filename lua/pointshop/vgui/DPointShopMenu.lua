@@ -108,12 +108,10 @@ function PANEL:Init()
 		return btn
 	end
 
-	local function GlyphIcon(glyph)
-		return function(w, h)
-			draw.SimpleText(glyph, "PS_Heading2", w / 2 + 1, h / 2 + 1, PS.Theme.Shadow, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-			draw.SimpleText(glyph, "PS_Heading2", w / 2, h / 2, PS.Theme.Text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-		end
-	end
+	-- Icons come from PS.UI.GlyphIcon so the nudge table has one home. This file used to
+	-- carry its own copy of the same six lines, alongside an identical copy in UI.Frame's
+	-- close button -- three places to fix a centring problem.
+	local GlyphIcon = PS.UI.GlyphIcon
 
 	HeaderButton(GlyphIcon("X"), "Danger", function() PS:ToggleMenu() end)
 

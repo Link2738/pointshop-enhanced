@@ -7,7 +7,7 @@ function ITEM:OnEquip(ply, modifications)
 	local team = ply:Team()
 
 	if (team == 2) then 
-		ply:SetModelScale(0.9, 1)
+		ply:SetModelScale(0.8, 1)
 	else
 		ply:SetModelScale(smallsize, 1)
 	end
