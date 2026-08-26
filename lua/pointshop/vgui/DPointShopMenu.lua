@@ -50,12 +50,18 @@ surface.CreateFont( "PS_CategoryButton", {
 
 local PANEL = {}
 
+-- Frame size for the screen it is actually on.
+--
+-- Was a flat 900 wide: 70% of a 1280 screen, a strip on an ultrawide. Now a share of the
+-- screen, floored so it stays usable on something small and capped so it does not sprawl on
+-- something huge. The original PointShop clamped to the screen this way; the fork lost it.
+local function FrameSize()
+	return math.Clamp(ScrW() * 0.62, 760, 1400),
+	       math.Clamp(ScrH() * 0.82, 560, 980)
+end
+
 function PANEL:Init()
-	-- Calculate panel size (larger than before for better item display)
-	local panelWidth = 900
-	local panelHeight = math.Clamp(ScrH() - 100, 600, 900)
-	
-	self:SetSize(panelWidth, panelHeight)
+	self:SetSize(FrameSize())
 
 	-- Centred, then wherever it was last dragged. The old SetPos(20, ...) pinned it to the
 	-- left edge, which on an ultrawide put the shop in a corner with the map beside it.
@@ -221,6 +227,7 @@ function PANEL:SetVisible(visible)
 end
 
 function PANEL:PopulateCategories()
+	local M = PS.Theme.Metrics
 	-- Clear existing category buttons
 	if IsValid(self.CategoryContainer) then
 		for _, btn in pairs(self.CategoryButtons) do
@@ -231,11 +238,19 @@ function PANEL:PopulateCategories()
 		self.CategoryButtons = {}
 	end
 	
-	-- Build category buttons in a grid (4 columns)
-	local buttonWidth = 210
+	-- Category buttons flow to fit the panel rather than being positioned into a fixed grid.
+	--
+	-- Four columns of 210 was fine at 900 wide and wrong at every other width -- too cramped
+	-- narrow, too much dead space wide. Column count now comes from the space available, and
+	-- the buttons divide it evenly so they always reach both edges.
 	local buttonHeight = 35
 	local spacing = 5
-	local columns = 4
+	-- Measured off the FRAME, not off the docked scroll panel. Populate runs inside Init,
+	-- before any layout has happened, so the child's GetWide() is still 0 at this point --
+	-- it would silently produce the minimum column count on every screen.
+	local avail = math.max(self:GetWide() - M.Margin * 2 - spacing, 100)
+	local columns = math.Clamp(math.floor(avail / 215), 2, 6)
+	local buttonWidth = math.floor(avail / columns) - spacing
 	
 	local categories = {}
 	for _, cat in pairs(PS.Categories) do
@@ -299,6 +314,7 @@ function PANEL:SelectCategory(category)
 end
 
 function PANEL:PopulateItems()
+	local M = PS.Theme.Metrics
 	self.ItemGrid:Clear()
 
 	if not self.CurrentCategory then return end
@@ -324,10 +340,18 @@ function PANEL:PopulateItems()
 		return aPrice < bPrice
 	end)
 
+	-- Card size derived from the grid width, so cards fill the row instead of leaving a
+	-- ragged margin whenever the panel is not exactly 900 wide. Clamped: below ~150 the
+	-- model is too small to identify, above ~230 a row holds too few to browse.
+	-- Frame width again, for the same reason, less the margins and the scrollbar.
+	local gridW = math.max(self:GetWide() - M.Margin * 2 - M.ScrollW, 200)
+	local perRow = math.Clamp(math.floor(gridW / 208), 2, 8)
+	local cardSize = math.Clamp(math.floor(gridW / perRow) - 8, 150, 230)
+
 	for _, item in ipairs(items) do
 		local itemPanel = vgui.Create("DPointShopItem")
 		itemPanel:SetData(item)
-		itemPanel:SetSize(200, 200)
+		itemPanel:SetSize(cardSize, cardSize)
 		self.ItemGrid:Add(itemPanel)
 	end
 
