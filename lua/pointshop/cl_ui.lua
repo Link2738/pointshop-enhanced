@@ -58,9 +58,9 @@ end
 -- Under PS.Config.Debug each gets live convars (ps_icon_bolt_x, ps_icon_bolt_y, ...) and
 -- the tuning panel drives them. Write what you settle on back into this table.
 UI.Icons = {
-	close = { glyph = "X",  x = 0, y = 0 },
-	bolt  = { glyph = "⚡", x = 0, y = 0 },
-	star  = { glyph = "★", x = 0, y = 0 },
+	close = { glyph = "X",  x = 0, y =  1 },
+	bolt  = { glyph = "⚡", x = 0, y = -4 },
+	star  = { glyph = "★", x = 0, y = -2 },
 }
 
 -- Shared by every icon: the button's place in the header, and the shadow behind the glyph.
