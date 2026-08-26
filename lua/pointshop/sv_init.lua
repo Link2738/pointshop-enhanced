@@ -4,6 +4,9 @@
 ]]--
 
 include "sh_init.lua"
+
+-- After sh_init, which is what creates PS. This file hangs its accessors off it.
+include "sh_gamemodes.lua"
 include "sv_player_extension.lua"
 include "sv_manifest.lua"
 

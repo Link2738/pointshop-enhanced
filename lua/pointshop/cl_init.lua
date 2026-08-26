@@ -16,6 +16,9 @@
 -- turned off, and place it after the include.
 
 include "sh_init.lua"
+
+-- After sh_init, which is what creates PS. This file hangs its accessors off it.
+include "sh_gamemodes.lua"
 include "cl_player_extension.lua"
 
 -- UI palette. Above the vgui includes so the panels below can reach PS.Theme, and above

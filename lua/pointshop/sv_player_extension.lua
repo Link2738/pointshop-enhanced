@@ -525,13 +525,28 @@ function Player:PS_EquipItem(item_id)
 		end
 	end
 	
-	-- Unequip other playermodels that share any AllowedTeams overlap
-	-- e.g. equipping any victim model holsters all other equipped victim models,
-	-- across all victim tabs (normal, VIP, reserved, etc.)
+	-- Unequip other playermodels that would compete with this one.
+	--
+	-- What "compete" means depends on whether the gamemode gates by team.
+	--
+	-- GATING ON (Bear Hunt): a player is meant to keep one model per team, so that whichever
+	-- side they end up on has something to wear. Equipping a victim model holsters every
+	-- other equipped VICTIM model, across all victim tabs (normal, VIP, reserved), and
+	-- leaves the bear model alone. Overlap in AllowedTeams is what "same slot" means here.
+	--
+	-- GATING OFF (Hide and Seek, and any gamemode whose roles churn mid-round): there are no
+	-- teams to keep a model in reserve for, so a second equipped playermodel is not a spare,
+	-- it is a competitor. Nothing decides between them except id order in FindTeamModel,
+	-- which means what you are wearing depends on which item happened to sort first.
+	--
+	-- So with gating off, one playermodel holsters all the others. You can only wear one
+	-- body, and without teams that is the entire rule.
 	if ITEM.TYPE == "playermodel" and CATEGORY then
+		local gating = PS:UsesTeamGating()
+
 		-- Build a set of the new item's allowed teams for fast lookup
 		local newTeams = {}
-		if CATEGORY.AllowedTeams then
+		if gating and CATEGORY.AllowedTeams then
 			for _, tid in ipairs(CATEGORY.AllowedTeams) do newTeams[tid] = true end
 		end
 
@@ -540,17 +555,21 @@ function Player:PS_EquipItem(item_id)
 			-- self.PS_Items[id] re-fetched when `item` is already the loop value.
 			local otherITEM = PS.Items[id]
 			if item_id ~= id and otherITEM and otherITEM.TYPE == "playermodel" and item.Equipped then
-				local otherCategory = PS:FindCategoryByName(otherITEM.Category)
-				if otherCategory then
-					-- Holster if teams overlap (same team group) OR same category name
-					local overlap = false
-					if otherCategory.AllowedTeams then
-						for _, tid in ipairs(otherCategory.AllowedTeams) do
-							if newTeams[tid] then overlap = true break end
+				if not gating then
+					self:PS_HolsterItem(id)
+				else
+					local otherCategory = PS:FindCategoryByName(otherITEM.Category)
+					if otherCategory then
+						-- Holster if teams overlap (same team group) OR same category name
+						local overlap = false
+						if otherCategory.AllowedTeams then
+							for _, tid in ipairs(otherCategory.AllowedTeams) do
+								if newTeams[tid] then overlap = true break end
+							end
 						end
-					end
-					if overlap or otherCategory.Name == CATEGORY.Name then
-						self:PS_HolsterItem(id)
+						if overlap or otherCategory.Name == CATEGORY.Name then
+							self:PS_HolsterItem(id)
+						end
 					end
 				end
 			end

@@ -242,8 +242,15 @@ end
 -- Single source of truth for the per-category team restriction (e.g. bear models
 -- vs victim models). Returns true when the player's current team may wear the item.
 -- No AllowedTeams on the category = no restriction = allowed.
+--
+-- One reader, which is why the gamemode profile can turn the whole idea off with a single
+-- flag: everywhere in the shop that asks "may this player wear this" comes through here.
 function PS:CanEquipForTeam(ply, ITEM)
 	if not IsValid(ply) or not ITEM then return false end
+
+	-- Gamemodes where the role is assigned and churns mid-round do not gate at all. See
+	-- sh_gamemodes.lua for why that is a property of the gamemode rather than of the item.
+	if not self:UsesTeamGating() then return true end
 
 	local CATEGORY = PS:FindCategoryByName(ITEM.Category)
 	if not CATEGORY or not CATEGORY.AllowedTeams or #CATEGORY.AllowedTeams == 0 then
@@ -350,6 +357,11 @@ end
 function PS:Initialize()
 	if SERVER then self:LoadDataProvider() end
 
+	-- Before LoadItems, not after: the profile decides which category folders are loaded
+	-- at all, and a category skipped here never registers its items rather than
+	-- registering them and hiding them afterwards.
+	self:LoadGamemodeProfile()
+
 	self:LoadItems()
 end
 
@@ -360,6 +372,17 @@ function PS:LoadItems()
 	local emptyfunc = function() end
 
 	for _, category in pairs(dirs) do
+		-- The gamemode profile can disable a whole folder. Skipped here rather than filtered
+		-- out of the UI later, so the items never enter PS.Items: an item that does not
+		-- exist cannot be bought, cannot be equipped, and cannot be re-applied on spawn from
+		-- a save made on another gamemode.
+		if not PS:IsCategoryEnabled(category) then
+			if SERVER and PS.Config and PS.Config.Debug then
+				print("[PS] Category '" .. category .. "' disabled by gamemode profile.")
+			end
+			continue
+		end
+
 		local f, _ = file.Find('pointshop/items/' .. category .. '/__category.lua', 'LUA')
 		
 		if #f > 0 then
@@ -376,6 +399,12 @@ function PS:LoadItems()
 			if SERVER then AddCSLuaFile('pointshop/items/' .. category .. '/__category.lua') end
 			include('pointshop/items/' .. category .. '/__category.lua')
 			
+			-- A profile may disagree with the shipped AllowedTeams for a category it still
+			-- wants loaded. Applied here, after the category file has had its say and
+			-- before anything reads it, so CanEquipForTeam sees one value.
+			local teamOverride = PS:CategoryTeamOverride(category)
+			if teamOverride then CATEGORY.AllowedTeams = teamOverride end
+
 			if not PS.Categories[category] then
 				PS.Categories[category] = CATEGORY
 			end
