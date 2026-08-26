@@ -49,39 +49,47 @@ end
 -- shadow offset. Handing the caller the surface is simpler than a config table trying to
 -- describe every case.
 
--- ICON TUNING -- console convars, live. Change one and look; no reload, no restart.
+-- Icon placement. Window dressing: once these are right they never change again, so they
+-- are constants and there is nothing to read or network at runtime.
 --
---   ps_icon_buttony   every header button up (-) or down (+)
---   ps_icon_nudgex    all glyphs left (-) or right (+) inside their button
---   ps_icon_nudgey    all glyphs up (-) or down (+)
---   ps_icon_shadowx   drop shadow offset
---   ps_icon_shadowy
---
--- They save to the client's config, so a value you settle on sticks for you. To make it
--- the default for everyone, put it in the CreateClientConVar line.
-local function CV(name, default, help)
-	return CreateClientConVar("ps_icon_" .. name, tostring(default), true, false, help)
-end
-
-UI.Icon = {
-	ButtonY = CV("buttony", 0,  "Header icon buttons: vertical offset"),
-	NudgeX  = CV("nudgex",  0,  "Header icons: horizontal offset inside the button"),
-	NudgeY  = CV("nudgey",  0,  "Header icons: vertical offset inside the button"),
-	ShadowX = CV("shadowx", 1,  "Header icons: shadow X"),
-	ShadowY = CV("shadowy", 1,  "Header icons: shadow Y"),
+-- Under PS.Config.Debug each also becomes a live convar (ps_icon_buttony, ps_icon_nudgex,
+-- ps_icon_nudgey, ps_icon_shadowx, ps_icon_shadowy) so a value can be found by eye instead
+-- of by edit-and-restart. Write the number you settle on into ICON below; the convars are
+-- a tuning aid, not a feature, and they do not exist with Debug off.
+local ICON = {
+	ButtonY = 0,   -- header button, up (-) or down (+)
+	NudgeX  = 0,   -- glyph inside its button
+	NudgeY  = 0,
+	ShadowX = 1,
+	ShadowY = 1,
 }
 
+local IconCV
+if PS.Config and PS.Config.Debug then
+	IconCV = {}
+	for k, v in pairs(ICON) do
+		-- Not saved to the client config: a tuning value that persists is one you forget you
+		-- set, and then the shipped constant is not what you are looking at.
+		IconCV[k] = CreateClientConVar("ps_icon_" .. string.lower(k), tostring(v), false, false)
+	end
+end
+
+local function Icon(k)
+	if IconCV then return IconCV[k]:GetInt() end
+	return ICON[k]
+end
+
 function UI.IconBtnY()
-	return math.floor((M().HeaderH - M().IconBtn) / 2) + UI.Icon.ButtonY:GetInt()
+	return math.floor((M().HeaderH - M().IconBtn) / 2) + Icon("ButtonY")
 end
 
 function UI.GlyphIcon(glyph, font)
 	font = font or "PS_Heading2"
 
 	return function(w, h)
-		local cx = w / 2 + UI.Icon.NudgeX:GetInt()
-		local cy = h / 2 + UI.Icon.NudgeY:GetInt()
-		draw.SimpleText(glyph, font, cx + UI.Icon.ShadowX:GetInt(), cy + UI.Icon.ShadowY:GetInt(),
+		local cx = w / 2 + Icon("NudgeX")
+		local cy = h / 2 + Icon("NudgeY")
+		draw.SimpleText(glyph, font, cx + Icon("ShadowX"), cy + Icon("ShadowY"),
 			PS.Theme.Shadow, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 		draw.SimpleText(glyph, font, cx, cy,
 			PS.Theme.Text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
