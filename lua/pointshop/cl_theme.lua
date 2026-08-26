@@ -795,13 +795,37 @@ local function CustomOnly()
 	return out
 end
 
+-- Where each panel was last dragged to, keyed by panel. Lives in this file rather than one
+-- of its own because it is the same thing: the client's own record of how they like the UI.
+-- One store means one place to look and one thing to reset.
+T.Panels = {}
+
 function T.Save()
 	if not file.IsDir("pointshop", "DATA") then file.CreateDir("pointshop") end
 
 	file.Write(DATA_PATH, util.TableToJSON({
 		defaults = ResolvedDefault(),
 		custom   = CustomOnly(),
+		panels   = T.Panels,
 	}, true))
+end
+
+-- Writes ONLY the panel positions, leaving whatever palette is on disk alone.
+--
+-- Not T.Save(), which would commit the live palette -- and the live palette can be an
+-- unsaved experiment, since the appearance menu applies edits immediately and only persists
+-- them on Save. Dragging a window should not decide that.
+function T.SavePanels()
+	if not file.IsDir("pointshop", "DATA") then file.CreateDir("pointshop") end
+
+	local disk = {}
+	if file.Exists(DATA_PATH, "DATA") then
+		local ok, tbl = pcall(util.JSONToTable, file.Read(DATA_PATH, "DATA") or "")
+		if ok and istable(tbl) then disk = tbl end
+	end
+
+	disk.panels = T.Panels
+	file.Write(DATA_PATH, util.TableToJSON(disk, true))
 end
 
 -- Reapplies all three layers from scratch. Called on load and whenever the server's default
@@ -827,6 +851,8 @@ function T.Load()
 	-- player was customising away from - applying it would pin them to a stale copy of a
 	-- server default that has since moved on.
 	T.Apply(tbl.custom)
+
+	if istable(tbl.panels) then T.Panels = tbl.panels end
 end
 
 function T.SetServerDefault(tbl)

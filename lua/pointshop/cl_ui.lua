@@ -119,52 +119,27 @@ end
 -- REMEMBERED PANEL POSITIONS
 --
 -- Drag a panel somewhere and it opens there next time, across reopens, map changes and
--- rejoins. Per client, in the client's own data folder -- where a window sits is nobody
--- else's business and there is nothing for the server to store.
+-- rejoins. Stored with the client's palette in PS.Theme.Panels -- same store, because it
+-- is the same thing: this client's own record of how they like the UI.
 --
--- Restored positions are CLAMPED to the current screen, which is the whole reason this is
--- a helper rather than four lines in each panel. A position saved on a second monitor, or
--- before a resolution change, is coordinates that no longer exist -- and a panel restored
--- off-screen cannot be dragged back, because there is nothing to grab.
-local POS_PATH = "pointshop/panels.json"
-local positions = nil
-
-local function LoadPositions()
-	if positions then return positions end
-	positions = {}
-
-	if file.Exists(POS_PATH, "DATA") then
-		local ok, tbl = pcall(util.JSONToTable, file.Read(POS_PATH, "DATA") or "")
-		if ok and istable(tbl) then positions = tbl end
-	end
-
-	return positions
-end
-
-local function SavePosition(key, x, y)
-	local p = LoadPositions()
-	p[key] = { x = math.Round(x), y = math.Round(y) }
-
-	if not file.IsDir("pointshop", "DATA") then file.CreateDir("pointshop") end
-	file.Write(POS_PATH, util.TableToJSON(p, true))
-end
-
--- Centres the panel, then moves it to its remembered spot if there is one, then saves
--- wherever the player drags it. Call after the panel knows its size.
+-- Restored positions are CLAMPED to the current screen, which is why this is a helper
+-- rather than four lines in each panel. A position saved on a second monitor, or before a
+-- resolution change, is coordinates that no longer exist -- and a panel restored
+-- off-screen cannot be dragged back, because there is nothing left to grab.
 function UI.RememberPosition(panel, key)
 	if not IsValid(panel) or not key then return end
 
 	local w, h = panel:GetSize()
 	panel:SetPos(ScrW() / 2 - w / 2, ScrH() / 2 - h / 2)
 
-	local saved = LoadPositions()[key]
+	local saved = PS.Theme.Panels and PS.Theme.Panels[key]
 	if saved and saved.x and saved.y then
 		panel:SetPos(math.Clamp(saved.x, 0, math.max(0, ScrW() - w)),
 			math.Clamp(saved.y, 0, math.max(0, ScrH() - h)))
 	end
 
-	-- Saved when the drag ENDS, not while it is happening -- otherwise this writes a file
-	-- every frame the panel is moving. DFrame sets Dragging for the duration.
+	-- Saved when the drag ENDS, not while it happens, or this writes a file every frame the
+	-- panel is moving. DFrame sets Dragging for the duration.
 	local oldThink = panel.Think
 	panel.Think = function(s, ...)
 		if oldThink then oldThink(s, ...) end
@@ -173,7 +148,9 @@ function UI.RememberPosition(panel, key)
 			s._posMoved = true
 		elseif s._posMoved then
 			s._posMoved = nil
-			SavePosition(key, s:GetPos())
+			local x, y = s:GetPos()
+			PS.Theme.Panels[key] = { x = math.Round(x), y = math.Round(y) }
+			PS.Theme.SavePanels()
 		end
 	end
 end
@@ -181,8 +158,8 @@ end
 -- Forgets every remembered position. The way back for a panel that ended up somewhere
 -- unreachable despite the clamp.
 concommand.Add("ps_reset_panels", function()
-	positions = {}
-	file.Write(POS_PATH, util.TableToJSON({}, true))
+	PS.Theme.Panels = {}
+	PS.Theme.SavePanels()
 	chat.AddText(PS.Theme.Accent, "[PS] ", color_white, "Panel positions reset.")
 end, nil, "Forget remembered panel positions.")
 
