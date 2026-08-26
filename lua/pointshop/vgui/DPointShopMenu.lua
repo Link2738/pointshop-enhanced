@@ -139,6 +139,42 @@ function PANEL:Init()
 		end)
 	end
 
+	-- Owner tools.
+	--
+	-- NOT rendered for anyone else. Not disabled, not greyed -- absent. The button is only
+	-- built if this client passes the owner check, so a non-owner has no way to know it
+	-- exists, which is the point of it.
+	--
+	-- PS_IsItemDefaultOwner is the ULX "owner" group, the same gate this addon already uses
+	-- for server-wide defaults. Deliberately NOT the isAdmin check above: admin is a much
+	-- wider group and commonly inherited, and these tools change the game for everyone
+	-- connected rather than just what one person sees.
+	--
+	-- Hiding a button is not security and is not treated as any. Whatever a tool does, its
+	-- server side re-checks the same gate on arrival -- this only decides what is drawn.
+	--
+	-- Collected through a hook so the shop never names a gamemode, the same way the
+	-- appearance providers work. No tools registered means no button.
+	if PS_IsItemDefaultOwner and PS_IsItemDefaultOwner(LocalPlayer()) then
+		local tools = {}
+		hook.Run("PS_CollectOwnerTools", function(name, open)
+			if isstring(name) and isfunction(open) then
+				table.insert(tools, { name = name, open = open })
+			end
+		end)
+
+		if #tools == 1 then
+			self.ownerBtn = HeaderButton(GlyphIcon("★"), "Accent", tools[1].open)
+		elseif #tools > 1 then
+			table.sort(tools, function(a, b) return a.name < b.name end)
+			self.ownerBtn = HeaderButton(GlyphIcon("★"), "Accent", function()
+				local m = DermaMenu()
+				for _, t in ipairs(tools) do m:AddOption(t.name, t.open) end
+				m:Open()
+			end)
+		end
+	end
+
 	-- Points text clears whatever buttons exist, plus a gap.
 	self.HeaderTextInset = M.Margin + slot * (M.IconBtn + 5) + M.Gap
 
