@@ -58,17 +58,25 @@ end
 -- Neither symbol exists in the UI font either, so both come from whatever the engine falls
 -- back to: a different face, different metrics, chosen per machine.
 --
--- Ink bounds cannot be measured from Lua, so the correction is a nudge per glyph. Ugly, but
--- honest -- the alternative is drawing each icon as geometry, which for a gear is a lot of
--- arithmetic to solve a two-pixel problem.
+-- Ink bounds cannot be measured from Lua, so a symbol that genuinely sits high or low in
+-- its box can be corrected here. Empty on purpose: the icons looked off because the BUTTON
+-- was landing on a half pixel, not because the glyphs needed moving, and nudging them was
+-- treating the symptom. See UI.IconBtnY.
+UI.GlyphNudge = {}
+
+-- Vertical position for an icon button inside a header bar.
 --
--- The floor matters as much as the nudge: the icon button is 35 wide, so w / 2 is 17.5 and
--- the renderer resolves the half-pixel however it likes. Flooring picks a side and keeps it.
-UI.GlyphNudge = {
-	["X"] = { 0, 0 },
-	["⚙"] = { 0, -1 },   -- gear
-	["★"] = { 0, -1 },   -- star
-}
+-- The header is 50 and the button is 35, so the exact centre is 7.5 -- and a panel placed
+-- on a half pixel is DRAWN on a half pixel, which smears its rounded corners and drags
+-- whatever is inside it half a pixel off centre as well. That is what made the icons look
+-- wrong. The glyphs were fine.
+--
+-- Floored rather than rounded, so the button sits a half pixel high rather than low. With
+-- a header this size one of the two is unavoidable, and high reads better against a bar
+-- with a divider under its bottom edge.
+function UI.IconBtnY()
+	return math.floor((M().HeaderH - M().IconBtn) / 2)
+end
 
 function UI.GlyphIcon(glyph, font)
 	font = font or "PS_Heading2"
@@ -76,7 +84,10 @@ function UI.GlyphIcon(glyph, font)
 	local dx, dy = n[1], n[2]
 
 	return function(w, h)
-		local cx, cy = math.floor(w / 2) + dx, math.floor(h / 2) + dy
+		-- The button's true middle, NOT floored. It is 35 square, so the middle is 17.5, and
+		-- snapping that to a whole pixel puts the glyph half a pixel off the thing it is
+		-- meant to be centred in. The renderer handles the half fine.
+		local cx, cy = w / 2 + dx, h / 2 + dy
 		draw.SimpleText(glyph, font, cx + 1, cy + 1, PS.Theme.Shadow, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 		draw.SimpleText(glyph, font, cx, cy, PS.Theme.Text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 	end
@@ -205,7 +216,7 @@ function UI.Frame(opts)
 		-- header out from under a one-shot SetPos and stranded the button mid-bar, or off
 		-- the panel entirely.
 		close.PerformLayout = function(s)
-			s:SetPos(header:GetWide() - M().IconBtn - 15, (M().HeaderH - M().IconBtn) / 2)
+			s:SetPos(header:GetWide() - M().IconBtn - 15, UI.IconBtnY())
 		end
 
 		frame.CloseButton = close

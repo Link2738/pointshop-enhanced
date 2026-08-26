@@ -103,7 +103,7 @@ function PANEL:Init()
 
 		btn.PerformLayout = function(s)
 			s:SetPos(self.Header:GetWide() - M.Margin - (mine + 1) * M.IconBtn - mine * 5,
-				(M.HeaderH - M.IconBtn) / 2)
+				PS.UI.IconBtnY())
 		end
 		return btn
 	end
