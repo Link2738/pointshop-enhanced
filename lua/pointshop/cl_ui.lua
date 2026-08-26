@@ -49,36 +49,39 @@ end
 -- shadow offset. Handing the caller the surface is simpler than a config table trying to
 -- describe every case.
 
--- ICON TUNING -- edit these, not the code below.
+-- ICON TUNING -- console convars, live. Change one and look; no reload, no restart.
 --
--- ButtonY  moves every header icon button up (-) or down (+). The header is 50 and the
---          button 35, so the true centre is 7.5; the floor already picks the high side.
--- Shadow   offset of the drop shadow behind a glyph.
--- Nudge    per-glyph fix, for a symbol that sits wrong inside its own font box.
---          Format is { x, y }; positive is right and down.
-UI.Icon = {
-	ButtonY = 0,
-	ShadowX = 1,
-	ShadowY = 1,
+--   ps_icon_buttony   every header button up (-) or down (+)
+--   ps_icon_nudgex    all glyphs left (-) or right (+) inside their button
+--   ps_icon_nudgey    all glyphs up (-) or down (+)
+--   ps_icon_shadowx   drop shadow offset
+--   ps_icon_shadowy
+--
+-- They save to the client's config, so a value you settle on sticks for you. To make it
+-- the default for everyone, put it in the CreateClientConVar line.
+local function CV(name, default, help)
+	return CreateClientConVar("ps_icon_" .. name, tostring(default), true, false, help)
+end
 
-	Nudge = {
-		-- ["X"] = { 0, 1 },
-		-- ["⚙"] = { 0, -1 },
-	},
+UI.Icon = {
+	ButtonY = CV("buttony", 0,  "Header icon buttons: vertical offset"),
+	NudgeX  = CV("nudgex",  0,  "Header icons: horizontal offset inside the button"),
+	NudgeY  = CV("nudgey",  0,  "Header icons: vertical offset inside the button"),
+	ShadowX = CV("shadowx", 1,  "Header icons: shadow X"),
+	ShadowY = CV("shadowy", 1,  "Header icons: shadow Y"),
 }
 
 function UI.IconBtnY()
-	return math.floor((M().HeaderH - M().IconBtn) / 2) + UI.Icon.ButtonY
+	return math.floor((M().HeaderH - M().IconBtn) / 2) + UI.Icon.ButtonY:GetInt()
 end
 
 function UI.GlyphIcon(glyph, font)
 	font = font or "PS_Heading2"
 
 	return function(w, h)
-		local n  = UI.Icon.Nudge[glyph] or { 0, 0 }
-		local cx = w / 2 + n[1]
-		local cy = h / 2 + n[2]
-		draw.SimpleText(glyph, font, cx + UI.Icon.ShadowX, cy + UI.Icon.ShadowY,
+		local cx = w / 2 + UI.Icon.NudgeX:GetInt()
+		local cy = h / 2 + UI.Icon.NudgeY:GetInt()
+		draw.SimpleText(glyph, font, cx + UI.Icon.ShadowX:GetInt(), cy + UI.Icon.ShadowY:GetInt(),
 			PS.Theme.Shadow, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 		draw.SimpleText(glyph, font, cx, cy,
 			PS.Theme.Text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
