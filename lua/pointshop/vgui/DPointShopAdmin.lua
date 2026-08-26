@@ -56,7 +56,7 @@ local PANEL = {}
 
 function PANEL:Init()
 	self:SetSize(1200, 600)
-	self:Center()
+	PS.UI.RememberPosition(self, "admin")
 	self:SetTitle("")
 	self:SetDraggable(true)
 	self:SetSizable(true)

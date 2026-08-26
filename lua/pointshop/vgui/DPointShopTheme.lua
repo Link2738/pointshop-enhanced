@@ -460,7 +460,7 @@ function PANEL:Init()
 	local h = math.min(660, ScrH() - 80)
 
 	self:SetSize(w, h)
-	self:Center()
+	PS.UI.RememberPosition(self, "theme")
 	self:SetTitle("")
 	self:SetDraggable(true)
 	self:SetSizable(false)

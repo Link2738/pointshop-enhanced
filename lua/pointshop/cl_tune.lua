@@ -63,6 +63,7 @@ local function Open()
 	local rowCount = #SHARED + #ORDER
 
 	local f = UI.Frame({
+		remember = "tune",
 		title = "UI tuning",
 		w     = 460,
 		h     = M.HeaderH + 26 + M.Margin * 2 + rowCount * (ROW_H + M.Gap) + M.ButtonH + M.Gap,

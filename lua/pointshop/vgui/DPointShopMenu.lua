@@ -56,7 +56,10 @@ function PANEL:Init()
 	local panelHeight = math.Clamp(ScrH() - 100, 600, 900)
 	
 	self:SetSize(panelWidth, panelHeight)
-	self:SetPos(20, (ScrH() / 2) - (panelHeight / 2))
+
+	-- Centred, then wherever it was last dragged. The old SetPos(20, ...) pinned it to the
+	-- left edge, which on an ultrawide put the shop in a corner with the map beside it.
+	PS.UI.RememberPosition(self, "menu")
 	self:SetTitle("")
 	self:SetDraggable(true)
 	self:SetSizable(false)
