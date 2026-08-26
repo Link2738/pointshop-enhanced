@@ -49,29 +49,39 @@ end
 -- shadow offset. Handing the caller the surface is simpler than a config table trying to
 -- describe every case.
 
--- Icon buttons.
+-- ICON TUNING -- edit these, not the code below.
 --
--- Header is 50, button is 35, so the centre is 7.5. A panel on a half pixel is DRAWN on a
--- half pixel: corners smear and its contents shift with it. IconBtnY picks a side.
---
--- Inside the button the glyph is NOT snapped, because 17.5 is the real middle of 35.
---
--- GlyphNudge is for a symbol that genuinely sits high in its own box. Empty: the icons
--- looked wrong because of the half pixel above, not because of the glyphs.
-UI.GlyphNudge = {}
+-- ButtonY  moves every header icon button up (-) or down (+). The header is 50 and the
+--          button 35, so the true centre is 7.5; the floor already picks the high side.
+-- Shadow   offset of the drop shadow behind a glyph.
+-- Nudge    per-glyph fix, for a symbol that sits wrong inside its own font box.
+--          Format is { x, y }; positive is right and down.
+UI.Icon = {
+	ButtonY = 0,
+	ShadowX = 1,
+	ShadowY = 1,
+
+	Nudge = {
+		-- ["X"] = { 0, 1 },
+		-- ["⚙"] = { 0, -1 },
+	},
+}
 
 function UI.IconBtnY()
-	return math.floor((M().HeaderH - M().IconBtn) / 2)
+	return math.floor((M().HeaderH - M().IconBtn) / 2) + UI.Icon.ButtonY
 end
 
 function UI.GlyphIcon(glyph, font)
 	font = font or "PS_Heading2"
-	local n = UI.GlyphNudge[glyph] or { 0, 0 }
 
 	return function(w, h)
-		local cx, cy = w / 2 + n[1], h / 2 + n[2]
-		draw.SimpleText(glyph, font, cx + 1, cy + 1, PS.Theme.Shadow, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-		draw.SimpleText(glyph, font, cx, cy, PS.Theme.Text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		local n  = UI.Icon.Nudge[glyph] or { 0, 0 }
+		local cx = w / 2 + n[1]
+		local cy = h / 2 + n[2]
+		draw.SimpleText(glyph, font, cx + UI.Icon.ShadowX, cy + UI.Icon.ShadowY,
+			PS.Theme.Shadow, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		draw.SimpleText(glyph, font, cx, cy,
+			PS.Theme.Text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 	end
 end
 
