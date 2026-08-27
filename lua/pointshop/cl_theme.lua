@@ -1278,6 +1278,25 @@ function T.SetPreset(id)
 
 	local preset = id and T.Presets[id]
 
+	-- The preset wins any argument with a customisation.
+	--
+	-- Custom sits above the preset in the layering, which is right while a look is in
+	-- use -- an edit made now has to stick. It is wrong at the moment of CHOOSING one:
+	-- an accent set red under the old look would survive into Classic and overwrite its
+	-- slate, so picking Classic gave you Classic with your old colours stamped over the
+	-- parts that make it Classic.
+	--
+	-- So a switch drops every custom the incoming preset has an opinion about. Anything
+	-- it does not mention is untouched and stays yours. After the switch the layering is
+	-- unchanged, so editing works normally and those edits persist.
+	--
+	-- The cost is real and worth naming: choosing a look discards the edits it conflicts
+	-- with, and there is no undo. That is the trade for a look actually looking like
+	-- itself when you pick it.
+	if preset and istable(preset.colours) then
+		for k in pairs(preset.colours) do custom[k] = nil end
+	end
+
 	ApplyMetrics(preset)
 	ApplyServerMetrics()
 	ApplyStyles(preset)
@@ -1430,7 +1449,23 @@ function T.Load()
 	-- Only `custom` is applied. The `defaults` section in the file is a record of what the
 	-- player was customising away from - applying it would pin them to a stale copy of a
 	-- server default that has since moved on.
-	T.Apply(tbl.custom)
+	--
+	-- Filtered the same way SetPreset filters: the preset wins any argument with a
+	-- customisation. Without this a conflicting custom saved before the preset was
+	-- chosen -- or chosen and never saved -- would come back over the top of it on every
+	-- rejoin, and the look would be correct exactly until you reconnected.
+	local custom = tbl.custom
+	local preset = activePreset and T.Presets[activePreset]
+
+	if istable(custom) and preset and istable(preset.colours) then
+		local filtered = {}
+		for k, v in pairs(custom) do
+			if preset.colours[k] == nil then filtered[k] = v end
+		end
+		custom = filtered
+	end
+
+	T.Apply(custom)
 
 	if istable(tbl.panels) then T.Panels = tbl.panels end
 end
