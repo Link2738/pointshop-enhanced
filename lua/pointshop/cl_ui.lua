@@ -186,13 +186,38 @@ end
 -- yet at the point the callback is written.
 function UI.Tab(parent, label, isActive, onClick, style)
 	local btn = vgui.Create("DButton", parent)
+	local styleName = style or "Category"
+
 	btn:SetText(label or "")
 	btn:SetFont("PS_CategoryButton")
-	btn:SetTextColor(PS.Theme.Text)
 	btn.DoClick = onClick or function() end
+
+	-- Text colour is resolved per frame from the style rather than set once from the one
+	-- global Text.
+	--
+	-- Set-once was wrong twice over. A look that darkens body text could not leave a tab's
+	-- text light where the tab is filled, and a look whose tab strip IS the body surface --
+	-- no fill, text directly on the panel -- had no way to give active, hovered and idle tabs
+	-- the three different weights that then carry the whole selection signal.
+	--
+	-- Falls back to Text for any style that names none, which is every style today, so this
+	-- resolves to exactly the previous behaviour.
+	-- Resolved in Paint, not in UpdateColours. Derma calls UpdateColours from
+	-- ApplySchemeSettings — on construction and skin changes — not every frame, so a colour
+	-- that depends on the live active state would go stale there. Paint always runs, and
+	-- SetTextColor marks the colour as overridden so Derma's own scheme pass leaves it alone.
 	btn.Paint = function(s, w, h)
-		PS.Theme.PaintSelectable(s, w, h, isActive and isActive(s) or false,
-			PS.Theme.Selectable[style or "Category"])
+		local st = PS.Theme.Selectable[styleName]
+		local active = isActive and isActive(s) or false
+
+		s:SetTextColor(
+			(active and st.textActive)
+			or (s.Hovered and st.textHover)
+			or st.text
+			or PS.Theme.Text
+		)
+
+		PS.Theme.PaintSelectable(s, w, h, active, st)
 	end
 	return btn
 end

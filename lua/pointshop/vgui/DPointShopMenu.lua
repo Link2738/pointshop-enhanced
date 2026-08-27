@@ -212,7 +212,38 @@ function PANEL:Init()
 	self.ItemGrid:SetSpaceX(M.GridSpace)
 	self.ItemGrid:SetSpaceY(M.GridSpace)
 	self.ItemGrid:SetBorder(M.GridSpace)
-	
+
+	self:ApplyLook()
+end
+
+-- Re-reads every size the look supplies and rebuilds what depends on them.
+--
+-- Init BUILDS the panel; this decides how big the built things are. Separated so a look
+-- change reaches a menu that is already open — Init only ever runs once, so metrics read
+-- there were effectively frozen at whatever the look was when the shop was first opened.
+--
+-- Deliberately NOT PerformLayout: this calls SetTall and DockMargin, which invalidate layout,
+-- so running it from the layout pass would re-enter every frame. It is called at the end of
+-- Init, and by the PS_PresetChanged hook at the bottom of this file.
+function PANEL:ApplyLook()
+	local M = PS.Theme.Metrics
+
+	self:SetSize(FrameSize())
+	self.Header:SetTall(M.HeaderH)
+
+	self.CategoryScroll:DockMargin(M.Margin, M.Gap, M.Margin, M.Gap)
+	self.CategoryScroll:SetTall(M.CategoryStripH)
+
+	self.ItemScroll:DockMargin(M.Margin, 0, M.Margin, M.Margin)
+
+	self.ItemGrid:SetSpaceX(M.GridSpace)
+	self.ItemGrid:SetSpaceY(M.GridSpace)
+	self.ItemGrid:SetBorder(M.GridSpace)
+
+	-- Column counts come from the metrics, so both grids have to be rebuilt rather than
+	-- merely resized. PopulateCategories re-selects the current category, which repopulates
+	-- the items.
+	self:InvalidateLayout(true)
 	self:PopulateCategories()
 end
 
@@ -383,3 +414,14 @@ function PANEL:Paint(w, h)
 end
 
 vgui.Register('DPointShopMenu', PANEL, 'DFrame')
+
+-- A look change reaches an open menu.
+--
+-- Colours need nothing here: every paint function reads PS.Theme live, so they change on the
+-- next frame on their own. Sizes are the opposite — they were applied to panels once, so
+-- without this the menu keeps the geometry of whatever look was active when it was built,
+-- and a player switching look with the shop open sees half a change.
+hook.Add("PS_PresetChanged", "PS_ShopMenu_ApplyLook", function()
+	local menu = PS and PS.ShopMenu
+	if IsValid(menu) and menu.ApplyLook then menu:ApplyLook() end
+end)

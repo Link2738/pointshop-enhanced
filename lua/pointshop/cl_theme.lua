@@ -585,9 +585,36 @@ local function StyleRadius(style)
 end
 
 -- A button that is either selected or not: value buttons, category buttons.
+-- How a style marks its active state.
+--
+-- "fill" repaints the whole button in the active colour, which is what every style shipped
+-- with and stays the default for anything that does not say otherwise.
+--
+-- "underline" leaves the button looking idle and draws a bar along its bottom edge instead.
+-- That is a genuinely different structure, not a different colour, which is why it could not
+-- be a palette entry -- and it is how a tab strip marks its selection when the strip is the
+-- same surface as the body behind it, with no fill available to distinguish anything.
 function T.PaintSelectable(panel, w, h, isActive, style)
 	local hover = HoverAlpha(panel, style.lerp)
 	local r = StyleRadius(style)
+
+	if isActive and style.activeMode == "underline" then
+		-- Idle body: an underlined tab is not filled, so it paints exactly as an inactive one
+		-- and the bar carries the whole signal.
+		draw.RoundedBox(r, 0, 0, w, h, T.Shade(sFill, style.fill, style.fillHover, hover))
+		draw.RoundedBox(r, 0, 0, w, h / 2, T.Shade(sGloss, style.gloss, style.glossHover, hover))
+
+		surface.SetDrawColor(T.Shade(sBorder, style.border, style.borderHover, hover))
+		surface.DrawOutlinedRect(0, 0, w, h)
+
+		local uh = T.Metrics.UnderlineH
+		if uh > 0 then
+			surface.SetDrawColor(style.activeFill)
+			surface.DrawRect(0, h - uh, w, uh)
+		end
+
+		return
+	end
 
 	if isActive then
 		draw.RoundedBox(r, 0, 0, w, h, style.activeFill)
