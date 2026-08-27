@@ -6,6 +6,7 @@
 AddCSLuaFile "cl_init.lua"
 AddCSLuaFile "cl_player_extension.lua"
 AddCSLuaFile "cl_theme.lua"
+AddCSLuaFile "cl_theme_classic.lua"
 AddCSLuaFile "cl_ui.lua"
 AddCSLuaFile "cl_tune.lua"
 AddCSLuaFile "sh_config.lua"

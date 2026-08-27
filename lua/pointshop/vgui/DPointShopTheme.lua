@@ -140,6 +140,48 @@ AssignSection("Text", "Text", "TextDim", "MenuRowText", "PointsText", "PriceAffo
 -- section name, so one that is missing is a nil table indexed on the first row assigned to it.
 local SECTION_ORDER = { "Surfaces", "Accent", "Buttons", "Lists", "Items", "Text", "Other" }
 
+-- The preset row, or nil when nothing has registered one.
+--
+-- Declared above BuildShopSections because that is where it is called from, and a Lua local
+-- is not in scope above its own declaration — the failure is silent, since an undeclared
+-- name is just a nil global until something tries to call it.
+--
+-- Returns nil rather than an empty section when no presets exist: a lone "Default" dropdown
+-- that can only ever say Default is worse than no dropdown.
+local function PresetSection()
+	local T = PS.Theme
+	if not istable(T.Presets) then return end
+
+	local options = { { id = "", name = "Default" } }
+	for id, def in pairs(T.Presets) do
+		options[#options + 1] = { id = id, name = (istable(def) and def.name) or id }
+	end
+
+	if #options < 2 then return end
+
+	-- Registration order is pairs() order, which is not stable between sessions. Sorted by
+	-- name so the list does not reshuffle itself every time the panel opens; Default is
+	-- pinned to the top because it is the absence of a choice, not one of the choices.
+	table.sort(options, function(a, b)
+		if a.id == "" then return true end
+		if b.id == "" then return false end
+		return a.name < b.name
+	end)
+
+	return {
+		name = "Look",
+		rows = {
+			{
+				label   = "Preset",
+				type    = "choice",
+				options = options,
+				get     = function() return T.GetPreset() or "" end,
+				set     = function(id) T.SetPreset(id ~= "" and id or nil) end,
+			},
+		},
+	}
+end
+
 -- Walks the palette once and drops every colour into its section. Sorted within a section
 -- so the order is stable between sessions rather than following pairs().
 local function BuildShopSections()
@@ -175,6 +217,12 @@ local function BuildShopSections()
 	end
 
 	local out = {}
+
+	-- The preset picker sits above every colour, because it moves all of them. Choosing one
+	-- is the coarse decision; the swatches below are the fine adjustment on top of it.
+	local presets = PresetSection()
+	if presets then out[#out + 1] = presets end
+
 	for _, name in ipairs(SECTION_ORDER) do
 		local rows = buckets[name]
 		if #rows > 0 then
@@ -248,6 +296,15 @@ local function ValidRow(row, where)
 
 	if row.type == "toggle" then
 		if not isfunction(row.set) then Warn(where .. " toggle '" .. row.label .. "' has no set()") return false end
+		return true
+	end
+
+	if row.type == "choice" then
+		if not isfunction(row.set) then Warn(where .. " choice '" .. row.label .. "' has no set()") return false end
+		if not istable(row.options) then
+			Warn(where .. " choice '" .. row.label .. "' needs an options list")
+			return false
+		end
 		return true
 	end
 
@@ -660,7 +717,50 @@ end
 function PANEL:AddRow(row, y, listW)
 	if row.type == "slider" then return self:AddSliderRow(row, y, listW) end
 	if row.type == "toggle" then return self:AddToggleRow(row, y, listW) end
+	if row.type == "choice" then return self:AddChoiceRow(row, y, listW) end
 	return self:AddColourRow(row, y, listW)
+end
+
+-- Label above, a combo box below. Same two-line shape as the slider and for the same reason:
+-- the list column is narrow, and a combo squeezed beside a label truncates its own values.
+--
+-- Choosing an option rebuilds the list, because a choice can move the very rows being drawn
+-- -- picking a preset changes every swatch below it. The rebuild is deferred by a frame so
+-- it does not happen inside the combo's own OnSelect, which is still using the panel.
+function PANEL:AddChoiceRow(row, y, listW)
+	local label = self.List:Add("DLabel")
+	label:SetText(row.label)
+	label:SetTextColor(PS.Theme.Text)
+	label:SetPos(4, y)
+	label:SetSize(listW - 20, 16)
+
+	local combo = self.List:Add("DComboBox")
+	combo:SetPos(4, y + 18)
+	combo:SetSize(listW - 20, 20)
+	combo:SetSortItems(false)
+
+	local current = row.get()
+	for _, opt in ipairs(row.options) do
+		combo:AddChoice(opt.name, opt.id, opt.id == current)
+	end
+
+	-- A saved choice whose provider has gone (a preset from an addon since removed) leaves
+	-- the combo blank rather than silently showing the wrong name.
+	if not combo:GetSelected() then combo:SetValue(current and tostring(current) or "Default") end
+
+	combo.OnSelect = function(_, _, _, data)
+		local ok, err = pcall(row.set, data)
+		if not ok then
+			Warn("choice '" .. row.label .. "' set() errored: " .. tostring(err))
+			return
+		end
+
+		timer.Simple(0, function()
+			if IsValid(self) then self:BuildList() end
+		end)
+	end
+
+	return 42
 end
 
 -- Label, a swatch of the current colour, and a mixer that opens on click.

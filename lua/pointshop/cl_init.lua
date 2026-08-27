@@ -27,6 +27,11 @@ include "cl_player_extension.lua"
 -- time — they read PS.Theme inside their paint functions, which always run later.
 include "cl_theme.lua"
 
+-- Presets. Below cl_theme.lua because T.RegisterPreset does not exist until it has run, and
+-- because T.Load runs at the bottom of that file — a preset registering after the saved
+-- choice was read is exactly the case pendingPreset exists to cover.
+include "cl_theme_classic.lua"
+
 -- Widget layer. After cl_theme.lua, which it paints through, and before the vgui files that
 -- build with it.
 include "cl_ui.lua"
