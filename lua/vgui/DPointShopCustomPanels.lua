@@ -78,7 +78,7 @@ function BODYGROUP_PANEL:SetItem(item, modifications)
             panel:Dock(TOP)
             panel:SetTall(48)
             panel.Paint = function(this, w, h)
-                draw.SimpleText(name, 'DermaDefaultBold', w/2, 8, color_white, TEXT_ALIGN_CENTER)
+                draw.SimpleText(name, 'PS_DefaultBold', w/2, 8, color_white, TEXT_ALIGN_CENTER)
             end
             local slider = panel:Add('DNumSlider')
             slider:Dock(BOTTOM)

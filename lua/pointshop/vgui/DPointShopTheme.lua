@@ -700,7 +700,7 @@ function PANEL:BuildList()
 	for _, section in ipairs(provider.sections) do
 		local hdr = self.List:Add("DLabel")
 		hdr:SetText(section.name)
-		hdr:SetFont("DermaDefaultBold")
+		hdr:SetFont("PS_DefaultBold")
 		hdr:SetTextColor(PS.Theme.TextDim)
 		hdr:SetPos(4, y)
 		hdr:SizeToContents()

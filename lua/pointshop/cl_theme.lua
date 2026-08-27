@@ -557,30 +557,30 @@ T.Selectable = {
 -- is how the gold and danger buttons stay flat while the rest have a sheen.
 T.Action = {
 	Positive = {
-		radius = "RadiusMd", lerp = 10, font = "DermaDefaultBold",
+		radius = "RadiusMd", lerp = 10, font = "PS_DefaultBold",
 		fill = T.PositiveFill, fillHover = T.PositiveFillHover,
 		gloss = T.PositiveGloss, glossHover = T.PositiveGlossHover,
 		glow = T.PositiveGlow, glowLayers = { 80, 40 },
 		border = T.PositiveBorder, text = T.OnFill, shadow = T.ShadowStrong,
 	},
 	Warning = {
-		radius = "RadiusSm", lerp = 10, font = "DermaDefault",
+		radius = "RadiusSm", lerp = 10, font = "PS_Default",
 		fill = T.WarningFill, fillHover = T.WarningFillHover,
 		gloss = T.WarningGloss, glossHover = T.WarningGlossHover,
 		border = T.WarningBorder, text = T.OnFill, shadow = T.Shadow,
 	},
 	Gold = {
-		radius = "RadiusSm", lerp = 10, font = "DermaDefault",
+		radius = "RadiusSm", lerp = 10, font = "PS_Default",
 		fill = T.GoldFill, fillHover = T.GoldFillHover,
 		border = T.GoldBorder, text = T.GoldText, shadow = T.Shadow,
 	},
 	Danger = {
-		radius = "RadiusSm", lerp = 10, font = "DermaDefault",
+		radius = "RadiusSm", lerp = 10, font = "PS_Default",
 		fill = T.DangerFill, fillHover = T.DangerFillHover,
 		border = T.DangerBorder, text = T.DangerText, shadow = T.Shadow,
 	},
 	Neutral = {
-		radius = "RadiusSm", lerp = 10, font = "DermaDefault",
+		radius = "RadiusSm", lerp = 10, font = "PS_Default",
 		fill = T.NeutralFill, fillHover = T.NeutralFillHover,
 		gloss = T.NeutralGloss, glossHover = T.NeutralGlossHover,
 		border = T.NeutralBorder, text = T.NeutralText, shadow = T.Shadow,
@@ -590,12 +590,12 @@ T.Action = {
 	-- Opens the customization panel. Neither confirming, destructive, nor owner-only, so it
 	-- is its own role rather than borrowed from one of those.
 	Modify = {
-		radius = "RadiusSm", lerp = 10, font = "DermaDefault",
+		radius = "RadiusSm", lerp = 10, font = "PS_Default",
 		fill = T.ModifyFill, fillHover = T.ModifyFillHover,
 		border = T.ModifyBorder, text = T.OnFill, shadow = T.Shadow,
 	},
 	Accent = {
-		radius = "RadiusMd", lerp = 10, font = "DermaDefault",
+		radius = "RadiusMd", lerp = 10, font = "PS_Default",
 		fill = T.AccentFill, fillHover = T.AccentFillHover,
 		gloss = T.AccentGloss, glossHover = T.AccentGlossHover,
 		glow = T.AccentGlow, glowLayers = { 100 },
@@ -817,8 +817,8 @@ function T.PaintStatusStrip(w, barH, text)
 	surface.DrawRect(10, barH, w - 20, 2)
 
 	if text then
-		draw.SimpleText(text, "DermaDefault", w / 2 + 1, 16, T.Shadow, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
-		draw.SimpleText(text, "DermaDefault", w / 2, 15, T.TextDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
+		draw.SimpleText(text, "PS_Default", w / 2 + 1, 16, T.Shadow, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
+		draw.SimpleText(text, "PS_Default", w / 2, 15, T.TextDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
 	end
 end
 
@@ -986,6 +986,9 @@ function T.Rescale()
 			T.Metrics[k] = math.Round(v * s)
 		end
 	end
+
+	-- Text is sized in pixels too, so it moves with everything else.
+	if T.BuildFonts then T.BuildFonts() end
 end
 
 local activePreset = nil
@@ -1026,6 +1029,57 @@ local function ApplyMetrics(preset)
 	T.Rescale()
 end
 
+-- ============================================================================
+-- FONTS
+--
+-- Sizes are pixel counts like every metric, so they scale with the screen too. Without
+-- this the resolution work is half done: at 2x the panels double and the labels stay 13px,
+-- giving a correctly sized shop full of undersized text.
+--
+-- surface.CreateFont bakes the size at creation, and there is no draw-time size argument,
+-- so scaling means re-creating each font. Calling it again with the same name redefines
+-- that font, and every draw site refers to fonts by NAME -- so nothing downstream has to
+-- know this happened. It is not cheap, which is why it runs on a scale change and never
+-- per frame.
+--
+-- These lived at the top of DPointShopMenu.lua, which is the wrong file for something every
+-- panel draws with -- and load-bearing for panels that are autoloaded by the engine rather
+-- than included after it.
+-- ============================================================================
+
+local SANS = system.IsLinux() and "Arial" or "Tahoma"
+
+T.Fonts = {
+	{ "PS_Heading",        "coolvetica", 64 },
+	{ "PS_Heading2",       "coolvetica", 24 },
+	{ "PS_Heading3",       "coolvetica", 19 },
+	{ "PS_Default",        SANS,   13, 500 },
+	{ "PS_DefaultBold",    SANS,   13, 800 },
+	{ "PS_Heading1",       SANS,   18, 500 },
+	{ "PS_Heading1Bold",   SANS,   18, 800 },
+	{ "PS_ButtonText1",    "Roboto", 22, 700 },
+	{ "PS_ItemText",       SANS,   11, 500 },
+	{ "PS_LargeTitle",     "Roboto", 32, 500 },
+	{ "PS_CategoryButton", "Roboto", 14, 600 },
+}
+
+function T.BuildFonts()
+	local s = T.Scale()
+
+	for _, f in ipairs(T.Fonts) do
+		local name, face, size, weight = f[1], f[2], f[3], f[4]
+
+		surface.CreateFont(name, {
+			font      = face,
+
+			-- Floored at 1: a zero-size font is a silent draw of nothing, and the clamps on
+			-- Scale should already prevent it -- should, not will, since a look sets them.
+			size      = math.max(1, math.Round(size * s)),
+			weight    = weight,
+			antialias = true,
+		})
+	end
+end
 -- The server's house sizes, once they have arrived. nil until then.
 local serverMetrics = nil
 

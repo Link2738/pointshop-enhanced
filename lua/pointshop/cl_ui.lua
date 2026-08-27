@@ -362,7 +362,7 @@ function UI.Confirm(opts)
 	body:Dock(FILL)
 	body:DockMargin(M().Margin, M().Margin, M().Margin, M().Margin)
 	body.Paint = function(_, w, h)
-		draw.SimpleText(opts.text or "", "DermaDefaultBold", w / 2, h / 2 - 20,
+		draw.SimpleText(opts.text or "", "PS_DefaultBold", w / 2, h / 2 - 20,
 			PS.Theme.Text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 	end
 

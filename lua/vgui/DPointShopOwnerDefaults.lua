@@ -142,7 +142,7 @@ function PANEL:SetItem(item)
     local function SectionTitle(txt)
         local lbl = self:Add("DLabel")
         lbl:SetPos(baseX, y); lbl:SetSize(w, 18)
-        lbl:SetFont("DermaDefaultBold")
+        lbl:SetFont("PS_DefaultBold")
         lbl:SetTextColor(Color(180, 140, 30))
         lbl:SetText(txt)
         track(lbl); y = y + 20
@@ -269,7 +269,7 @@ function PANEL:SetItem(item)
         local b = 100 + s._ha * 25
         draw.RoundedBox(4, 0, 0, pw, ph, Color(b, b * 0.75, 20, 255))
         surface.SetDrawColor(180, 140, 30, 200); surface.DrawOutlinedRect(0, 0, pw, ph)
-        draw.SimpleText("Save as Default", "DermaDefaultBold", pw/2, ph/2, Color(255, 230, 150), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        draw.SimpleText("Save as Default", "PS_DefaultBold", pw/2, ph/2, Color(255, 230, 150), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
     end
     track(saveBtn); y = y + 30
 
@@ -285,7 +285,7 @@ function PANEL:SetItem(item)
         local g = 65 + s._ha * 15
         draw.RoundedBox(4, 0, 0, pw, ph, Color(g, g, g, 255))
         surface.SetDrawColor(120, 120, 120, 200); surface.DrawOutlinedRect(0, 0, pw, ph)
-        draw.SimpleText("Discard", "DermaDefault", pw/2, ph/2, Color(220, 220, 220), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        draw.SimpleText("Discard", "PS_Default", pw/2, ph/2, Color(220, 220, 220), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
     end
     track(discardBtn); y = y + 28
 
@@ -305,7 +305,7 @@ function PANEL:SetItem(item)
         local r = 100 + s._ha * 25
         draw.RoundedBox(4, 0, 0, pw, ph, Color(r, 35, 35, 255))
         surface.SetDrawColor(160, 70, 70, 200); surface.DrawOutlinedRect(0, 0, pw, ph)
-        draw.SimpleText("Clear Default", "DermaDefault", pw/2, ph/2, Color(255, 180, 180), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        draw.SimpleText("Clear Default", "PS_Default", pw/2, ph/2, Color(255, 180, 180), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
     end
     track(clearBtn); y = y + 28
 
@@ -387,7 +387,7 @@ function PANEL:Paint(w, h)
     draw.RoundedBoxEx(6, 0, 0, w, 28, Color(40, 32, 10, 255), true, true, false, false)
     surface.SetDrawColor(180, 140, 30, 80)
     surface.DrawRect(0, 28, w, 1)
-    draw.SimpleText("Edit Item Default  —  " .. (self.itemID or ""), "DermaDefaultBold",
+    draw.SimpleText("Edit Item Default  —  " .. (self.itemID or ""), "PS_DefaultBold",
         w / 2, 14, Color(220, 180, 80), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 end
 

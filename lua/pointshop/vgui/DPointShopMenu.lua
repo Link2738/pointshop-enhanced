@@ -1,47 +1,9 @@
--- Font definitions
-surface.CreateFont('PS_Heading', { font = 'coolvetica', size = 64 })
-surface.CreateFont('PS_Heading2', { font = 'coolvetica', size = 24 })
-surface.CreateFont('PS_Heading3', { font = 'coolvetica', size = 19 })
-
-surface.CreateFont( "PS_Default", {
-	font = system.IsLinux() and "Arial" or "Tahoma",
-	size = 13, weight = 500, antialias = true,
-})
-
-surface.CreateFont( "PS_DefaultBold", {
-	font = system.IsLinux() and "Arial" or "Tahoma",
-	size = 13, weight = 800, antialias = true,
-})
-
-surface.CreateFont( "PS_Heading1", {
-	font = system.IsLinux() and "Arial" or "Tahoma",
-	size = 18, weight = 500, antialias = true,
-})
-
-surface.CreateFont( "PS_Heading1Bold", {
-	font = system.IsLinux() and "Arial" or "Tahoma",
-	size = 18, weight = 800, antialias = true,
-})
-
-surface.CreateFont( "PS_ButtonText1", {
-	font = "Roboto",
-	size = 22, weight = 700, antialias = true,
-})
-
-surface.CreateFont( "PS_ItemText", {
-	font = system.IsLinux() and "Arial" or "Tahoma",
-	size = 11, weight = 500, antialias = true,
-})
-
-surface.CreateFont( "PS_LargeTitle", {
-	font = "Roboto",
-	size = 32, weight = 500, antialias = true,
-})
-
-surface.CreateFont( "PS_CategoryButton", {
-	font = "Roboto",
-	size = 14, weight = 600, antialias = true,
-})
+-- Fonts moved to pointshop/cl_theme.lua.
+--
+-- They were never panel-specific: every file draws with them, and several of those files
+-- are autoloaded by the engine rather than included after this one, so defining them here
+-- was a load-order bet. They also have to be re-created when the screen scale changes,
+-- which is the theme's job, not this panel's.
 
 -- Removed: BGColor1/2/3. All three were assigned and never read. One of them was (57,56,54),
 -- the only warm grey anywhere in the shop — which is how it survived: nothing ever drew it.

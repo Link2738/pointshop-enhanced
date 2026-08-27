@@ -91,7 +91,7 @@ function PANEL:DoClick()
 			-- Brightens to full white on hover. Lerped rather than switched so it tracks the
 			-- fill instead of snapping ahead of it.
 			PS.Theme.Shade(sRowText, PS.Theme.MenuRowText, PS.Theme.Text, s._hoverAlpha)
-			draw.SimpleText(text, "DermaDefault", 8, h/2, sRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+			draw.SimpleText(text, "PS_Default", 8, h/2, sRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 		end
 		yPos = yPos + BH + 3
 	end

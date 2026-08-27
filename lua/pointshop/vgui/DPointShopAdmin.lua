@@ -169,10 +169,10 @@ function PANEL:PopulatePlayerList()
 		surface.SetDrawColor(PS.Theme.Accent)
 		surface.DrawRect(0, h - 2, w, 2)
 		
-		draw.SimpleText("Player", "DermaDefaultBold", 15, h / 2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-		draw.SimpleText("Points", "DermaDefaultBold", w - 550, h / 2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-		draw.SimpleText("Items", "DermaDefaultBold", w - 450, h / 2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-		draw.SimpleText("Actions", "DermaDefaultBold", w - 410, h / 2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText("Player", "PS_DefaultBold", 15, h / 2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText("Points", "PS_DefaultBold", w - 550, h / 2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText("Items", "PS_DefaultBold", w - 450, h / 2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText("Actions", "PS_DefaultBold", w - 410, h / 2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 	end
 	
 	-- Player rows
@@ -199,8 +199,8 @@ function PANEL:AddPlayerRow(ply)
 		-- Player name
 		local name = IsValid(ply) and ply:Nick() or "Unknown"
 		-- w - 650 leaves space for the points, items and actions columns.
-		local displayName = FitText(s, name, "DermaDefault", w - 650)
-		draw.SimpleText(displayName, "DermaDefault", 15, h / 2, PS.Theme.Text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		local displayName = FitText(s, name, "PS_Default", w - 650)
+		draw.SimpleText(displayName, "PS_Default", 15, h / 2, PS.Theme.Text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 		
 		-- Points and item count.
 		--
@@ -215,8 +215,8 @@ function PANEL:AddPlayerRow(ply)
 		local points = summary and summary.points or "?"
 		local itemCount = summary and summary.items or "?"
 
-		draw.SimpleText(points, "DermaDefault", w - 550, h / 2, PS.Theme.PointsText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-		draw.SimpleText(itemCount, "DermaDefault", w - 450, h / 2, PS.Theme.TextDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText(points, "PS_Default", w - 550, h / 2, PS.Theme.PointsText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText(itemCount, "PS_Default", w - 450, h / 2, PS.Theme.TextDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 	end
 	
 	-- View Items button
@@ -317,7 +317,7 @@ function PANEL:_BuildPlayerItemsWindow(ply, items)
 		label:SetText("This player has no items.")
 		label:Dock(FILL)
 		label:SetContentAlignment(5)
-		label:SetFont("DermaLarge")
+		label:SetFont("PS_LargeTitle")
 		return
 	end
 
@@ -341,9 +341,9 @@ function PANEL:_BuildPlayerItemsWindow(ply, items)
 	header.Paint = function(s, w, h)
 		surface.SetDrawColor(PS.Theme.RowHover)
 		surface.DrawRect(0, 0, w, h)
-		draw.SimpleText("Item Name", "DermaDefaultBold", 15, h/2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-		draw.SimpleText("Equipped", "DermaDefaultBold", w - 275, h/2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-		draw.SimpleText("Actions", "DermaDefaultBold", w - 150, h/2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText("Item Name", "PS_DefaultBold", 15, h/2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText("Equipped", "PS_DefaultBold", w - 275, h/2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText("Actions", "PS_DefaultBold", w - 150, h/2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 	end
 
 	-- Sorted for a stable order; pairs() over the inventory table meant the list
@@ -379,12 +379,12 @@ function PANEL:_BuildPlayerItemsWindow(ply, items)
 			PS.Theme.PaintRow(s, w, h)
 
 			-- Item name - clip if too long
-			local shown = FitText(s, displayName, "DermaDefault", w - 300)
-			draw.SimpleText(shown, "DermaDefault", 15, h/2, nameCol, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+			local shown = FitText(s, displayName, "PS_Default", w - 300)
+			draw.SimpleText(shown, "PS_Default", 15, h/2, nameCol, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 
 			local equipped = itemData.Equipped and "Yes" or "No"
 			local equipCol = itemData.Equipped and PS.Theme.PriceAfford or PS.Theme.MenuRowText
-			draw.SimpleText(equipped, "DermaDefault", w - 275, h/2, equipCol, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+			draw.SimpleText(equipped, "PS_Default", w - 275, h/2, equipCol, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 		end
 
 		-- Take button
@@ -554,7 +554,7 @@ function PANEL:PromptGiveItem(ply)
 		label:SetText("No items available.")
 		label:Dock(FILL)
 		label:SetContentAlignment(5)
-		label:SetFont("DermaLarge")
+		label:SetFont("PS_LargeTitle")
 		return
 	end
 	
@@ -578,9 +578,9 @@ function PANEL:PromptGiveItem(ply)
 	header.Paint = function(s, w, h)
 		surface.SetDrawColor(PS.Theme.RowHover)
 		surface.DrawRect(0, 0, w, h)
-		draw.SimpleText("Item Name", "DermaDefaultBold", 15, h/2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-		draw.SimpleText("Category", "DermaDefaultBold", w - 200, h/2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-		draw.SimpleText("Actions", "DermaDefaultBold", w - 120, h/2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText("Item Name", "PS_DefaultBold", 15, h/2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText("Category", "PS_DefaultBold", w - 200, h/2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText("Actions", "PS_DefaultBold", w - 120, h/2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 	end
 	
 	-- Sorted by category then name. pairs() over PS.Items gave a different order on every
@@ -607,11 +607,11 @@ function PANEL:PromptGiveItem(ply)
 			PS.Theme.PaintRow(s, w, h)
 			
 			-- Item name - clip if too long
-			local displayName = FitText(s, ITEM.Name, "DermaDefault", w - 250)
-			draw.SimpleText(displayName, "DermaDefault", 15, h/2, PS.Theme.Text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+			local displayName = FitText(s, ITEM.Name, "PS_Default", w - 250)
+			draw.SimpleText(displayName, "PS_Default", 15, h/2, PS.Theme.Text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 			
 			local category = ITEM.Category or "Misc"
-			draw.SimpleText(category, "DermaDefault", w - 200, h/2, PS.Theme.TextDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+			draw.SimpleText(category, "PS_Default", w - 200, h/2, PS.Theme.TextDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 		end
 		
 		-- Give button
