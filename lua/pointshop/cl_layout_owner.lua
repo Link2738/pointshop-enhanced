@@ -106,13 +106,33 @@ local function Open()
 	local M = T.Metrics
 	before = T.FrameMetrics()
 
-	local ROW_H = 76
+	-- Everything laid out by hand in this panel scales with the rest of the UI. The metrics
+	-- already arrive scaled; these do not, so they are scaled here.
+	local S     = T.Scale()
+	local ROW_H = math.Round(76 * S)
+	local STRIP = math.Round(26 * S)
+
+	-- Height measured off the dock stack rather than guessed.
+	--
+	-- It was guessed, and it was 12px short at scale 1 -- which does not clip a little off the
+	-- bottom, it drops the whole buttons row off the panel, so there was no Save button to
+	-- find. Written out term by term so it stays honest if a row is added:
+	--
+	--   header, status strip, the body's own top and bottom margins,
+	--   row 1 (its top margin, its height, its bottom gap),
+	--   row 2 (no top margin, its height, its bottom gap),
+	--   the buttons row (its top gap, its height, its bottom margin)
+	local bodyH = M.Margin
+		+ (M.Margin + ROW_H + M.Gap)
+		+ (ROW_H + M.Gap)
+		+ (M.Gap + M.ButtonH + M.Margin)
+		+ M.Margin
 
 	local f = UI.Frame({
 		remember = "shoplayout",
 		title = "Shop layout",
-		w     = 470,
-		h     = M.HeaderH + 26 + M.Margin * 2 + 2 * (ROW_H + M.Gap) + M.ButtonH + M.Gap * 2,
+		w     = math.Round(470 * S),
+		h     = M.HeaderH + STRIP + bodyH,
 	})
 	panel = f
 
@@ -124,7 +144,7 @@ local function Open()
 
 	local strip = vgui.Create("DPanel", f)
 	strip:Dock(TOP)
-	strip:SetTall(26)
+	strip:SetTall(STRIP)
 	strip.Paint = function(_, w, h)
 		T.PaintStatusStrip(w, h, "Live while open · reverts on close unless saved")
 	end
@@ -153,7 +173,7 @@ local function Open()
 		row:DockMargin(M.Margin, i == 1 and M.Margin or 0, M.Margin, M.Gap)
 		row.Paint = function(_, w, h)
 			T.PaintRow(row, w, h, i, false)
-			draw.SimpleText(label, "PS_DefaultBold", M.Margin, 12,
+			draw.SimpleText(label, "PS_DefaultBold", M.Margin, math.Round(12 * S),
 				T.Text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 		end
 
@@ -175,8 +195,8 @@ local function Open()
 		combo:SetSortItems(false)
 		for k = FIXED, INSET do combo:AddChoice(names[k], k, k == mode) end
 		combo.PerformLayout = function(s)
-			s:SetPos(M.Margin, 28)
-			s:SetSize((row:GetWide() - M.Margin * 3) / 2, 20)
+			s:SetPos(M.Margin, math.Round(28 * S))
+			s:SetSize((row:GetWide() - M.Margin * 3) / 2, math.Round(20 * S))
 		end
 		combo.OnSelect = function(_, _, _, data)
 			mode = data
@@ -205,8 +225,8 @@ local function Open()
 		valueSlider:SetValue(value)
 		valueSlider.PerformLayout = function(s)
 			local half = (row:GetWide() - M.Margin * 3) / 2
-			s:SetPos(M.Margin * 2 + half, 28)
-			s:SetSize(half, 20)
+			s:SetPos(M.Margin * 2 + half, math.Round(28 * S))
+			s:SetSize(half, math.Round(20 * S))
 		end
 		valueSlider.OnValueChanged = function(_, v)
 			value = math.Round(v)
@@ -226,8 +246,8 @@ local function Open()
 			sl.Label:SetTextColor(T.TextDim)
 			sl.PerformLayout = function(s)
 				local half = (row:GetWide() - M.Margin * 3) / 2
-				s:SetPos(x(half), 52)
-				s:SetSize(half, 18)
+				s:SetPos(x(half), math.Round(52 * S))
+				s:SetSize(half, math.Round(18 * S))
 			end
 			sl.OnValueChanged = function(_, v)
 				T.SetBaseMetric(key, math.Round(v))
