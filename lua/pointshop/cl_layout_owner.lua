@@ -26,8 +26,11 @@
 
 	Changes apply to the local client immediately and fire PS_PresetChanged so an open shop
 	reflows -- an owner needs to see the size, not imagine it. Closing the panel without
-	saving puts back what was there when it opened. Only "Set as server default" leaves this
-	client.
+	saving puts back what was there when it opened.
+
+	Save sets the size for the whole server. There is no separate personal save: the window
+	size belongs to the shop rather than to whoever is looking at it, and the only people who
+	can open this panel are the ones who decide that for everyone.
 ]]--
 
 local T, UI = PS.Theme, PS.UI
@@ -252,10 +255,18 @@ local function Open()
 	AxisRow("W", "Width",  MODE_NAMES)
 	AxisRow("H", "Height", MODE_NAMES_H)
 
-	local save = UI.Button(buttons, "Set as server default", "Gold", function()
+	-- One Save, and it sets the server default.
+	--
+	-- Deliberately no separate "keep this for me". This panel is owner-only, and the window
+	-- size is a property of the shop rather than of whoever happens to be looking at it, so
+	-- for the one person who can open this, saving and publishing are the same act. Offering
+	-- both would ask them to choose between two things that mean the same to them.
+	--
+	-- Still confirmed, because it changes what every connected player sees.
+	local save = UI.Button(buttons, "Save", "Gold", function()
 		UI.Confirm({
-			text = "Make this the shop's size for everyone?",
-			yes  = "Set default",
+			text = "Save this as the shop's size for everyone?",
+			yes  = "Save",
 			onYes = function()
 				net.Start("PS_Theme_SetDefault")
 					net.WriteString(util.TableToJSON({
@@ -268,20 +279,6 @@ local function Open()
 				before = T.FrameMetrics()
 			end,
 		})
-	end)
-	save:Dock(LEFT)
-	save:SetWide(190)
-
-	-- Keeps the size for THIS client, in pointshop/theme.json alongside the palette.
-	--
-	-- Separate from "Set as server default", which is the same values sent to everyone. An
-	-- owner adjusting their own window should not have to publish it to do so, and until this
-	-- existed that was the only way to make a change outlast closing the panel.
-	local save = UI.Button(buttons, "Save", "Positive", function()
-		T.Save()
-
-		-- Saved, so closing must not put the old size back.
-		before = T.FrameMetrics()
 	end)
 	save:Dock(RIGHT)
 	save:DockMargin(M.Gap, 0, 0, 0)
