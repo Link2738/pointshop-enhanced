@@ -32,9 +32,20 @@ local T = PS.Theme
 local SLATE     = {  52,  73,  94, 255 }
 local SLATE_HI  = {  72,  99, 126, 255 }
 
-local BODY      = { 232, 232, 232, 255 }   -- :107, the content panel
-local CARD      = { 250, 250, 250, 255 }
-local OUTLINE   = { 218, 218, 218, 255 }   -- :127, the tab button outline
+-- A light theme has no glow and no sheen to separate its surfaces, so the separation has to
+-- come from tone and from lines. A first pass put five surfaces between 232 and 250 -- a 7%
+-- spread -- and the panel read as one white sheet with text floating on it.
+--
+-- So: a ladder with real steps, recessed to raised, and outlines dark enough to be seen.
+-- PS1's own 218 line was drawn on its 232 body and is genuinely faint; it gets away with it
+-- because it has almost no nested panels. Ours has rows inside panels inside frames, and at
+-- that depth a 6% line is not a line.
+local SUNK      = { 214, 214, 214, 255 }   -- recessed containers: the category strip
+local BODY      = { 226, 226, 226, 255 }   -- window ground (:107 is 232, one step up from here)
+local RAISED    = { 236, 236, 236, 255 }   -- panel bodies and list rows sitting on the ground
+local CARD      = { 250, 250, 250, 255 }   -- the top of the stack
+local OUTLINE   = { 188, 188, 188, 255 }   -- PS1 used 218; too faint once panels nest
+local OUTLINE_HI = { 160, 160, 160, 255 }
 
 -- PS1's text is grey on grey, never black. Three weights, from :136-138.
 local INK       = { 105, 105, 105, 255 }   -- active / primary
@@ -103,12 +114,13 @@ T.RegisterPreset("classic", {
 		PointsText = { 255, 255, 255, 255 },   -- PS1's balance is white, not yellow (:468)
 
 		FrameBG        = BODY,
-		MenuCategoryBG = BODY,
+		PanelBG        = RAISED,
+		MenuCategoryBG = SUNK,
 
 		-- No alternating stripe in PS1. Rows are the body until hovered.
-		RowBG    = BODY,
-		RowAlt   = BODY,
-		RowHover = { 222, 222, 222, 255 },
+		RowBG    = RAISED,
+		RowAlt   = { 231, 231, 231, 255 },
+		RowHover = { 244, 244, 244, 255 },
 
 		-- Body text goes dark, which is the whole reason Text was split from HeaderText.
 		Text     = INK,
@@ -137,12 +149,12 @@ T.RegisterPreset("classic", {
 		CategoryGlow   = SLATE_HI,
 		CategoryBorder = SLATE,
 
-		CategoryIdleFill        = BODY,
-		CategoryIdleFillHover   = { 240, 240, 240, 255 },
+		CategoryIdleFill        = RAISED,
+		CategoryIdleFillHover   = { 246, 246, 246, 255 },
 		CategoryIdleGloss       = { 255, 255, 255,  40 },
 		CategoryIdleGlossHover  = { 255, 255, 255,  70 },
 		CategoryIdleBorder      = OUTLINE,
-		CategoryIdleBorderHover = { 200, 200, 200, 255 },
+		CategoryIdleBorderHover = OUTLINE_HI,
 
 		SelectFill   = SLATE,
 		SelectGloss  = { 100, 130, 160,  80 },
@@ -150,12 +162,12 @@ T.RegisterPreset("classic", {
 		SelectBorder = SLATE,
 
 		-- Controls are outlined boxes on the body, the way PS1's buttons are.
-		ControlFill        = { 240, 240, 240, 255 },
-		ControlFillHover   = { 248, 248, 248, 255 },
+		ControlFill        = { 242, 242, 242, 255 },
+		ControlFillHover   = { 250, 250, 250, 255 },
 		ControlGloss       = { 255, 255, 255,  60 },
 		ControlGlossHover  = { 255, 255, 255,  90 },
 		ControlBorder      = OUTLINE,
-		ControlBorderHover = { 190, 190, 190, 255 },
+		ControlBorderHover = OUTLINE_HI,
 
 		-- Cards are near-white with a hairline. The label strip under each keeps taking its
 		-- colour from the item's state (owned / affordable / not), which is where the mauve
@@ -169,10 +181,10 @@ T.RegisterPreset("classic", {
 		-- 250 card did. PS1's own labels were mid-toned for the same reason.
 		CardLabelBG = { 150, 150, 150, 255 },
 		CardOwned   = SLATE,
-		CardMenuBG  = { 245, 245, 245, 250 },
+		CardMenuBG  = RAISED,
 
 		-- Scroll furniture off blue and onto the greys.
-		ScrollTrack     = { 220, 220, 220, 200 },
+		ScrollTrack     = SUNK,
 		ScrollGrip      = { 170, 170, 170, 255 },
 		ScrollGripHover = { 140, 140, 140, 255 },
 

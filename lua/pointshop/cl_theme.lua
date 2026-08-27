@@ -55,6 +55,16 @@ local T = PS.Theme
 T.FrameBG  = Color(40, 40, 45, 255)     -- every window body
 T.HeaderBG = Color(30, 30, 30, 255)     -- every header bar
 
+-- A panel sitting ON the window body, rather than the body itself: the boxed sections in
+-- the appearance editor, the owner panels, anything PaintPanelBody draws.
+--
+-- Ships identical to FrameBG, which is what it was before it had a name -- PaintPanelBody
+-- drew the body colour, so a panel on the ground was the same tone as the ground. On a
+-- dark theme that is invisible and fine, because the accent rule along the panel's top
+-- edge does the separating. On a light theme there is no glow to do that job and the whole
+-- window collapses into one sheet, which is exactly what happened to Classic.
+T.PanelBG  = Color(40, 40, 45, 255)
+
 -- The window border and the header stripe are not their own colours: they are the accent,
 -- and they read as it. FrameBorder and HeaderRule were separate entries holding (60,120,180)
 -- and (60,140,200), which meant setting the accent left both behind.
@@ -799,7 +809,7 @@ end
 
 -- Panel body: rounded background with a single-pixel accent along the top edge.
 function T.PaintPanelBody(w, h)
-	draw.RoundedBox(T.Metrics.RadiusSm, 0, 0, w, h, T.FrameBG)
+	draw.RoundedBox(T.Metrics.RadiusSm, 0, 0, w, h, T.PanelBG)
 	surface.SetDrawColor(T.Alpha(sBorder, T.Accent, 80))
 	surface.DrawRect(0, 0, w, 1)
 end

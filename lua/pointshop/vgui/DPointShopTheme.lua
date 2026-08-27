@@ -42,6 +42,7 @@ local LABELS = {
 	MenuCategoryBG = "Category strip background",
 
 	FrameBG     = "Window body",
+	PanelBG     = "Panel on the body",
 	HeaderBG    = "Window header bar",
 
 	RowBG    = "List row",
@@ -116,7 +117,7 @@ local function AssignSection(name, ...)
 	for _, k in ipairs({ ... }) do SECTION_OF[k] = name end
 end
 
-AssignSection("Surfaces", "StatusBar", "CardMenuBG", "MenuCategoryBG", "FrameBG", "HeaderBG")
+AssignSection("Surfaces", "StatusBar", "CardMenuBG", "MenuCategoryBG", "FrameBG", "PanelBG", "HeaderBG")
 AssignSection("Lists", "RowBG", "RowAlt", "RowHover",
 	"ScrollTrack", "ScrollGrip", "ScrollGripHover")
 AssignSection("Accent", "Accent",
