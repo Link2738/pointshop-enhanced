@@ -107,8 +107,10 @@ T.Metrics = {
 	-- is an invisible 3px.
 	HeaderRule = 3,
 
-	-- The category strip's viewport. Its content is sized to the number of button rows, so
-	-- this is the height at which it starts scrolling rather than the height it always is.
+	-- The MOST the category strip may take. It sizes itself to the rows the buttons
+	-- actually need and only scrolls past this, so a look sets the ceiling, not the
+	-- height -- the row count depends on window width and category count, which no look
+	-- can know in advance. Too low and categories hide behind a scrollbar.
 	CategoryStripH = 90,
 
 	-- Gap between item cards in the grid. Was Gap - 3, which meant it could not be set
@@ -171,6 +173,22 @@ T.Metrics = {
 	FrameHOffset = -100,
 	FrameHMin    = 600,
 	FrameHMax    = 900,
+
+	-- ========================================================================
+	-- RESOLUTION SCALING
+	--
+	-- Every number above is authored against a screen RefH pixels tall, and multiplied by
+	-- ScrH()/RefH at runtime. 1080 because that is what the shipped look was drawn against,
+	-- so a 1080p screen gets exactly the values written here and nothing changes for it.
+	--
+	-- The clamps stop both extremes: below ScaleMin a 4:3 laptop would get a shop too small
+	-- to read, above ScaleMax a 4K panel would get one so large it stops being a window.
+	-- A look wanting to be scaled harder or not at all sets these like any other metric,
+	-- and ScaleMin = ScaleMax = 1 turns scaling off entirely.
+	-- ========================================================================
+	RefH     = 1080,
+	ScaleMin = 0.75,
+	ScaleMax = 2,
 }
 
 -- ============================================================================
@@ -912,6 +930,64 @@ T.Presets = T.Presets or {}
 local METRIC_DEFAULTS = {}
 for k, v in pairs(T.Metrics) do METRIC_DEFAULTS[k] = v end
 
+-- ============================================================================
+-- RESOLUTION SCALING
+--
+-- Every metric above is a pixel count authored against a reference screen. Left alone,
+-- that is the whole per-resolution problem: a 50px header and a 208px card are half the
+-- screen on 768p and a postage stamp on 2160p, so the shop shrinks as the monitor grows.
+--
+-- So the authored numbers are a BASE, and T.Metrics holds them multiplied by a scale taken
+-- from the screen height. Height rather than width, because scaling on width stretches the
+-- UI on an ultrawide, where the extra pixels are beside the window and not inside it.
+--
+-- At the reference height the scale is exactly 1 and every number is the value written
+-- above -- so the shipped look on a 1080p screen is untouched by any of this.
+--
+-- Presets and the owner write the BASE. Nothing writes T.Metrics directly any more, and
+-- T.Metrics keeps its table identity because panels hold a reference to it.
+-- ============================================================================
+
+local METRIC_BASE = {}
+for k, v in pairs(METRIC_DEFAULTS) do METRIC_BASE[k] = v end
+
+-- Not pixel counts, so scaling them would be meaningless or harmful: a fraction of the
+-- screen is already resolution-relative, a column count is a count, and the scale controls
+-- themselves obviously cannot scale.
+local UNSCALED = {
+	FrameWScale = true, FrameHScale = true,
+	CategoryMinCols = true, CategoryMaxCols = true,
+	CardMinCols = true, CardMaxCols = true,
+	RefH = true, ScaleMin = true, ScaleMax = true,
+}
+
+function T.Scale()
+	local ref = METRIC_BASE.RefH
+	if not ref or ref <= 0 then return 1 end
+
+	return math.Clamp(ScrH() / ref, METRIC_BASE.ScaleMin or 0.5, METRIC_BASE.ScaleMax or 3)
+end
+
+-- Writes the scaled values into T.Metrics IN PLACE.
+--
+-- In place for the same reason everything else here is: panels take
+-- `local M = PS.Theme.Metrics` and hold that reference, so replacing the table would leave
+-- them reading the old one forever.
+--
+-- Rounded, because these become panel sizes and positions, and a control on a half pixel
+-- smears its own border.
+function T.Rescale()
+	local s = T.Scale()
+
+	for k, v in pairs(METRIC_BASE) do
+		if UNSCALED[k] then
+			T.Metrics[k] = v
+		else
+			T.Metrics[k] = math.Round(v * s)
+		end
+	end
+end
+
 local activePreset = nil
 
 -- A preset id read from the save file whose preset has not registered yet.
@@ -939,13 +1015,15 @@ end
 -- `local M = PS.Theme.Metrics` and hold that reference, so replacing the table would leave
 -- them reading the old one.
 local function ApplyMetrics(preset)
-	for k, v in pairs(METRIC_DEFAULTS) do T.Metrics[k] = v end
+	for k, v in pairs(METRIC_DEFAULTS) do METRIC_BASE[k] = v end
 
 	if preset and istable(preset.metrics) then
 		for k, v in pairs(preset.metrics) do
-			if METRIC_DEFAULTS[k] ~= nil and isnumber(v) then T.Metrics[k] = v end
+			if METRIC_DEFAULTS[k] ~= nil and isnumber(v) then METRIC_BASE[k] = v end
 		end
 	end
+
+	T.Rescale()
 end
 
 -- The server's house sizes, once they have arrived. nil until then.
@@ -970,14 +1048,16 @@ local function ApplyServerMetrics()
 	for k, v in pairs(serverMetrics) do
 		if METRIC_DEFAULTS[k] ~= nil and isnumber(v) then
 			local b = METRIC_BOUNDS[k]
-			T.Metrics[k] = b and math.Clamp(v, b[1], b[2]) or v
+			METRIC_BASE[k] = b and math.Clamp(v, b[1], b[2]) or v
 		end
 	end
 
 	-- A max below its min would make math.Clamp return the max and silently inverts the
 	-- intent, so the pair is straightened rather than obeyed.
-	if T.Metrics.FrameWMax < T.Metrics.FrameWMin then T.Metrics.FrameWMax = T.Metrics.FrameWMin end
-	if T.Metrics.FrameHMax < T.Metrics.FrameHMin then T.Metrics.FrameHMax = T.Metrics.FrameHMin end
+	if METRIC_BASE.FrameWMax < METRIC_BASE.FrameWMin then METRIC_BASE.FrameWMax = METRIC_BASE.FrameWMin end
+	if METRIC_BASE.FrameHMax < METRIC_BASE.FrameHMin then METRIC_BASE.FrameHMax = METRIC_BASE.FrameHMin end
+
+	T.Rescale()
 end
 
 -- The widget styles as shipped, so a preset's changes to them can be undone.
@@ -1172,6 +1252,49 @@ end
 -- One store means one place to look and one thing to reset.
 T.Panels = {}
 
+-- The palette exactly as it looks right now, in the shape Apply and the server default
+-- both take. Walks DEFAULTS rather than T so the style tables and painters that live on
+-- the same table are not walked into.
+function T.Snapshot()
+	local out = {}
+	for k in pairs(DEFAULTS) do
+		local c = T[k]
+		out[k] = { c.r, c.g, c.b, c.a }
+	end
+	return out
+end
+
+-- The sizing metrics only, for an owner pushing a house size without pushing every other
+-- number a look happens to have set.
+local FRAME_KEYS = {
+	"FrameWScale", "FrameWOffset", "FrameWMin", "FrameWMax",
+	"FrameHScale", "FrameHOffset", "FrameHMin", "FrameHMax",
+}
+
+-- Reads the BASE, not T.Metrics.
+--
+-- T.Metrics holds values already multiplied by this client's screen scale. Sending
+-- those as a server default would bake one owner's monitor into everyone else's shop,
+-- and then scale them a second time on arrival -- an owner on 1440p would hand every
+-- player a window a third too large, and a 4K owner two thirds.
+function T.FrameMetrics()
+	local out = {}
+	for _, k in ipairs(FRAME_KEYS) do out[k] = METRIC_BASE[k] end
+	return out
+end
+
+-- Authored value of one metric, for a UI that edits it. Editors must read and write
+-- the base: writing T.Metrics works until the next Rescale silently reverts it.
+function T.BaseMetric(k)
+	return METRIC_BASE[k]
+end
+
+function T.SetBaseMetric(k, v)
+	if METRIC_DEFAULTS[k] == nil or not isnumber(v) then return end
+	METRIC_BASE[k] = v
+	T.Rescale()
+end
+
 function T.Save()
 	if not file.IsDir("pointshop", "DATA") then file.CreateDir("pointshop") end
 
@@ -1285,7 +1408,20 @@ function T.SetServerDefault(tbl)
 	hook.Run("PS_PresetChanged", activePreset)
 end
 
+T.Rescale()
 T.Load()
+
+-- A player changing video settings changes the scale, and every panel already built is
+-- holding sizes from the old resolution. Cheap to watch: two comparisons a frame, and the
+-- work only happens on an actual change.
+local lastW, lastH = ScrW(), ScrH()
+hook.Add("Think", "PS_ThemeWatchResolution", function()
+	if ScrW() == lastW and ScrH() == lastH then return end
+	lastW, lastH = ScrW(), ScrH()
+
+	T.Rescale()
+	hook.Run("PS_PresetChanged", T.GetPreset())
+end)
 
 net.Receive("PS_Theme_Default", function()
 	local ok, tbl = pcall(util.JSONToTable, net.ReadString())

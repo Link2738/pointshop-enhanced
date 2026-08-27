@@ -45,6 +45,19 @@ T.RegisterPreset("classic", {
 	name = "Classic",
 
 	metrics = {
+		-- PointShop 1's window: 1024x768, clamped down to the screen. Written as a fixed
+		-- size rather than a share, because that is what it was -- the same box on every
+		-- monitor. FrameSize clamps it to the screen on top of this.
+		FrameWScale  = 0,
+		FrameWOffset = 1024,
+		FrameWMin    = 640,
+		FrameWMax    = 1024,
+
+		FrameHScale  = 0,
+		FrameHOffset = 768,
+		FrameHMin    = 480,
+		FrameHMax    = 768,
+
 		HeaderH  = 48,   -- :459
 		Radius   = 0,    -- nothing in that file is rounded
 		RadiusSm = 0,
@@ -64,7 +77,6 @@ T.RegisterPreset("classic", {
 		CategoryBtnH = 28,
 		CategoryW    = 150,
 		CategoryMaxCols = 8,
-		CategoryStripH  = 34,
 
 		-- Cards are smaller and tighter than the modern grid's.
 		CardW   = 150,

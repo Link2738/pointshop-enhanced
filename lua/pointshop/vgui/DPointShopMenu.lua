@@ -61,8 +61,11 @@ local function FrameSize()
 
 	-- Floored: a frame on a half pixel smears its own rounded corners and drags every
 	-- centred child half a pixel with it.
-	return math.floor(math.Clamp(ScrW() * M.FrameWScale + M.FrameWOffset, M.FrameWMin, M.FrameWMax)),
-	       math.floor(math.Clamp(ScrH() * M.FrameHScale + M.FrameHOffset, M.FrameHMin, M.FrameHMax))
+	-- Clamped to the screen last, after the look's own min and max. A window larger than
+	-- the monitor is never right, whatever a look or an owner asked for, and PointShop 1
+	-- did the same -- its 1024x768 was written as Clamp(1024, 0, ScrW()).
+	return math.floor(math.min(math.Clamp(ScrW() * M.FrameWScale + M.FrameWOffset, M.FrameWMin, M.FrameWMax), ScrW())),
+	       math.floor(math.min(math.Clamp(ScrH() * M.FrameHScale + M.FrameHOffset, M.FrameHMin, M.FrameHMax), ScrH()))
 end
 
 function PANEL:Init()
@@ -309,6 +312,16 @@ function PANEL:PopulateCategories()
 	local rows = math.ceil(#categories / columns)
 	local requiredHeight = rows * (buttonHeight + spacing) + spacing
 	self.CategoryContainer:SetTall(requiredHeight)
+
+	-- The VIEWPORT follows the rows actually needed, capped by CategoryStripH.
+	--
+	-- It used to be pinned at CategoryStripH regardless. That is wrong in both
+	-- directions: a shop with three categories reserved room for two rows of nothing,
+	-- and a look with narrower tabs -- more columns, fewer per row, but a shorter strip
+	-- -- hid whole categories behind a scrollbar 34 pixels tall. How many rows the
+	-- buttons need depends on the window width and the number of categories, neither of
+	-- which is knowable when a look is written, so it cannot be a constant.
+	self.CategoryScroll:SetTall(math.min(requiredHeight, M.CategoryStripH))
 	
 	-- Create category buttons
 	for i, category in ipairs(categories) do
