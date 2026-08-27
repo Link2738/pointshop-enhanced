@@ -727,6 +727,63 @@ for k, v in pairs(T) do
 	end
 end
 
+-- ============================================================================
+-- PRESETS
+-- ============================================================================
+--
+-- A named set of colours and metrics applied as a LAYER, not as a bulk write.
+--
+-- The distinction matters. Writing a preset straight into the player's `custom` would mark
+-- every value as personally chosen, and `custom` is deliberately only the difference from
+-- the base so that a player keeps tracking changes the owner makes. Bulk-writing would
+-- freeze their whole palette at the moment they picked a preset.
+--
+-- So the order is: shipped defaults, then the preset, then the server default, then the
+-- player's own edits on top. Changing preset moves the base and leaves their edits intact.
+--
+-- Metrics ride along because a look is not only colour -- PointShop 1 has square corners and
+-- a shorter header, and neither is a Color.
+T.Presets = T.Presets or {}
+
+local METRIC_DEFAULTS = {}
+for k, v in pairs(T.Metrics) do METRIC_DEFAULTS[k] = v end
+
+local activePreset = nil
+
+-- A preset id read from the save file whose preset has not registered yet.
+--
+-- T.Load runs at the bottom of this file, and anything registering a preset -- another
+-- file here, a gamemode, an addon -- loads after that. Without this the saved choice would
+-- be dropped on every join and the player would silently get the shipped look back.
+local pendingPreset = nil
+
+function T.RegisterPreset(id, def)
+	if not isstring(id) or not istable(def) then return end
+	T.Presets[id] = def
+
+	if pendingPreset == id then
+		pendingPreset = nil
+		T.SetPreset(id)
+	end
+end
+
+function T.GetPreset()
+	return activePreset
+end
+
+-- Metrics are written IN PLACE for the same reason the Colors are: panels take
+-- `local M = PS.Theme.Metrics` and hold that reference, so replacing the table would leave
+-- them reading the old one.
+local function ApplyMetrics(preset)
+	for k, v in pairs(METRIC_DEFAULTS) do T.Metrics[k] = v end
+
+	if preset and istable(preset.metrics) then
+		for k, v in pairs(preset.metrics) do
+			if METRIC_DEFAULTS[k] ~= nil and isnumber(v) then T.Metrics[k] = v end
+		end
+	end
+end
+
 -- Writes values into the existing Color tables in place.
 --
 -- In place is load-bearing, not a micro-optimisation: every widget style holds a reference
@@ -760,6 +817,17 @@ local function ResolvedDefault()
 		out[k] = { v[1], v[2], v[3], v[4] }
 	end
 
+	-- The preset sits between the shipped values and the server's, so an owner who has set
+	-- a house colour keeps it whichever preset a player picks.
+	local preset = activePreset and T.Presets[activePreset]
+	if preset and istable(preset.colours) then
+		for k, v in pairs(preset.colours) do
+			if out[k] and istable(v) then
+				out[k] = { v[1], v[2], v[3], v[4] }
+			end
+		end
+	end
+
 	if istable(serverDefault) then
 		for k, v in pairs(serverDefault) do
 			if out[k] and istable(v) then
@@ -772,6 +840,7 @@ local function ResolvedDefault()
 end
 
 function T.ResetToDefaults()
+	ApplyMetrics(activePreset and T.Presets[activePreset])
 	T.Apply(ResolvedDefault())
 end
 
@@ -795,6 +864,25 @@ local function CustomOnly()
 	return out
 end
 
+-- Switch preset. nil goes back to the shipped look.
+--
+-- The player's own edits survive, because they are stored as a difference and re-resolved
+-- against the new base -- which is also the one surprising part: a colour they changed to
+-- exactly what the old preset had will now read as a deliberate choice and stay put.
+function T.SetPreset(id)
+	if id and not T.Presets[id] then return false end
+
+	local custom = CustomOnly()
+	activePreset = id
+
+	ApplyMetrics(id and T.Presets[id])
+	T.Apply(ResolvedDefault())
+	T.Apply(custom)
+
+	hook.Run("PS_PresetChanged", id)
+	return true
+end
+
 -- Where each panel was last dragged to, keyed by panel. Lives in this file rather than one
 -- of its own because it is the same thing: the client's own record of how they like the UI.
 -- One store means one place to look and one thing to reset.
@@ -807,6 +895,7 @@ function T.Save()
 		defaults = ResolvedDefault(),
 		custom   = CustomOnly(),
 		panels   = T.Panels,
+		preset   = activePreset,
 	}, true))
 end
 
@@ -845,6 +934,25 @@ function T.Load()
 	if not (ok and istable(tbl)) then
 		ErrorNoHalt("[PointShop] Could not parse " .. DATA_PATH .. ", using defaults.\n")
 		return
+	end
+
+	-- Preset first: it is a layer under `custom`, so it has to be in place before the
+	-- player's own edits are resolved against it.
+	--
+	-- Silently ignored if the preset no longer exists -- an addon that registered one may
+	-- have been removed, and that should give the player the shipped look rather than an
+	-- error every time the shop opens.
+	if isstring(tbl.preset) then
+		if T.Presets[tbl.preset] then
+			activePreset = tbl.preset
+			ApplyMetrics(T.Presets[activePreset])
+			T.Apply(ResolvedDefault())
+		else
+			-- Not registered yet, or gone. Held for RegisterPreset to pick up; if nothing
+			-- ever claims it the player just gets the shipped look, which is the right
+			-- outcome for a preset whose addon was removed.
+			pendingPreset = tbl.preset
+		end
 	end
 
 	-- Only `custom` is applied. The `defaults` section in the file is a record of what the
