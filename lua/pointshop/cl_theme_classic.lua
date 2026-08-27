@@ -39,6 +39,9 @@ local SLATE_HI  = {  72,  99, 126, 255 }
 -- the grip, which has to be visible against the pale box without matching the header and
 -- looking like a piece of it that came loose.
 local SLATE_PALE = { 198, 210, 222, 255 }
+-- Softer again, for large areas. A panel filling half the window at the track's saturation
+-- stops being a tint and becomes the theme's main colour.
+local SLATE_TINT = { 218, 227, 236, 255 }
 local SLATE_MID  = { 112, 136, 160, 255 }
 
 -- A light theme has no glow and no sheen to separate its surfaces, so the separation has to
@@ -123,7 +126,9 @@ T.RegisterPreset("classic", {
 		PointsText = { 255, 255, 255, 255 },   -- PS1's balance is white, not yellow (:468)
 
 		FrameBG        = BODY,
-		PanelBG        = RAISED,
+		-- Panels on the body take the header's hue rather than a neutral grey, so the
+		-- options column reads as a box that belongs to this window.
+		PanelBG        = SLATE_TINT,
 		MenuCategoryBG = SUNK,
 
 		-- No alternating stripe in PS1. Rows are the body until hovered.

@@ -576,6 +576,15 @@ function PANEL:Init()
 	self.List:SetSize(listW, h - listY - 55)
 	self.ListW = listW
 
+	-- The options column is a panel on the window body, so it is painted as one.
+	--
+	-- It had no Paint at all, which meant it was transparent and the window body showed
+	-- straight through -- every label and swatch floating on the same surface as the
+	-- preview beside it, with nothing saying where one ended and the other began. On the
+	-- dark theme the swatches carried enough contrast to hide that; on a light one there
+	-- is nothing to hide it.
+	self.List.Paint = function(_, pw, ph) PS.Theme.PaintPanelBody(pw, ph) end
+
 	-- Right: the active provider's previews as subtabs.
 	local px = listW + 20
 
