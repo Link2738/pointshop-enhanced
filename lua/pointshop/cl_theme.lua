@@ -1049,6 +1049,13 @@ end
 -- Metrics are written IN PLACE for the same reason the Colors are: panels take
 -- `local M = PS.Theme.Metrics` and hold that reference, so replacing the table would leave
 -- them reading the old one.
+-- Metrics the player has changed by hand, as a difference from what the preset gives.
+--
+-- Same shape and same reasoning as `custom` for colours: storing only the difference means
+-- a player who set a window width still tracks every other change a look or an owner makes,
+-- instead of freezing a whole snapshot at the moment they touched one slider.
+local customMetrics = {}
+
 local function ApplyMetrics(preset)
 	for k, v in pairs(METRIC_DEFAULTS) do METRIC_BASE[k] = v end
 
@@ -1056,6 +1063,11 @@ local function ApplyMetrics(preset)
 		for k, v in pairs(preset.metrics) do
 			if METRIC_DEFAULTS[k] ~= nil and isnumber(v) then METRIC_BASE[k] = v end
 		end
+	end
+
+	-- The player's own edits sit above the preset, the way custom colours do.
+	for k, v in pairs(customMetrics) do
+		if METRIC_DEFAULTS[k] ~= nil and isnumber(v) then METRIC_BASE[k] = v end
 	end
 
 	T.Rescale()
@@ -1319,6 +1331,12 @@ function T.SetPreset(id)
 		for k in pairs(preset.colours) do custom[k] = nil end
 	end
 
+	-- Same rule for metrics: a width set under one look must not follow you into a look
+	-- that specifies its own.
+	if preset and istable(preset.metrics) then
+		for k in pairs(preset.metrics) do customMetrics[k] = nil end
+	end
+
 	ApplyMetrics(preset)
 	ApplyServerMetrics()
 	ApplyStyles(preset)
@@ -1397,7 +1415,18 @@ end
 function T.SetBaseMetric(k, v)
 	if METRIC_DEFAULTS[k] == nil or not isnumber(v) then return end
 	METRIC_BASE[k] = v
+
+	-- Recorded as the player's own, so T.Save persists it and ApplyMetrics puts it back
+	-- above the preset next time. Without this a change survived until the next preset
+	-- switch or resolution change and then silently vanished.
+	customMetrics[k] = v
+
 	T.Rescale()
+end
+
+-- Forgets the player's metric edits, so the preset's own values apply again.
+function T.ClearCustomMetrics()
+	customMetrics = {}
 end
 
 function T.Save()
@@ -1406,6 +1435,7 @@ function T.Save()
 	file.Write(DATA_PATH, util.TableToJSON({
 		defaults = ResolvedDefault(),
 		custom   = CustomOnly(),
+		metrics  = customMetrics,
 		panels   = T.Panels,
 		preset   = activePreset,
 	}, true))
@@ -1454,6 +1484,15 @@ function T.Load()
 	-- Silently ignored if the preset no longer exists -- an addon that registered one may
 	-- have been removed, and that should give the player the shipped look rather than an
 	-- error every time the shop opens.
+	-- Before the preset branch: ApplyMetrics layers these over the preset, so they have to
+	-- be in place by the time it runs.
+	if istable(tbl.metrics) then
+		customMetrics = {}
+		for k, v in pairs(tbl.metrics) do
+			if METRIC_DEFAULTS[k] ~= nil and isnumber(v) then customMetrics[k] = v end
+		end
+	end
+
 	if isstring(tbl.preset) then
 		if T.Presets[tbl.preset] then
 			activePreset = tbl.preset
@@ -1488,6 +1527,10 @@ function T.Load()
 	end
 
 	T.Apply(custom)
+
+	-- ApplyMetrics only ran above if a preset was saved. A player with metric edits and
+	-- no preset needs them too.
+	if not activePreset and next(customMetrics) then ApplyMetrics(nil) end
 
 	if istable(tbl.panels) then T.Panels = tbl.panels end
 end

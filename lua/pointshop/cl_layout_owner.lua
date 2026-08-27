@@ -272,6 +272,21 @@ local function Open()
 	save:Dock(LEFT)
 	save:SetWide(190)
 
+	-- Keeps the size for THIS client, in pointshop/theme.json alongside the palette.
+	--
+	-- Separate from "Set as server default", which is the same values sent to everyone. An
+	-- owner adjusting their own window should not have to publish it to do so, and until this
+	-- existed that was the only way to make a change outlast closing the panel.
+	local save = UI.Button(buttons, "Save", "Positive", function()
+		T.Save()
+
+		-- Saved, so closing must not put the old size back.
+		before = T.FrameMetrics()
+	end)
+	save:Dock(RIGHT)
+	save:DockMargin(M.Gap, 0, 0, 0)
+	save:SetWide(90)
+
 	local revert = UI.Button(buttons, "Revert", "Neutral", function()
 		if before then Restore(before) end
 	end)
