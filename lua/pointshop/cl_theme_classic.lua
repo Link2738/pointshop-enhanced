@@ -32,6 +32,15 @@ local T = PS.Theme
 local SLATE     = {  52,  73,  94, 255 }
 local SLATE_HI  = {  72,  99, 126, 255 }
 
+-- The same blue carried down into the light half of the theme.
+--
+-- SLATE_PALE is the header's hue at high lightness, so the scrollbar's backing box reads
+-- as belonging to the header rather than as another grey. SLATE_MID sits between them for
+-- the grip, which has to be visible against the pale box without matching the header and
+-- looking like a piece of it that came loose.
+local SLATE_PALE = { 198, 210, 222, 255 }
+local SLATE_MID  = { 112, 136, 160, 255 }
+
 -- A light theme has no glow and no sheen to separate its surfaces, so the separation has to
 -- come from tone and from lines. A first pass put five surfaces between 232 and 250 -- a 7%
 -- spread -- and the panel read as one white sheet with text floating on it.
@@ -183,10 +192,14 @@ T.RegisterPreset("classic", {
 		CardOwned   = SLATE,
 		CardMenuBG  = RAISED,
 
-		-- Scroll furniture off blue and onto the greys.
-		ScrollTrack     = SUNK,
-		ScrollGrip      = { 170, 170, 170, 255 },
-		ScrollGripHover = { 140, 140, 140, 255 },
+		-- Scroll furniture stays in the header's hue rather than going grey.
+		--
+		-- The track is a real box behind the grip -- RadiusSm is 0 here, so it is a square
+		-- panel the full height of the bar -- and a grey one read as a gap in the window.
+		-- In pale slate it reads as part of the same object as the header.
+		ScrollTrack     = SLATE_PALE,
+		ScrollGrip      = SLATE_MID,
+		ScrollGripHover = SLATE,
 
 		StatusBar = SLATE,
 
