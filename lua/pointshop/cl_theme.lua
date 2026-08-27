@@ -428,6 +428,16 @@ T.HeaderText = Color(255, 255, 255, 255)
 -- the body around it is dark or light.
 T.OnFill = Color(255, 255, 255, 255)
 
+-- Category tab text, one per state.
+--
+-- All three ship as plain white, which is what UI.Tab drew before it could distinguish the
+-- states at all — so their existing changes nothing. They matter for a look whose tab strip
+-- is the same surface as the body: with no fill to mark the active tab, the weight of the
+-- text is carrying the selection alongside the underline.
+T.TabIdle   = Color(255, 255, 255, 255)
+T.TabHover  = Color(255, 255, 255, 255)
+T.TabActive = Color(255, 255, 255, 255)
+
 T.TextDim      = Color(200, 220, 255)   -- status strip, section labels
 T.PointsText   = Color(255, 255, 0, 255) -- the balance in the shop header
 T.Shadow       = Color(0, 0, 0, 180)
@@ -910,6 +920,56 @@ local function ApplyMetrics(preset)
 	end
 end
 
+-- The widget styles as shipped, so a preset's changes to them can be undone.
+--
+-- Shallow per style: the values include references to Color tables (activeFill IS
+-- T.CategoryFill, not a copy of it), and those references must be preserved exactly. Copying
+-- the colours instead would sever every style from the palette and freeze it at load.
+local STYLE_DEFAULTS = {}
+for name, style in pairs(T.Selectable) do
+	local snap = {}
+	for k, v in pairs(style) do snap[k] = v end
+	STYLE_DEFAULTS[name] = snap
+end
+
+-- Applies a preset's style block, having first restored every style to shipped.
+--
+-- Restoring writes the snapshot back and then clears any key the snapshot does not have, so
+-- a mode a previous preset switched on does not survive into one that never mentions it.
+--
+-- Colour-valued keys are given as TOKEN NAMES ("TextDim") rather than literals, so they
+-- resolve to the live Color table and keep tracking the palette -- including the player's own
+-- edits on top of the preset. A literal would be a dead copy.
+local function ApplyStyles(preset)
+	for name, snap in pairs(STYLE_DEFAULTS) do
+		local style = T.Selectable[name]
+
+		for k in pairs(style) do
+			if snap[k] == nil then style[k] = nil end
+		end
+		for k, v in pairs(snap) do style[k] = v end
+	end
+
+	if not (preset and istable(preset.styles)) then return end
+
+	for name, keys in pairs(preset.styles) do
+		local style = T.Selectable[name]
+		if istable(style) and istable(keys) then
+			for k, v in pairs(keys) do
+				-- A string naming a palette entry resolves to that live Color; any other
+				-- string is a plain value. That is what separates text = "TabIdle" from
+				-- activeMode = "underline" and radius = "RadiusSm" without either needing
+				-- to be tagged.
+				if isstring(v) and T[v] ~= nil then
+					style[k] = T[v]
+				else
+					style[k] = v
+				end
+			end
+		end
+	end
+end
+
 -- Writes values into the existing Color tables in place.
 --
 -- In place is load-bearing, not a micro-optimisation: every widget style holds a reference
@@ -1015,6 +1075,7 @@ function T.SetPreset(id)
 	local preset = id and T.Presets[id]
 
 	ApplyMetrics(preset)
+	ApplyStyles(preset)
 
 	-- Offsets first, and unconditionally: leaving a preset, or moving between two of them,
 	-- must not inherit the relationships the previous one measured.

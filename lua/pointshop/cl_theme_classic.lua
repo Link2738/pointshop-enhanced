@@ -48,9 +48,40 @@ T.RegisterPreset("classic", {
 		HeaderH  = 48,   -- :459
 		Radius   = 0,    -- nothing in that file is rounded
 		RadiusSm = 0,
+		RadiusMd = 0,
 		Margin   = 16,   -- title baseline, :462
 		IconBtn  = 32,   -- close button, :76-77
+		IconInset = 8,   -- close sits at w-40 with a 32 button, :77
 		ButtonH  = 28,   -- tab strip, :88
+
+		-- No accent stripe: the header is already the accent colour, so a 3px bar of it on
+		-- top of it is three invisible pixels.
+		HeaderRule = 0,
+
+		-- PS1's tabs are one row of text-width buttons, not a wrapped grid of wide ones.
+		-- Narrower target and a higher column ceiling is how that shape falls out of the same
+		-- flow layout.
+		CategoryBtnH = 28,
+		CategoryW    = 150,
+		CategoryMaxCols = 8,
+		CategoryStripH  = 34,
+
+		-- Cards are smaller and tighter than the modern grid's.
+		CardW   = 150,
+		CardMin = 110,
+		CardMax = 160,
+	},
+
+	-- The active tab: no fill, a slate bar underneath, and three text weights carrying the
+	-- rest. This is the piece that needed PaintSelectable to grow a mode and UI.Tab to stop
+	-- hardcoding one text colour -- it is not expressible as a palette entry.
+	styles = {
+		Category = {
+			activeMode = "underline",
+			text       = "TabIdle",
+			textHover  = "TabHover",
+			textActive = "TabActive",
+		},
 	},
 
 	colours = {
@@ -71,6 +102,12 @@ T.RegisterPreset("classic", {
 		Text     = INK,
 		TextDim  = INK_SOFT,
 		MenuRowText = INK_MID,
+
+		-- The three tab weights, :136-138. With no fill on the active tab these carry the
+		-- selection as much as the underline does.
+		TabIdle   = INK_SOFT,
+		TabHover  = INK_MID,
+		TabActive = INK,
 
 		-- Shadows are for dark themes. On light they read as smudge, so they go to nothing --
 		-- alpha 0 rather than removing the draws, since a preset can only move colours.
@@ -157,16 +194,9 @@ T.RegisterPreset("classic", {
 })
 
 --[[
-	Still not reachable from a preset, and left undone rather than faked:
+	What is still not PS1, and why:
 
-	PS1's active tab has NO fill -- it is the same grey text on the same light body as the
-	others, marked only by a 3px slate bar along its bottom edge (:131-132). PaintSelectable
-	has one shape, fill plus border, so "active" here is a filled slate tab instead. That is
-	the last visible difference between this preset and the real thing, and it needs an
-	underline style in PaintSelectable rather than any colour.
-
-	Category icons are the other one: PS1 puts a 16px icon left of every tab label (:141-146).
-	That is a per-category asset and a change to UI.Tab, not a palette entry.
-
-	Both are step 4.
+	Category icons. PS1 puts a 16px icon left of every tab label (:141-146). That is a
+	per-category asset rather than a setting -- every category would need one declared -- so it
+	is the one remaining difference that is content, not configuration.
 ]]--
