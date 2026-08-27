@@ -139,6 +139,35 @@ Taken from the audit, so the replacement is not a reimplementation of the same s
 Reading `ulib_bans` is a `SELECT` against a table whose schema is six lines above. Import it
 once and keep ULib's table untouched so a rollback is just re-enabling the addon.
 
+## Threat model
+
+Worth stating, because it justifies choices that look arbitrary later.
+
+Owning the code means our net messages are not named what public exploit packs expect. Nearly
+all hostile traffic a server this size sees is those packs — enumerate known message names,
+fire malformed args, move on. Nothing of ours is in them, so they find nothing.
+
+Above that tier, the economics do the work. `AddCSLuaFile` ships every client file to every
+client and Lua dumpers are trivial, so an attacker can read our message names and write order.
+What they cannot read is the server handler, so exploiting it means real effort — and people
+capable of that effort spend it where it pays. A Hide and Seek server does not pay. The
+motive that is not financial is clout, and clout goes after servers with populations worth
+posting about.
+
+That is the whole realistic threat, and custom code covers most of it.
+
+It does not cover the person who dumped our client Lua and got curious, so every server
+receiver still does two things, both of which cost one line while the function is being
+written anyway:
+
+- **Check the sender.** The `ply` argument is engine-supplied and trustworthy. Nothing read
+  out of the message is.
+- **Recompute, never trust.** Prices, point amounts and item IDs are looked up server-side.
+  A client says *what* it wants, never *how much it costs*. This is the classic PointShop
+  vulnerability shape and the surface we are expanding.
+
+Naming stops the packs, those two lines stop the curious. Neither substitutes for the other.
+
 ## Not decided
 
 - Whether the addon gets a new name. "pointshop" stops describing it once the shop is one
