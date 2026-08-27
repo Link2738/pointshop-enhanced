@@ -43,6 +43,8 @@ local LABELS = {
 
 	FrameBG     = "Window body",
 	PanelBG     = "Panel on the body",
+	ListBG      = "Options box",
+	ListBorder  = "Options box edge",
 	HeaderBG    = "Window header bar",
 
 	RowBG    = "List row",
@@ -117,7 +119,7 @@ local function AssignSection(name, ...)
 	for _, k in ipairs({ ... }) do SECTION_OF[k] = name end
 end
 
-AssignSection("Surfaces", "StatusBar", "CardMenuBG", "MenuCategoryBG", "FrameBG", "PanelBG", "HeaderBG")
+AssignSection("Surfaces", "StatusBar", "CardMenuBG", "MenuCategoryBG", "FrameBG", "PanelBG", "ListBG", "ListBorder", "HeaderBG")
 AssignSection("Lists", "RowBG", "RowAlt", "RowHover",
 	"ScrollTrack", "ScrollGrip", "ScrollGripHover")
 AssignSection("Accent", "Accent",
@@ -583,7 +585,7 @@ function PANEL:Init()
 	-- preview beside it, with nothing saying where one ended and the other began. On the
 	-- dark theme the swatches carried enough contrast to hide that; on a light one there
 	-- is nothing to hide it.
-	self.List.Paint = function(_, pw, ph) PS.Theme.PaintPanelBody(pw, ph) end
+	self.List.Paint = function(_, pw, ph) PS.Theme.PaintListBox(pw, ph) end
 
 	-- Right: the active provider's previews as subtabs.
 	local px = listW + 20

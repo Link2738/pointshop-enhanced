@@ -126,9 +126,12 @@ T.RegisterPreset("classic", {
 		PointsText = { 255, 255, 255, 255 },   -- PS1's balance is white, not yellow (:468)
 
 		FrameBG        = BODY,
-		-- Panels on the body take the header's hue rather than a neutral grey, so the
-		-- options column reads as a box that belongs to this window.
-		PanelBG        = SLATE_TINT,
+		PanelBG        = RAISED,
+
+		-- The options column, as an actual box: slate tint with an edge, sitting on the
+		-- grey window body so the two cannot be mistaken for each other.
+		ListBG         = SLATE_TINT,
+		ListBorder     = OUTLINE,
 		MenuCategoryBG = SUNK,
 
 		-- No alternating stripe in PS1. Rows are the body until hovered.

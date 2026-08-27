@@ -65,6 +65,18 @@ T.HeaderBG = Color(30, 30, 30, 255)     -- every header bar
 -- window collapses into one sheet, which is exactly what happened to Classic.
 T.PanelBG  = Color(40, 40, 45, 255)
 
+-- The appearance editor's options column: a box, with its own colour and its own edge.
+--
+-- Its own entry rather than PanelBG, because PanelBG is ALSO what the appearance window
+-- itself paints with -- so a box painted in it is invisible against the thing it sits on,
+-- by construction. A box needs a colour nothing around it shares.
+--
+-- Ships as the window body with a fully transparent edge, which is what the column looked
+-- like before it was a box at all: unchanged on the shipped theme, a real box for any look
+-- that gives it a value.
+T.ListBG     = Color(40, 40, 45, 255)
+T.ListBorder = Color(0, 0, 0, 0)
+
 -- The window border and the header stripe are not their own colours: they are the accent,
 -- and they read as it. FrameBorder and HeaderRule were separate entries holding (60,120,180)
 -- and (60,140,200), which meant setting the accent left both behind.
@@ -808,6 +820,16 @@ function T.PaintRow(panel, w, h, index, selected)
 end
 
 -- Panel body: rounded background with a single-pixel accent along the top edge.
+-- The options column in the appearance editor. Box, then edge.
+function T.PaintListBox(w, h)
+	draw.RoundedBox(T.Metrics.RadiusSm, 0, 0, w, h, T.ListBG)
+
+	if T.ListBorder.a > 0 then
+		surface.SetDrawColor(T.ListBorder)
+		surface.DrawOutlinedRect(0, 0, w, h)
+	end
+end
+
 function T.PaintPanelBody(w, h)
 	draw.RoundedBox(T.Metrics.RadiusSm, 0, 0, w, h, T.PanelBG)
 	surface.SetDrawColor(T.Alpha(sBorder, T.Accent, 80))
