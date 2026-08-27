@@ -118,7 +118,12 @@ function PANEL:Init()
 		local mine = slot
 		slot = slot + 1
 
+		-- Wraps IconButton's own PerformLayout rather than replacing it: that one re-reads
+		-- the button SIZE from the metrics, and dropping it left the buttons at whatever size
+		-- the look active when the shop was built happened to use.
+		local sizeSelf = btn.PerformLayout
 		btn.PerformLayout = function(s)
+			if sizeSelf then sizeSelf(s) end
 			s:SetPos(self.Header:GetWide() - M.Margin - (mine + 1) * M.IconBtn - mine * M.IconGap,
 				PS.UI.IconBtnY())
 		end
@@ -191,6 +196,7 @@ function PANEL:Init()
 	end
 
 	-- Points text clears whatever buttons exist, plus a gap.
+	self.HeaderButtonCount = slot
 	self.HeaderTextInset = M.Margin + slot * (M.IconBtn + M.IconGap) + M.Gap
 
 	-- Category Grid Container (Scrollable)
@@ -248,10 +254,21 @@ function PANEL:ApplyLook()
 	self.ItemGrid:SetSpaceY(M.GridSpace)
 	self.ItemGrid:SetBorder(M.GridSpace)
 
+	-- The points text clears whatever header buttons exist, and both the button size and
+	-- the gap between them just moved.
+	self.HeaderTextInset = M.Margin + (self.HeaderButtonCount or 0) * (M.IconBtn + M.IconGap) + M.Gap
+
+	-- InvalidateChildren(true), not InvalidateLayout.
+	--
+	-- The header buttons size and position themselves in their own PerformLayout, and
+	-- invalidating only this frame never reaches them -- they sat at the old look's
+	-- coordinates until a mouse hover happened to force a layout pass on them, which is
+	-- exactly what it looked like: buttons that moved when you went looking for them.
+	self:InvalidateChildren(true)
+
 	-- Column counts come from the metrics, so both grids have to be rebuilt rather than
 	-- merely resized. PopulateCategories re-selects the current category, which repopulates
 	-- the items.
-	self:InvalidateLayout(true)
 	self:PopulateCategories()
 end
 

@@ -167,6 +167,17 @@ function UI.IconButton(parent, icon, style, onClick)
 	local btn = vgui.Create("DButton", parent)
 	btn:SetText("")
 	btn:SetSize(M().IconBtn, M().IconBtn)
+
+	-- Re-read on every layout pass, not just at creation.
+	--
+	-- IconBtn moves when the look changes and again when the screen resolution does, and a
+	-- size set once at build time cannot follow either. A caller that needs to position the
+	-- button as well must WRAP this rather than replace it -- see DPointShopMenu's header
+	-- buttons, which call it before setting their own position.
+	btn.PerformLayout = function(s)
+		s:SetSize(M().IconBtn, M().IconBtn)
+	end
+
 	btn.DoClick = onClick or function() end
 	btn.Paint = function(s, w, h)
 		PS.Theme.PaintAction(s, w, h, PS.Theme.Action[style] or PS.Theme.Action.Neutral)
@@ -300,6 +311,10 @@ function UI.Frame(opts)
 	local header = vgui.Create("DPanel", frame)
 	header:Dock(TOP)
 	header:SetTall(M().HeaderH)
+
+	-- Re-read on layout, for the same reason the icon buttons do: HeaderH moves with the
+	-- look and with the screen resolution, and a height set once cannot follow either.
+	header.PerformLayout = function(s) s:SetTall(M().HeaderH) end
 	header.Paint = function(_, w, h) PS.Theme.PaintHeader(w, h, opts.title) end
 	frame.Header = header
 
@@ -312,7 +327,12 @@ function UI.Frame(opts)
 		-- Positioned in PerformLayout, not once at build time. A sizable frame moved the
 		-- header out from under a one-shot SetPos and stranded the button mid-bar, or off
 		-- the panel entirely.
+		--
+		-- Wraps IconButton's own PerformLayout rather than replacing it, so the button still
+		-- re-reads its SIZE from the metrics when the look or the resolution changes.
+		local sizeSelf = close.PerformLayout
 		close.PerformLayout = function(s)
+			if sizeSelf then sizeSelf(s) end
 			s:SetPos(header:GetWide() - M().IconBtn - M().IconInset, UI.IconBtnY())
 		end
 
