@@ -288,7 +288,7 @@ function UI.Frame(opts)
 		-- header out from under a one-shot SetPos and stranded the button mid-bar, or off
 		-- the panel entirely.
 		close.PerformLayout = function(s)
-			s:SetPos(header:GetWide() - M().IconBtn - 15, UI.IconBtnY())
+			s:SetPos(header:GetWide() - M().IconBtn - M().IconInset, UI.IconBtnY())
 		end
 
 		frame.CloseButton = close

@@ -88,6 +88,8 @@ T.ScrollGripHover = Color(80, 160, 220, 255)
 -- layout engine, not a theme.
 -- ============================================================================
 
+-- Every entry's value is the literal it replaced, so the shipped look is unchanged by any of
+-- them existing. A look supplies a different combination; nothing here is a new default.
 T.Metrics = {
 	HeaderH   = 50,   -- header bar height
 	RowH      = 44,   -- list row
@@ -96,8 +98,51 @@ T.Metrics = {
 	Margin    = 10,   -- panel edge to content
 	Gap       = 8,    -- between sibling controls
 	Radius    = 8,    -- frames and dialogs
+	RadiusMd  = 6,    -- category buttons, cards, context menus
 	RadiusSm  = 4,    -- rows, buttons, small boxes
 	ScrollW   = 12,
+
+	-- The accent stripe along the top of a header bar. 0 removes it, which is what a look
+	-- with a coloured header wants -- a stripe in the accent on a bar already in the accent
+	-- is an invisible 3px.
+	HeaderRule = 3,
+
+	-- The category strip's viewport. Its content is sized to the number of button rows, so
+	-- this is the height at which it starts scrolling rather than the height it always is.
+	CategoryStripH = 90,
+
+	-- Gap between item cards in the grid. Was Gap - 3, which meant it could not be set
+	-- without moving every other gap in the shop with it.
+	GridSpace = 5,
+
+	-- Gap between the square buttons in a header bar, and their inset from its right edge.
+	IconGap    = 5,
+	IconInset  = 15,
+
+	-- The bar under an active tab, when the tab style draws one. See T.Selectable.
+	UnderlineH = 3,
+
+	-- Category strip. Buttons flow to fit rather than sitting in a fixed grid: the column
+	-- count comes from the width available divided by CategoryW, then the buttons divide that
+	-- width evenly so they always reach both edges.
+	--
+	-- CategoryW is a TARGET, not a size. Lowering it packs more, narrower columns in; raising
+	-- it gives fewer, wider ones. The clamp is what keeps an ultrawide from producing a single
+	-- row of twelve and a 4:3 from producing one column.
+	CategoryBtnH = 35,
+	CategoryGap  = 5,
+	CategoryW    = 215,
+	CategoryMinCols = 2,
+	CategoryMaxCols = 6,
+
+	-- Item grid, same idea. CardW is the target width per column; CardMin and CardMax bound
+	-- what a card may actually become once the row is divided.
+	CardW    = 208,
+	CardPad  = 8,
+	CardMin  = 150,
+	CardMax  = 230,
+	CardMinCols = 2,
+	CardMaxCols = 8,
 }
 
 -- ============================================================================
@@ -432,7 +477,7 @@ end
 T.Selectable = {
 	-- Skin and bodygroup pickers in the customization panel.
 	Value = {
-		radius = 4, lerp = 8,
+		radius = "RadiusSm", lerp = 8,
 		activeFill = T.SelectFill, activeGloss = T.SelectGloss,
 		activeGlow = T.SelectGlow, glowBase = 50, glowRange = 50,
 		activeBorder = T.SelectBorder,
@@ -442,7 +487,7 @@ T.Selectable = {
 	},
 	-- Category strip in the shop menu.
 	Category = {
-		radius = 6, lerp = 8,
+		radius = "RadiusMd", lerp = 8,
 		activeFill = T.CategoryFill, activeGloss = T.CategoryGloss,
 		activeGlow = T.CategoryGlow, glowBase = 100, glowRange = 50,
 		activeBorder = T.CategoryBorder,
@@ -456,30 +501,30 @@ T.Selectable = {
 -- is how the gold and danger buttons stay flat while the rest have a sheen.
 T.Action = {
 	Positive = {
-		radius = 6, lerp = 10, font = "DermaDefaultBold",
+		radius = "RadiusMd", lerp = 10, font = "DermaDefaultBold",
 		fill = T.PositiveFill, fillHover = T.PositiveFillHover,
 		gloss = T.PositiveGloss, glossHover = T.PositiveGlossHover,
 		glow = T.PositiveGlow, glowLayers = { 80, 40 },
 		border = T.PositiveBorder, text = T.Text, shadow = T.ShadowStrong,
 	},
 	Warning = {
-		radius = 4, lerp = 10, font = "DermaDefault",
+		radius = "RadiusSm", lerp = 10, font = "DermaDefault",
 		fill = T.WarningFill, fillHover = T.WarningFillHover,
 		gloss = T.WarningGloss, glossHover = T.WarningGlossHover,
 		border = T.WarningBorder, text = T.Text, shadow = T.Shadow,
 	},
 	Gold = {
-		radius = 4, lerp = 10, font = "DermaDefault",
+		radius = "RadiusSm", lerp = 10, font = "DermaDefault",
 		fill = T.GoldFill, fillHover = T.GoldFillHover,
 		border = T.GoldBorder, text = T.GoldText, shadow = T.Shadow,
 	},
 	Danger = {
-		radius = 4, lerp = 10, font = "DermaDefault",
+		radius = "RadiusSm", lerp = 10, font = "DermaDefault",
 		fill = T.DangerFill, fillHover = T.DangerFillHover,
 		border = T.DangerBorder, text = T.DangerText, shadow = T.Shadow,
 	},
 	Neutral = {
-		radius = 4, lerp = 10, font = "DermaDefault",
+		radius = "RadiusSm", lerp = 10, font = "DermaDefault",
 		fill = T.NeutralFill, fillHover = T.NeutralFillHover,
 		gloss = T.NeutralGloss, glossHover = T.NeutralGlossHover,
 		border = T.NeutralBorder, text = T.NeutralText, shadow = T.Shadow,
@@ -489,12 +534,12 @@ T.Action = {
 	-- Opens the customization panel. Neither confirming, destructive, nor owner-only, so it
 	-- is its own role rather than borrowed from one of those.
 	Modify = {
-		radius = 4, lerp = 10, font = "DermaDefault",
+		radius = "RadiusSm", lerp = 10, font = "DermaDefault",
 		fill = T.ModifyFill, fillHover = T.ModifyFillHover,
 		border = T.ModifyBorder, text = T.Text, shadow = T.Shadow,
 	},
 	Accent = {
-		radius = 6, lerp = 10, font = "DermaDefault",
+		radius = "RadiusMd", lerp = 10, font = "DermaDefault",
 		fill = T.AccentFill, fillHover = T.AccentFillHover,
 		gloss = T.AccentGloss, glossHover = T.AccentGlossHover,
 		glow = T.AccentGlow, glowLayers = { 100 },
@@ -527,10 +572,22 @@ local function HoverAlpha(panel, speed)
 	return panel._hoverAlpha
 end
 
+-- Resolves a style's corner radius.
+--
+-- Styles name a metric ("RadiusSm") rather than holding a number, because a style table is
+-- built once at load: a baked copy could never follow a metric change, so squaring the
+-- corners for one look would leave every button still rounded. A raw number is still accepted
+-- for anything that genuinely wants a fixed corner.
+local function StyleRadius(style)
+	local r = style.radius
+	if isstring(r) then return T.Metrics[r] or 0 end
+	return r or 0
+end
+
 -- A button that is either selected or not: value buttons, category buttons.
 function T.PaintSelectable(panel, w, h, isActive, style)
 	local hover = HoverAlpha(panel, style.lerp)
-	local r = style.radius
+	local r = StyleRadius(style)
 
 	if isActive then
 		draw.RoundedBox(r, 0, 0, w, h, style.activeFill)
@@ -569,7 +626,7 @@ function T.PaintAction(panel, w, h, style, label)
 	local enabled = panel:IsEnabled()
 	local hover = enabled and HoverAlpha(panel, style.lerp) or 0
 	local dim = enabled and 1 or 0.3
-	local r = style.radius
+	local r = StyleRadius(style)
 
 	draw.RoundedBox(r, 0, 0, w, h, Fade(T.Shade(sFill, style.fill, style.fillHover, hover), dim))
 
@@ -624,7 +681,7 @@ function T.PaintHeader(w, h, title)
 	surface.DrawRect(0, 0, w, h)
 
 	surface.SetDrawColor(T.Accent)
-	surface.DrawRect(0, 0, w, 3)
+	surface.DrawRect(0, 0, w, T.Metrics.HeaderRule)
 
 	if title then
 		draw.SimpleText(title, "PS_LargeTitle", 15, h / 2, T.HeaderText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
@@ -659,7 +716,7 @@ end
 
 -- Panel body: rounded background with a single-pixel accent along the top edge.
 function T.PaintPanelBody(w, h)
-	draw.RoundedBox(4, 0, 0, w, h, T.FrameBG)
+	draw.RoundedBox(T.Metrics.RadiusSm, 0, 0, w, h, T.FrameBG)
 	surface.SetDrawColor(T.Alpha(sBorder, T.Accent, 80))
 	surface.DrawRect(0, 0, w, 1)
 end
@@ -690,7 +747,7 @@ end
 function T.PaintItemCard(panel, w, h, state, label)
 	local labelH = 38
 
-	draw.RoundedBox(6, 0, 0, w, h, T.CardBG)
+	draw.RoundedBox(T.Metrics.RadiusMd, 0, 0, w, h, T.CardBG)
 
 	local border = state and T["Card" .. state]
 	local alpha

@@ -111,7 +111,7 @@ function PANEL:Init()
 		slot = slot + 1
 
 		btn.PerformLayout = function(s)
-			s:SetPos(self.Header:GetWide() - M.Margin - (mine + 1) * M.IconBtn - mine * 5,
+			s:SetPos(self.Header:GetWide() - M.Margin - (mine + 1) * M.IconBtn - mine * M.IconGap,
 				PS.UI.IconBtnY())
 		end
 		return btn
@@ -183,7 +183,7 @@ function PANEL:Init()
 	end
 
 	-- Points text clears whatever buttons exist, plus a gap.
-	self.HeaderTextInset = M.Margin + slot * (M.IconBtn + 5) + M.Gap
+	self.HeaderTextInset = M.Margin + slot * (M.IconBtn + M.IconGap) + M.Gap
 
 	-- Category Grid Container (Scrollable)
 	--
@@ -192,7 +192,7 @@ function PANEL:Init()
 	self.CategoryScroll = PS.UI.Scroll(self)
 	self.CategoryScroll:Dock(TOP)
 	self.CategoryScroll:DockMargin(M.Margin, M.Gap, M.Margin, M.Gap)
-	self.CategoryScroll:SetTall(90) -- Reduced height to show scrollbar with fewer categories
+	self.CategoryScroll:SetTall(M.CategoryStripH)
 
 	self.CategoryContainer = vgui.Create("DPanel", self.CategoryScroll)
 	self.CategoryContainer:Dock(FILL)
@@ -209,9 +209,9 @@ function PANEL:Init()
 	-- Item Grid Layout
 	self.ItemGrid = vgui.Create("DIconLayout", self.ItemScroll)
 	self.ItemGrid:Dock(TOP)
-	self.ItemGrid:SetSpaceX(M.Gap - 3)
-	self.ItemGrid:SetSpaceY(M.Gap - 3)
-	self.ItemGrid:SetBorder(M.Gap - 3)
+	self.ItemGrid:SetSpaceX(M.GridSpace)
+	self.ItemGrid:SetSpaceY(M.GridSpace)
+	self.ItemGrid:SetBorder(M.GridSpace)
 	
 	self:PopulateCategories()
 end
@@ -243,13 +243,13 @@ function PANEL:PopulateCategories()
 	-- Four columns of 210 was fine at 900 wide and wrong at every other width -- too cramped
 	-- narrow, too much dead space wide. Column count now comes from the space available, and
 	-- the buttons divide it evenly so they always reach both edges.
-	local buttonHeight = 35
-	local spacing = 5
+	local buttonHeight = M.CategoryBtnH
+	local spacing = M.CategoryGap
 	-- Measured off the FRAME, not off the docked scroll panel. Populate runs inside Init,
 	-- before any layout has happened, so the child's GetWide() is still 0 at this point --
 	-- it would silently produce the minimum column count on every screen.
 	local avail = math.max(self:GetWide() - M.Margin * 2 - spacing, 100)
-	local columns = math.Clamp(math.floor(avail / 215), 2, 6)
+	local columns = math.Clamp(math.floor(avail / M.CategoryW), M.CategoryMinCols, M.CategoryMaxCols)
 	local buttonWidth = math.floor(avail / columns) - spacing
 	
 	local categories = {}
@@ -345,8 +345,8 @@ function PANEL:PopulateItems()
 	-- model is too small to identify, above ~230 a row holds too few to browse.
 	-- Frame width again, for the same reason, less the margins and the scrollbar.
 	local gridW = math.max(self:GetWide() - M.Margin * 2 - M.ScrollW, 200)
-	local perRow = math.Clamp(math.floor(gridW / 208), 2, 8)
-	local cardSize = math.Clamp(math.floor(gridW / perRow) - 8, 150, 230)
+	local perRow = math.Clamp(math.floor(gridW / M.CardW), M.CardMinCols, M.CardMaxCols)
+	local cardSize = math.Clamp(math.floor(gridW / perRow) - M.CardPad, M.CardMin, M.CardMax)
 
 	for _, item in ipairs(items) do
 		local itemPanel = vgui.Create("DPointShopItem")
