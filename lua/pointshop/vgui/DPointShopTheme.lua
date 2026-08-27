@@ -58,6 +58,8 @@ local LABELS = {
 	PriceAfford = "Price, affordable", PriceCant = "Price, too costly",
 	MenuRowText = "Right-click menu text",
 	PointsText  = "Points balance",
+	HeaderText  = "Header bar text",
+	OnFill      = "Text on coloured fills",
 
 	BadgeGloss = "Item badge sheen",
 	IconAdmin  = "Admin-only marker",
@@ -134,7 +136,7 @@ AssignSection("Buttons",
 	"NeutralBorder", "NeutralText")
 AssignSection("Items", "BadgeGloss", "IconAdmin", "IconGroup", "CardBG", "CardBorder", "CardHover", "CardEquipped", "CardOwned",
 	"CardQueued", "CardCanBuy", "CardCantBuy", "CardLabelBG")
-AssignSection("Text", "Text", "TextDim", "MenuRowText", "PointsText", "PriceAfford", "PriceCant", "Shadow", "ShadowStrong")
+AssignSection("Text", "Text", "HeaderText", "OnFill", "TextDim", "MenuRowText", "PointsText", "PriceAfford", "PriceCant", "Shadow", "ShadowStrong")
 
 -- Any name used by AssignSection must appear here: BuildShopSections indexes buckets by
 -- section name, so one that is missing is a nil table indexed on the first row assigned to it.

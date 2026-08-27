@@ -3,148 +3,170 @@
 
 	The PointShop 1 look, as a preset.
 
-	Values here were read out of pointshop-1.3.2/lua/pointshop/vgui/DPointShopMenu.lua rather
-	than remembered, because remembering it got the layout wrong once already. Line references
-	below point into that file.
+	PS1 IS A LIGHT SHOP. Worth stating flatly, because reading its source misleads: the frame's
+	own Paint fills 40,40,40 and then a docked container paints 232,232,232 over essentially
+	all of it, so the dark is a substrate that never reaches the screen. Every visible surface
+	is light. The only dark thing in the window is the header bar.
 
-	What PS1 actually is, which is not what it is usually described as:
+	Values below come from a screenshot of the real thing plus
+	pointshop-1.3.2/lua/pointshop/vgui/DPointShopMenu.lua for the exact numbers. Line refs
+	point into that file.
 
-		frame body   40,40,40      dark, not light  (PANEL:Paint, :454)
-		header bar   52,73,94      slate, 48 tall   (:458-459, BGColor1)
-		content pad  232,232,232   light            (createBtn, :107)
-		corners      square        every surface is DrawRect
+		header bar     52,73,94     slate, 48 tall, white text     (:458-459, :462)
+		everything else 232,232,232 light grey                     (:107)
+		cards          near-white with a thin grey outline
+		outline        218,218,218                                 (:127)
+		tab text       140 idle / 120 hover / 105 active           (:136-138)
+		active tab     3px slate underline, no fill                (:131-132)
+		corners        square -- every surface is DrawRect
 
-	The light grey is the CONTENT panel inside a dark frame, not the frame. So this is a dark
-	theme with a slate header and one light region -- which is why most of our palette
-	survives it untouched.
+	The preview pane is light too. An earlier read of the DockMargin(0,0,320,0) at :91
+	suggested a dark strip on the right; the screenshot shows it is the same grey as the body,
+	separated by a hairline.
 ]]--
 
 local T = PS.Theme
 
--- The slate. One colour doing three jobs in PS1: the header fill, the active category's
--- underline, and the only saturated thing on screen.
-local SLATE   = { 52, 73, 94, 255 }
-local BODY    = { 40, 40, 40, 255 }
+-- The one saturated colour in the whole window. Header fill, active-tab underline, and
+-- anything that needs to read as "selected".
+local SLATE     = {  52,  73,  94, 255 }
+local SLATE_HI  = {  72,  99, 126, 255 }
 
--- A lighter slate for the states that need to read as "the same colour, but lit". PS1 had no
--- hover states to speak of, so these are ours -- kept inside the same hue so the preset does
--- not smuggle a second accent in.
-local SLATE_HI  = { 72, 99, 126, 255 }
-local SLATE_DIM = { 44, 62, 80, 255 }
+local BODY      = { 232, 232, 232, 255 }   -- :107, the content panel
+local CARD      = { 250, 250, 250, 255 }
+local OUTLINE   = { 218, 218, 218, 255 }   -- :127, the tab button outline
+
+-- PS1's text is grey on grey, never black. Three weights, from :136-138.
+local INK       = { 105, 105, 105, 255 }   -- active / primary
+local INK_MID   = { 120, 120, 120, 255 }   -- hover
+local INK_SOFT  = { 140, 140, 140, 255 }   -- idle
 
 T.RegisterPreset("classic", {
 	name = "Classic",
 
 	metrics = {
-		-- 48, from the header DrawRect at :459. Ours is 50; the two pixels are visible when
-		-- the header sits against a square corner.
-		HeaderH  = 48,
-
-		-- The whole point. PS1 draws every surface with DrawRect and has no rounded corner
-		-- anywhere in the file.
-		Radius   = 0,
+		HeaderH  = 48,   -- :459
+		Radius   = 0,    -- nothing in that file is rounded
 		RadiusSm = 0,
-
-		-- Title baseline is x=16 (:462), not our 10.
-		Margin   = 16,
-
-		-- Close button is 32x32 at (w-40, 8) (:76-77). 32 with a 48 header leaves 8 above and
-		-- below, which is what that -40/8 pair produces.
-		IconBtn  = 32,
-
-		-- The tab strip is 28 tall (:88). Ours already is.
-		ButtonH  = 28,
+		Margin   = 16,   -- title baseline, :462
+		IconBtn  = 32,   -- close button, :76-77
+		ButtonH  = 28,   -- tab strip, :88
 	},
 
 	colours = {
-		FrameBG  = BODY,
-		HeaderBG = SLATE,
+		-- The header keeps its slate and its white text; everything below it goes light.
+		HeaderBG   = SLATE,
+		HeaderText = { 255, 255, 255, 255 },
+		PointsText = { 255, 255, 255, 255 },   -- PS1's balance is white, not yellow (:468)
 
-		-- Rows are the frame in PS1 -- there is no alternating stripe in that file. Flattening
-		-- them to the body colour is closer than keeping our two-tone banding.
+		FrameBG        = BODY,
+		MenuCategoryBG = BODY,
+
+		-- No alternating stripe in PS1. Rows are the body until hovered.
 		RowBG    = BODY,
 		RowAlt   = BODY,
-		RowHover = { 57, 56, 54, 255 },   -- BGColor3, the one hover-ish tone PS1 defines
+		RowHover = { 222, 222, 222, 255 },
 
-		-- The accent stops being blue and becomes the slate, because in PS1 the underline
-		-- beneath the active category is drawn with BGColor1 -- the header colour (:131-132).
+		-- Body text goes dark, which is the whole reason Text was split from HeaderText.
+		Text     = INK,
+		TextDim  = INK_SOFT,
+		MenuRowText = INK_MID,
+
+		-- Shadows are for dark themes. On light they read as smudge, so they go to nothing --
+		-- alpha 0 rather than removing the draws, since a preset can only move colours.
+		Shadow       = { 0, 0, 0, 0 },
+		ShadowStrong = { 0, 0, 0, 0 },
+
+		-- The accent stops being blue: PS1 draws the active tab's underline with the header
+		-- colour (:131-132), so accent and header are the same slate.
 		Accent = SLATE,
 
-		-- Category buttons follow the accent to the slate. The idle set stays neutral-dark:
-		-- PS1's idle categories are grey text on light, which this preset cannot reach yet
-		-- (see the note at the bottom of this file).
+		-- Tabs are text on the body with an outline. The "active" state carries the slate,
+		-- since PaintSelectable cannot draw an underline yet -- see the note at the bottom.
 		CategoryFill   = SLATE,
-		CategoryGloss  = { 72, 99, 126, 100 },
+		CategoryGloss  = {  72,  99, 126, 100 },
 		CategoryGlow   = SLATE_HI,
-		CategoryBorder = { 92, 119, 146, 200 },
+		CategoryBorder = SLATE,
 
-		CategoryIdleFill        = { 48, 48, 48, 255 },
-		CategoryIdleFillHover   = { 57, 56, 54, 255 },
-		CategoryIdleGloss       = { 62, 62, 62, 60 },
-		CategoryIdleGlossHover  = { 72, 72, 72, 60 },
-		CategoryIdleBorder      = { 70, 70, 70, 150 },
-		CategoryIdleBorderHover = { 70, 70, 70, 250 },
+		CategoryIdleFill        = BODY,
+		CategoryIdleFillHover   = { 240, 240, 240, 255 },
+		CategoryIdleGloss       = { 255, 255, 255,  40 },
+		CategoryIdleGlossHover  = { 255, 255, 255,  70 },
+		CategoryIdleBorder      = OUTLINE,
+		CategoryIdleBorderHover = { 200, 200, 200, 255 },
 
-		-- Selection and the accent-styled buttons move onto the slate for the same reason.
 		SelectFill   = SLATE,
-		SelectGloss  = { 100, 130, 160, 80 },
+		SelectGloss  = { 100, 130, 160,  80 },
 		SelectGlow   = SLATE_HI,
-		SelectBorder = { 100, 130, 160, 200 },
+		SelectBorder = SLATE,
 
-		AccentFill       = { 52, 73, 94, 200 },
+		-- Controls are outlined boxes on the body, the way PS1's buttons are.
+		ControlFill        = { 240, 240, 240, 255 },
+		ControlFillHover   = { 248, 248, 248, 255 },
+		ControlGloss       = { 255, 255, 255,  60 },
+		ControlGlossHover  = { 255, 255, 255,  90 },
+		ControlBorder      = OUTLINE,
+		ControlBorderHover = { 190, 190, 190, 255 },
+
+		-- Cards are near-white with a hairline. The label strip under each keeps taking its
+		-- colour from the item's state (owned / affordable / not), which is where the mauve
+		-- in a real PS1 screenshot comes from -- that is CardCantBuy over a light card, not a
+		-- label colour, so it is deliberately not overridden here.
+		CardBG      = CARD,
+		CardBorder  = OUTLINE,
+		CardHover   = { 150, 150, 150, 180 },
+		CardLabelBG = { 200, 200, 200, 255 },
+		CardOwned   = SLATE,
+		CardMenuBG  = { 245, 245, 245, 250 },
+
+		-- Scroll furniture off blue and onto the greys.
+		ScrollTrack     = { 220, 220, 220, 200 },
+		ScrollGrip      = { 170, 170, 170, 255 },
+		ScrollGripHover = { 140, 140, 140, 255 },
+
+		StatusBar = SLATE,
+
+		AccentFill       = SLATE,
 		AccentFillHover  = SLATE_HI,
-		AccentGloss      = { 100, 130, 160, 80 },
-		AccentGlossHover = { 130, 160, 190, 80 },
+		AccentGloss      = { 100, 130, 160,  80 },
+		AccentGlossHover = { 130, 160, 190,  80 },
 		AccentGlow       = SLATE_HI,
-		AccentBorder     = { 100, 130, 160, 200 },
+		AccentBorder     = SLATE,
 
-		-- Controls flatten. PS1's are outlined rectangles, so the fill sits near the body and
-		-- the border does the work.
-		ControlFill        = { 48, 48, 48, 255 },
-		ControlFillHover   = { 62, 62, 62, 255 },
-		ControlGloss       = { 62, 62, 62, 50 },
-		ControlGlossHover  = { 80, 80, 80, 50 },
-		ControlBorder      = { 90, 90, 90, 150 },
-		ControlBorderHover = { 90, 90, 90, 250 },
+		-- The action colours keep their meaning but darken, because they now sit on light and
+		-- carry OnFill's white text. The originals were picked to glow against a dark body and
+		-- read as pastel here.
+		PositiveFill       = {  60, 130,  75, 255 },
+		PositiveFillHover  = {  70, 155,  90, 255 },
+		PositiveBorder     = {  50, 110,  65, 255 },
+		WarningFill        = { 190, 125,  40, 255 },
+		WarningFillHover   = { 210, 145,  50, 255 },
+		WarningBorder      = { 160, 105,  35, 255 },
+		DangerFill         = { 175,  60,  60, 255 },
+		DangerFillHover    = { 200,  70,  70, 255 },
+		DangerBorder       = { 145,  50,  50, 255 },
+		NeutralFill        = { 225, 225, 225, 255 },
+		NeutralFillHover   = { 235, 235, 235, 255 },
+		NeutralBorder      = OUTLINE,
+		NeutralText        = INK,
 
-		-- 218,218,218 is PS1's outline colour for the tab buttons (:127). Reused here as the
-		-- card border so items read as outlined boxes rather than raised cards.
-		CardBG     = { 35, 35, 35, 255 },
-		CardBorder = { 90, 90, 90, 200 },
-		CardHover  = { 218, 218, 218, 120 },
-		CardLabelBG = { 22, 22, 22, 255 },
-		CardOwned  = SLATE_HI,
-
-		-- Scroll furniture follows the accent off blue.
-		ScrollTrack     = { 30, 30, 30, 200 },
-		ScrollGrip      = SLATE,
-		ScrollGripHover = SLATE_HI,
-
-		-- The status strip's gradient base is a surface, not an accent, so it tracks the
-		-- slate rather than staying navy.
-		StatusBar = SLATE_DIM,
-
-		-- The category strip. PS1's is the light panel; ours cannot go light yet, so it sits
-		-- one step off the body the way PS1's sits one step off its frame.
-		MenuCategoryBG = { 34, 34, 34, 255 },
-
-		-- Header text in PS1 is plain white and the balance is white too, not yellow
-		-- (:462, :468). The yellow is ours.
-		PointsText = { 255, 255, 255, 255 },
-		TextDim    = { 200, 205, 215, 255 },
+		-- Prices sit on the light card, so the dark-theme neons go to readable versions.
+		PriceAfford = {  40, 130,  55, 255 },
+		PriceCant   = { 170,  50,  50, 255 },
 	},
 })
 
 --[[
-	Not reachable from a preset, and deliberately left undone rather than faked:
+	Still not reachable from a preset, and left undone rather than faked:
 
-	PS1's category strip is grey text on 232,232,232 with a 218 outline and a 3px slate
-	underline on the active one (:107, :127-138). A preset can move any colour, but every
-	category button takes its text from PS.Theme.Text -- the single global white, set in
-	UI.Tab (cl_ui.lua) -- so turning the strip light turns its labels invisible.
+	PS1's active tab has NO fill -- it is the same grey text on the same light body as the
+	others, marked only by a 3px slate bar along its bottom edge (:131-132). PaintSelectable
+	has one shape, fill plus border, so "active" here is a filled slate tab instead. That is
+	the last visible difference between this preset and the real thing, and it needs an
+	underline style in PaintSelectable rather than any colour.
 
-	The fix is one token: give UI.Tab its own CategoryText rather than borrowing Text, at
-	which point the light strip is just three more entries above. Same for the underline,
-	which needs PaintSelectable to grow an underline style. Both are step 4 -- the things a
-	preset cannot reach -- not preset work.
+	Category icons are the other one: PS1 puts a 16px icon left of every tab label (:141-146).
+	That is a per-category asset and a change to UI.Tab, not a palette entry.
+
+	Both are step 4.
 ]]--

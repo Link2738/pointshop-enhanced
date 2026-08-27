@@ -112,7 +112,7 @@ function UI.GlyphIcon(name, font)
 		draw.SimpleText(glyph, font, cx + Shared("ShadowX"), cy + Shared("ShadowY"),
 			PS.Theme.Shadow, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 		draw.SimpleText(glyph, font, cx, cy,
-			PS.Theme.Text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+			PS.Theme.HeaderText, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 	end
 end
 

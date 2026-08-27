@@ -189,7 +189,7 @@ function PANEL:Init()
 	closeBtn.Paint = function(s, w, h)
 		PS.Theme.PaintAction(s, w, h, PS.Theme.Action.Danger)
 		draw.SimpleText("X", "DermaDefault", w/2 + 1, h/2 + 1, PS.Theme.Shadow, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-		draw.SimpleText("X", "DermaDefault", w/2, h/2, PS.Theme.Text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		draw.SimpleText("X", "DermaDefault", w/2, h/2, PS.Theme.HeaderText, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 	end
 	
 	-- Camera control variables

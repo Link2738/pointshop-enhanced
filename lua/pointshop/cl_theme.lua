@@ -258,6 +258,27 @@ Derive("GoldFill", "GoldFillHover", "GoldBorder", "GoldDivider")
 Derive("DangerFill", "DangerFillHover", "DangerBorder")
 Derive("ModifyFill", "ModifyFillHover", "ModifyBorder")
 
+-- The shipped offsets, copied before anything can edit them.
+--
+-- A preset may set a variant by hand, and SetPreset turns that into the variant's new
+-- relationship to its base — otherwise SyncDerived would overwrite it a frame later. That
+-- edits DERIVED permanently, so without a copy of the originals, leaving a preset would keep
+-- its relationships and reproduce its look in the default's colours.
+--
+-- Built here rather than beside DERIVED because every Derive() call above has to have run.
+local SHIPPED_DERIVED = {}
+for k, d in pairs(DERIVED) do
+	SHIPPED_DERIVED[k] = { dr = d.dr, dg = d.dg, db = d.db, da = d.da }
+end
+
+-- In place, like everything else that touches these tables.
+local function RestoreShippedOffsets()
+	for k, s in pairs(SHIPPED_DERIVED) do
+		local d = DERIVED[k]
+		d.dr, d.dg, d.db, d.da = s.dr, s.dg, s.db, s.da
+	end
+end
+
 -- NOT derived, deliberately: GoldText, GoldLabel, DangerText, NeutralText.
 --
 -- They are label colours, and a label has to stay readable against its fill. Offsetting text
@@ -340,7 +361,28 @@ T.IconGroup   = Color(200, 200, 200, 180)   -- group-restricted item marker
 -- TEXT
 -- ============================================================================
 
-T.Text         = Color(255, 255, 255, 255)
+-- Body text. Whatever sits on FrameBG, a row, a card, or an unfilled control.
+--
+-- This is the one that follows the body, so a preset with a light body moves it dark. The
+-- two below exist because they do NOT follow it -- see each.
+T.Text = Color(255, 255, 255, 255)
+
+-- Text drawn on the header bar: the window title and the header glyph buttons.
+--
+-- Split from Text because the header is a different surface from the body and does not have
+-- to share its brightness. The default look happens to make both white, which is exactly why
+-- one token served for so long -- but PointShop 1 is a light body under a slate header, and
+-- there the two must disagree or the title vanishes into the bar.
+T.HeaderText = Color(255, 255, 255, 255)
+
+-- Text drawn on top of a saturated fill: card price badges, the card's name strip, anything
+-- sitting on Positive/Danger/Gold and friends.
+--
+-- Split for the same reason and it is the stronger case: those fills are chosen for their
+-- own meaning, so the text on them tracks the FILL, not the theme. It stays light whether
+-- the body around it is dark or light.
+T.OnFill = Color(255, 255, 255, 255)
+
 T.TextDim      = Color(200, 220, 255)   -- status strip, section labels
 T.PointsText   = Color(255, 255, 0, 255) -- the balance in the shop header
 T.Shadow       = Color(0, 0, 0, 180)
@@ -585,7 +627,7 @@ function T.PaintHeader(w, h, title)
 	surface.DrawRect(0, 0, w, 3)
 
 	if title then
-		draw.SimpleText(title, "PS_LargeTitle", 15, h / 2, T.Text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText(title, "PS_LargeTitle", 15, h / 2, T.HeaderText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 	end
 end
 
@@ -789,7 +831,12 @@ end
 -- In place is load-bearing, not a micro-optimisation: every widget style holds a reference
 -- to these exact tables, so replacing one would leave the styles pointing at the old table
 -- and the change would appear to do nothing.
-function T.Apply(tbl)
+-- The write half, without the resync.
+--
+-- Split out for SetPreset, which has to write, then re-measure the variants the preset set by
+-- hand, and only then sync — syncing in between would overwrite those variants with the
+-- shipped offsets, which is the thing being avoided.
+local function WriteColours(tbl)
 	if not istable(tbl) then return end
 
 	for k, v in pairs(tbl) do
@@ -801,6 +848,12 @@ function T.Apply(tbl)
 			c.a = math.Clamp(tonumber(v[4]) or c.a, 0, 255)
 		end
 	end
+end
+
+function T.Apply(tbl)
+	if not istable(tbl) then return end
+
+	WriteColours(tbl)
 
 	-- A base may have moved, so the variants that follow it are now stale.
 	T.SyncDerived()
@@ -875,8 +928,33 @@ function T.SetPreset(id)
 	local custom = CustomOnly()
 	activePreset = id
 
-	ApplyMetrics(id and T.Presets[id])
-	T.Apply(ResolvedDefault())
+	local preset = id and T.Presets[id]
+
+	ApplyMetrics(preset)
+
+	-- Offsets first, and unconditionally: leaving a preset, or moving between two of them,
+	-- must not inherit the relationships the previous one measured.
+	RestoreShippedOffsets()
+
+	-- Write, then re-measure, then sync -- in that order.
+	--
+	-- The shipped offsets were measured against a dark palette. A light preset that sets, say,
+	-- CategoryIdleBorder by hand would otherwise have it recomputed as fill + 30 a moment
+	-- later, which on a 232 fill clamps to white and disappears. Re-measuring makes the
+	-- preset's own value the relationship, so the sync below reproduces it exactly and any
+	-- later move of the base still carries it along.
+	WriteColours(ResolvedDefault())
+
+	if preset and istable(preset.colours) then
+		for k in pairs(preset.colours) do
+			if DERIVED[k] then T.RemeasureDerived(k) end
+		end
+	end
+
+	T.SyncDerived()
+
+	-- The player's own edits go on last, as always. Safe to use the syncing Apply here: the
+	-- offsets are correct by this point.
 	T.Apply(custom)
 
 	hook.Run("PS_PresetChanged", id)
