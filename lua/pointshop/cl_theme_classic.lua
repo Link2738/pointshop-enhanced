@@ -164,7 +164,10 @@ T.RegisterPreset("classic", {
 		CardBG      = CARD,
 		CardBorder  = OUTLINE,
 		CardHover   = { 150, 150, 150, 180 },
-		CardLabelBG = { 200, 200, 200, 255 },
+		-- Mid grey, not light. The label carries white text (OnFill), so a strip near the
+		-- card's own value leaves the item name invisible -- which is what a 200 strip on a
+		-- 250 card did. PS1's own labels were mid-toned for the same reason.
+		CardLabelBG = { 150, 150, 150, 255 },
 		CardOwned   = SLATE,
 		CardMenuBG  = { 245, 245, 245, 250 },
 

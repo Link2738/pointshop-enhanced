@@ -561,13 +561,13 @@ T.Action = {
 		fill = T.PositiveFill, fillHover = T.PositiveFillHover,
 		gloss = T.PositiveGloss, glossHover = T.PositiveGlossHover,
 		glow = T.PositiveGlow, glowLayers = { 80, 40 },
-		border = T.PositiveBorder, text = T.Text, shadow = T.ShadowStrong,
+		border = T.PositiveBorder, text = T.OnFill, shadow = T.ShadowStrong,
 	},
 	Warning = {
 		radius = "RadiusSm", lerp = 10, font = "DermaDefault",
 		fill = T.WarningFill, fillHover = T.WarningFillHover,
 		gloss = T.WarningGloss, glossHover = T.WarningGlossHover,
-		border = T.WarningBorder, text = T.Text, shadow = T.Shadow,
+		border = T.WarningBorder, text = T.OnFill, shadow = T.Shadow,
 	},
 	Gold = {
 		radius = "RadiusSm", lerp = 10, font = "DermaDefault",
@@ -592,14 +592,14 @@ T.Action = {
 	Modify = {
 		radius = "RadiusSm", lerp = 10, font = "DermaDefault",
 		fill = T.ModifyFill, fillHover = T.ModifyFillHover,
-		border = T.ModifyBorder, text = T.Text, shadow = T.Shadow,
+		border = T.ModifyBorder, text = T.OnFill, shadow = T.Shadow,
 	},
 	Accent = {
 		radius = "RadiusMd", lerp = 10, font = "DermaDefault",
 		fill = T.AccentFill, fillHover = T.AccentFillHover,
 		gloss = T.AccentGloss, glossHover = T.AccentGlossHover,
 		glow = T.AccentGlow, glowLayers = { 100 },
-		border = T.AccentBorder, text = T.Text, shadow = T.Shadow,
+		border = T.AccentBorder, text = T.OnFill, shadow = T.Shadow,
 	},
 }
 
