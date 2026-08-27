@@ -106,22 +106,32 @@ local function Open()
 	local M = T.Metrics
 	before = T.FrameMetrics()
 
-	-- Everything laid out by hand in this panel scales with the rest of the UI. The metrics
-	-- already arrive scaled; these do not, so they are scaled here.
-	local S     = T.Scale()
-	local ROW_H = math.Round(76 * S)
-	local STRIP = math.Round(26 * S)
+	-- ------------------------------------------------------------------
+	-- SIZES, FROM THE CONTENTS OUT
+	--
+	-- Every number below is derived from the control it belongs to, and the panel is derived
+	-- from those. The previous version went the other way -- a row height was picked, then a
+	-- combo box and three sliders were told to fit inside it -- and they could not: the combo
+	-- had no room for its own drop arrow, so the arrow sat on top of its text, and the buttons
+	-- row was pushed half off the bottom.
+	--
+	-- CTRL_H is M.ButtonH, which already scales with the screen. A DComboBox and a DNumSlider
+	-- are both composites that lay out children inside themselves, so a control height is a
+	-- floor to respect, not a value to choose freely.
+	-- ------------------------------------------------------------------
+	local S       = T.Scale()
+	local LABEL_H = math.Round(16 * S)
+	local CTRL_H  = M.ButtonH
+	local STRIP   = math.Round(26 * S)
 
-	-- Height measured off the dock stack rather than guessed.
-	--
-	-- It was guessed, and it was 12px short at scale 1 -- which does not clip a little off the
-	-- bottom, it drops the whole buttons row off the panel, so there was no Save button to
-	-- find. Written out term by term so it stays honest if a row is added:
-	--
-	--   header, status strip, the body's own top and bottom margins,
-	--   row 1 (its top margin, its height, its bottom gap),
-	--   row 2 (no top margin, its height, its bottom gap),
-	--   the buttons row (its top gap, its height, its bottom margin)
+	-- Vertical bands inside one axis row. Each is the previous one plus its own height plus a
+	-- gap, so inserting a band means adding one line rather than re-deriving four offsets.
+	local BAND_LABEL = M.Gap
+	local BAND_MAIN  = BAND_LABEL + LABEL_H + M.Gap
+	local BAND_BOUND = BAND_MAIN  + CTRL_H  + M.Gap
+	local ROW_H      = BAND_BOUND + CTRL_H  + M.Gap
+
+	-- And the panel from the rows. Term by term, matching what actually docks.
 	local bodyH = M.Margin
 		+ (M.Margin + ROW_H + M.Gap)
 		+ (ROW_H + M.Gap)
@@ -131,7 +141,7 @@ local function Open()
 	local f = UI.Frame({
 		remember = "shoplayout",
 		title = "Shop layout",
-		w     = math.Round(470 * S),
+		w     = math.Round(560 * S),
 		h     = M.HeaderH + STRIP + bodyH,
 	})
 	panel = f
@@ -162,7 +172,7 @@ local function Open()
 
 	local rowIndex = 0
 
-	-- One row per dimension: mode on the left, its value on the right, min and max beneath.
+	-- One row per dimension. Heading, then mode and value side by side, then min and max.
 	local function AxisRow(axis, label, names)
 		rowIndex = rowIndex + 1
 		local i = rowIndex
@@ -173,9 +183,15 @@ local function Open()
 		row:DockMargin(M.Margin, i == 1 and M.Margin or 0, M.Margin, M.Gap)
 		row.Paint = function(_, w, h)
 			T.PaintRow(row, w, h, i, false)
-			draw.SimpleText(label, "PS_DefaultBold", M.Margin, math.Round(12 * S),
+			draw.SimpleText(label, "PS_DefaultBold", M.Margin, BAND_LABEL + LABEL_H / 2,
 				T.Text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 		end
+
+		-- Two even columns, measured off the row at layout time rather than at build time --
+		-- the row is docked, so its width is still 0 while this function runs.
+		local function halfW() return (row:GetWide() - M.Margin * 3) / 2 end
+		local function leftX()  return M.Margin end
+		local function rightX() return M.Margin * 2 + halfW() end
 
 		local sKey, oKey = "Frame" .. axis .. "Scale", "Frame" .. axis .. "Offset"
 		local minKey, maxKey = "Frame" .. axis .. "Min", "Frame" .. axis .. "Max"
@@ -195,8 +211,8 @@ local function Open()
 		combo:SetSortItems(false)
 		for k = FIXED, INSET do combo:AddChoice(names[k], k, k == mode) end
 		combo.PerformLayout = function(s)
-			s:SetPos(M.Margin, math.Round(28 * S))
-			s:SetSize((row:GetWide() - M.Margin * 3) / 2, math.Round(20 * S))
+			s:SetPos(leftX(), BAND_MAIN)
+			s:SetSize(halfW(), CTRL_H)
 		end
 		combo.OnSelect = function(_, _, _, data)
 			mode = data
@@ -224,9 +240,8 @@ local function Open()
 		valueSlider:SetDecimals(0)
 		valueSlider:SetValue(value)
 		valueSlider.PerformLayout = function(s)
-			local half = (row:GetWide() - M.Margin * 3) / 2
-			s:SetPos(M.Margin * 2 + half, math.Round(28 * S))
-			s:SetSize(half, math.Round(20 * S))
+			s:SetPos(rightX(), BAND_MAIN)
+			s:SetSize(halfW(), CTRL_H)
 		end
 		valueSlider.OnValueChanged = function(_, v)
 			value = math.Round(v)
@@ -245,9 +260,8 @@ local function Open()
 			sl:SetValue(T.BaseMetric(key))
 			sl.Label:SetTextColor(T.TextDim)
 			sl.PerformLayout = function(s)
-				local half = (row:GetWide() - M.Margin * 3) / 2
-				s:SetPos(x(half), math.Round(52 * S))
-				s:SetSize(half, math.Round(18 * S))
+				s:SetPos(x(), BAND_BOUND)
+				s:SetSize(halfW(), CTRL_H)
 			end
 			sl.OnValueChanged = function(_, v)
 				T.SetBaseMetric(key, math.Round(v))
@@ -266,8 +280,8 @@ local function Open()
 			return sl
 		end
 
-		Bound(minKey, function() return M.Margin end, "Min")
-		Bound(maxKey, function(half) return M.Margin * 2 + half end, "Max")
+		Bound(minKey, leftX,  "Min")
+		Bound(maxKey, rightX, "Max")
 
 		return row
 	end
@@ -279,8 +293,7 @@ local function Open()
 	--
 	-- Deliberately no separate "keep this for me". This panel is owner-only, and the window
 	-- size is a property of the shop rather than of whoever happens to be looking at it, so
-	-- for the one person who can open this, saving and publishing are the same act. Offering
-	-- both would ask them to choose between two things that mean the same to them.
+	-- for the one person who can open this, saving and publishing are the same act.
 	--
 	-- Still confirmed, because it changes what every connected player sees.
 	local save = UI.Button(buttons, "Save", "Gold", function()
@@ -302,13 +315,13 @@ local function Open()
 	end)
 	save:Dock(RIGHT)
 	save:DockMargin(M.Gap, 0, 0, 0)
-	save:SetWide(90)
+	save:SetWide(math.Round(90 * S))
 
 	local revert = UI.Button(buttons, "Revert", "Neutral", function()
 		if before then Restore(before) end
 	end)
 	revert:Dock(RIGHT)
-	revert:SetWide(90)
+	revert:SetWide(math.Round(90 * S))
 
 	return f
 end
