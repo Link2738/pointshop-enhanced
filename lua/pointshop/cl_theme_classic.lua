@@ -68,18 +68,24 @@ T.RegisterPreset("classic", {
 	name = "Classic",
 
 	metrics = {
-		-- PointShop 1's window: 1024x768, clamped down to the screen. Written as a fixed
-		-- size rather than a share, because that is what it was -- the same box on every
-		-- monitor. FrameSize clamps it to the screen on top of this.
+		-- 800x640 at the reference resolution.
+		--
+		-- A fixed size rather than a share of the screen, because that is what this look is --
+		-- the same box on every monitor. It still grows with the screen: every metric is
+		-- multiplied by ScrH()/RefH, so this is 800x640 at 1080p, 1067x853 at 1440p and
+		-- 1600x1280 at 2160p. Fixed means fixed in proportion, not fixed in pixels.
+		--
+		-- The clamps are scaled too, so they are deliberately wide: they exist to stop an
+		-- absurd result at the extremes, not to second-guess the size above.
 		FrameWScale  = 0,
-		FrameWOffset = 1024,
-		FrameWMin    = 640,
-		FrameWMax    = 1024,
+		FrameWOffset = 800,
+		FrameWMin    = 600,
+		FrameWMax    = 1600,
 
 		FrameHScale  = 0,
-		FrameHOffset = 768,
-		FrameHMin    = 480,
-		FrameHMax    = 768,
+		FrameHOffset = 640,
+		FrameHMin    = 320,
+		FrameHMax    = 1100,
 
 		HeaderH  = 48,   -- :459
 		Radius   = 0,    -- nothing in that file is rounded
@@ -193,10 +199,16 @@ T.RegisterPreset("classic", {
 		CardBG      = CARD,
 		CardBorder  = OUTLINE,
 		CardHover   = { 150, 150, 150, 180 },
-		-- Mid grey, not light. The label carries white text (OnFill), so a strip near the
+		-- Mid grey, not light. The label carries CardText, so a strip near the
 		-- card's own value leaves the item name invisible -- which is what a 200 strip on a
 		-- 250 card did. PS1's own labels were mid-toned for the same reason.
 		CardLabelBG = { 150, 150, 150, 255 },
+
+		-- The two text-on-fill entries pull apart here, which is the whole reason they are
+		-- separate: the buttons keep white on their saturated colours, while the item name
+		-- sits on a quiet grey strip where white is the one thing that will not read.
+		ButtonText = { 255, 255, 255, 255 },
+		CardText   = {  35,  35,  35, 255 },
 		CardOwned   = SLATE,
 		CardMenuBG  = RAISED,
 
@@ -219,7 +231,7 @@ T.RegisterPreset("classic", {
 		AccentBorder     = SLATE,
 
 		-- The action colours keep their meaning but darken, because they now sit on light and
-		-- carry OnFill's white text. The originals were picked to glow against a dark body and
+		-- carry ButtonText's white. The originals were picked to glow against a dark body and
 		-- read as pastel here.
 		PositiveFill       = {  60, 130,  75, 255 },
 		PositiveFillHover  = {  70, 155,  90, 255 },

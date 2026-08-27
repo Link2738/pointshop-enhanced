@@ -7,6 +7,10 @@ include "sh_init.lua"
 
 -- After sh_init, which is what creates PS. This file hangs its accessors off it.
 include "sh_gamemodes.lua"
+
+-- Canonical form and hashing for the theme, shared with the client so both sides agree on
+-- what a given theme hashes to.
+include "sh_theme_sync.lua"
 include "sv_player_extension.lua"
 include "sv_manifest.lua"
 

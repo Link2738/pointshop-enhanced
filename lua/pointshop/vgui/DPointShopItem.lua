@@ -320,7 +320,7 @@ function PANEL:PaintOver()
 
 	-- Item name
 	draw.SimpleText(self.Data.Name, "PS_ItemText", w/2 + 1, h - LABEL_H/2 + 1, PS.Theme.Shadow, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-	draw.SimpleText(self.Data.Name, "PS_ItemText", w/2,     h - LABEL_H/2,     PS.Theme.OnFill,   TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+	draw.SimpleText(self.Data.Name, "PS_ItemText", w/2,     h - LABEL_H/2,     PS.Theme.CardText,   TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 
 	local isQueued = PS_RemovalQueue and PS_RemovalQueue[self.Data.ID] ~= nil
 
@@ -365,7 +365,7 @@ function PANEL:PaintOver()
 
 	draw.RoundedBox(4, bx, by, bw, bh, badgeCol)
 	draw.RoundedBox(4, bx, by, bw, bh / 2, PS.Theme.BadgeGloss)
-	draw.SimpleText(badgeText, "PS_ItemText", bx + bw/2, by + bh/2, PS.Theme.OnFill, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+	draw.SimpleText(badgeText, "PS_ItemText", bx + bw/2, by + bh/2, PS.Theme.CardText, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 
 	-- Admin icon (top-left)
 	if self.Data.AdminOnly then

@@ -19,6 +19,9 @@ include "sh_init.lua"
 
 -- After sh_init, which is what creates PS. This file hangs its accessors off it.
 include "sh_gamemodes.lua"
+
+-- Canonical form and hashing for the theme. Above cl_theme.lua, which syncs through it.
+include "sh_theme_sync.lua"
 include "cl_player_extension.lua"
 
 -- UI palette. Above the vgui includes so the panels below can reach PS.Theme, and above
@@ -35,8 +38,7 @@ include "cl_theme_classic.lua"
 -- Widget layer. After cl_theme.lua, which it paints through, and before the vgui files that
 -- build with it.
 include "cl_ui.lua"
-include "cl_tune.lua"
-include "cl_layout_owner.lua"
+include "cl_layout.lua"
 
 -- ============================================================================
 -- SHARED DRAW HELPERS

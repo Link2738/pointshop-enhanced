@@ -62,7 +62,8 @@ local LABELS = {
 	MenuRowText = "Right-click menu text",
 	PointsText  = "Points balance",
 	HeaderText  = "Header bar text",
-	OnFill      = "Text on coloured fills",
+	ButtonText  = "Button text",
+	CardText    = "Item name text",
 
 	BadgeGloss = "Item badge sheen",
 	IconAdmin  = "Admin-only marker",
@@ -139,7 +140,7 @@ AssignSection("Buttons",
 	"NeutralBorder", "NeutralText")
 AssignSection("Items", "BadgeGloss", "IconAdmin", "IconGroup", "CardBG", "CardBorder", "CardHover", "CardEquipped", "CardOwned",
 	"CardQueued", "CardCanBuy", "CardCantBuy", "CardLabelBG")
-AssignSection("Text", "Text", "HeaderText", "OnFill", "TextDim", "MenuRowText", "PointsText", "PriceAfford", "PriceCant", "Shadow", "ShadowStrong")
+AssignSection("Text", "Text", "HeaderText", "ButtonText", "CardText", "TextDim", "MenuRowText", "PointsText", "PriceAfford", "PriceCant", "Shadow", "ShadowStrong")
 
 -- Any name used by AssignSection must appear here: BuildShopSections indexes buckets by
 -- section name, so one that is missing is a nil table indexed on the first row assigned to it.
@@ -158,6 +159,13 @@ local function PresetSection()
 	if not istable(T.Presets) then return end
 
 	local options = { { id = "", name = "Default" } }
+
+	-- Custom is a slot rather than a registered preset, so it is added by hand. Offered
+	-- only once something has been customised: an empty Custom is not a look, and picking
+	-- it would do nothing visible.
+	if T.CustomExists and T.CustomExists() then
+		options[#options + 1] = { id = "custom", name = "Custom" }
+	end
 	for id, def in pairs(T.Presets) do
 		options[#options + 1] = { id = id, name = (istable(def) and def.name) or id }
 	end
@@ -324,7 +332,12 @@ local function Validate(p)
 	if not isstring(p.name) then Warn("no name") return end
 	if not istable(p.sections) then Warn(p.name .. " has no sections") return end
 
-	local out = { name = p.name, sections = {}, previews = {}, save = p.save, reset = p.reset }
+	-- isShop travels with the copy because the owner controls need it: publishing a look sends
+	-- the SHOP's palette, so those controls belong to the shop's tab and nowhere else. Without
+	-- it, an owner editing the gamemode's colours and pressing the button would publish the
+	-- shop colours they had not touched and silently drop the ones they had.
+	local out = { name = p.name, isShop = p.isShop, sections = {}, previews = {},
+		save = p.save, reset = p.reset }
 
 	for _, section in ipairs(p.sections) do
 		if istable(section) and istable(section.rows) then
@@ -480,12 +493,19 @@ local function ShopProvider()
 		-- "PointShop", not "Shop": this is the master tab, and one of its own subtabs is
 		-- already called Shop. Naming both the same would read as a tab containing itself.
 		name     = "PointShop",
+
+		-- The one provider whose colours a look is made of, and so the only tab the owner's
+		-- publish controls belong on.
+		isShop   = true,
 		sections = BuildShopSections(),
 		previews = {
 			{ label = "Shop",          build = BuildShopMock },
 			{ label = "Customization", build = BuildCustomizationMock },
 		},
-		save  = function() PS.Theme.Save() end,
+		-- Colours only. This panel edits colours; the window's size is the layout panel's, and
+		-- writing both from here would have this one silently commit a size the player was
+		-- still trying out.
+		save  = function() PS.Theme.SaveColours() end,
 		reset = function() PS.Theme.ResetToDefaults() end,
 	}
 end
@@ -518,8 +538,47 @@ end
 -- ============================================================================
 
 function PANEL:Init()
-	local w = math.min(940, ScrW() - 80)
-	local h = math.min(660, ScrH() - 80)
+	-- The owner controls are a band of their own above the footer, and the window grows to
+	-- hold them rather than the list shrinking to make room.
+	--
+	-- They were placed at a fixed y from the top to begin with, which put them straight
+	-- through the middle of the colour list. Everything vertical in this panel is measured
+	-- from the bottom for exactly that reason -- the footer sits at h - 44 -- and the owner
+	-- block has to be measured the same way or it lands wherever the list happens to be.
+	--
+	-- Measured from the parts, not picked. PS.UI.Button takes its height from M.ButtonH, which
+	-- scales with the screen, so a fixed band is right at 1080p and too short everywhere above
+	-- it -- at 2x the button alone is 56 inside a 58 band and runs into the footer.
+	local M = PS.Theme.Metrics
+	local S = PS.Theme.Scale()
+
+	self.OwnerLabelH = math.Round(16 * S)
+	self.OwnerBlockH = (PS_IsItemDefaultOwner and PS_IsItemDefaultOwner(LocalPlayer()))
+		and (self.OwnerLabelH + M.Gap + M.ButtonH + M.Gap) or 0
+
+	-- The title strip is sized around the close button rather than the other way round.
+	--
+	-- It was a flat 35, which is exactly M.IconBtn -- so the button filled the strip edge to
+	-- edge with nothing around it and looked wedged in. A gap above and below is the whole
+	-- difference, and taking the height from the button means it stays a gap at every scale
+	-- instead of closing up as the button grows.
+	self.StripH = M.IconBtn + M.Gap * 2
+
+	-- The panel itself scales, not just what is in it.
+	--
+	-- It was capped at a flat 940 while its contents grew with the scale, which is the trap:
+	-- at 2x the three footer buttons alone wanted more than 940 and ran under the Close on the
+	-- right. A panel that scales its contents has to scale its own frame or it is just a
+	-- smaller box with bigger things in it.
+	--
+	-- Still bounded by the screen. The scale is derived from a window width that is itself
+	-- clamped to the screen, so a scale big enough to overflow a monitor cannot arise from a
+	-- window that fits on it.
+	local w = math.min(math.Round(940 * S), ScrW() - 80)
+
+	-- Grown by whatever the strip gained, so the list below is exactly as tall as it was.
+	local h = math.min(math.Round(660 * S) + self.OwnerBlockH + (self.StripH - math.Round(35 * S)),
+		ScrH() - 80)
 
 	self:SetSize(w, h)
 	PS.UI.RememberPosition(self, "theme")
@@ -528,17 +587,65 @@ function PANEL:Init()
 	self:SetSizable(false)
 	self:MakePopup()
 
+	-- Derma's own titlebar buttons, hidden.
+	--
+	-- A DFrame builds a minimise, a maximise and a close in its top right and paints them with
+	-- the game's skin, so this panel was wearing stock Windows-ish chrome above a themed body.
+	-- Two of the three did nothing here anyway: the frame is not sizable and there is nothing
+	-- to minimise to.
+	--
+	-- ShowCloseButton covers the close; the other two have to be hidden by hand, and are
+	-- checked for validity because they only exist on a DFrame.
+	self:ShowCloseButton(false)
+	if IsValid(self.btnMaxim) then self.btnMaxim:SetVisible(false) end
+	if IsValid(self.btnMinim) then self.btnMinim:SetVisible(false) end
+
+	-- Ours instead: the same red X every other window in the shop uses.
+	local close = PS.UI.IconButton(self, PS.UI.GlyphIcon("close"), "Danger", function()
+		self:Close()
+	end)
+
+	-- Centred in the status strip this panel paints at the top, rather than in a header panel
+	-- it does not have.
+	close.PerformLayout = function(s)
+		local Mm = PS.Theme.Metrics
+		s:SetSize(Mm.IconBtn, Mm.IconBtn)
+
+		-- Floored: a button on a half pixel smears its own rounded corners, and this one sits
+		-- against an accent rule that makes the smear obvious.
+		s:SetPos(self:GetWide() - Mm.IconBtn - Mm.IconInset,
+			math.floor((self.StripH - Mm.IconBtn) / 2))
+	end
+
 	self.Paint = function(_, pw, ph)
 		PS.Theme.PaintPanelBody(pw, ph)
-		PS.Theme.PaintStatusStrip(pw, 35, "Appearance - changes preview instantly")
+		PS.Theme.PaintStatusStrip(pw, self.StripH, "Appearance - changes preview instantly")
 	end
 
 	self.Providers = CollectProviders()
 
-	local listW  = 300
-	local tabH   = 30
-	local gap    = 8
-	local top    = 45
+	-- Every fixed number in this panel scales with the rest of the UI.
+	--
+	-- The scale now follows the shop window's size, which a player sets. Leave any of these as
+	-- constants and the panel becomes scaled text inside an unscaled layout: at 2x the master
+	-- tabs clipped their own labels, the section headings truncated to "T..." and "Ot...", and
+	-- the three footer buttons overlapped each other.
+	--
+	-- Stored on self because BuildFooter and the row builders need the same numbers.
+	local S = PS.Theme.Scale()
+
+	local listW = math.Round(300 * S)
+	local tabH  = math.Round(30 * S)
+	local gap   = math.Round(8 * S)
+
+	self.S      = S
+	self.ListW  = listW
+	self.Edge   = math.Round(10 * S)   -- panel edge to content
+	self.FootH  = math.Round(44 * S)   -- footer band, measured up from the bottom
+
+	-- Below the strip, not at a number that happened to clear it. It was 45 against a strip of
+	-- 35, so the 10px gap was only correct while the strip never moved.
+	local top    = self.StripH + self.Edge
 
 	-- Master tab strip: one per provider. Picking one swaps BOTH panes, so the two halves
 	-- always describe the same thing — the failure this replaced was a single flat list of
@@ -560,23 +667,33 @@ function PANEL:Init()
 	-- Toggling rebuilds from the providers rather than filtering what is already there: the
 	-- rows are generated, so the honest way to change what is generated is to generate again.
 	local adv = vgui.Create("DCheckBoxLabel", self)
-	adv:SetPos(12, bodyY + 2)
-	adv:SetSize(listW - 20, 16)
+	adv:SetPos(self.Edge + math.Round(2 * S), bodyY + math.Round(2 * S))
+	adv:SetSize(listW - self.Edge * 2, math.Round(16 * S))
 	adv:SetText("Advanced")
 	adv:SetTextColor(PS.Theme.TextDim)
+	-- Seeded, so the callback has to ignore the seed. A checkbox fires OnChange from SetValue
+	-- a frame later, which here would collect every provider and rebuild the whole list at
+	-- the moment the panel opens -- work that has already just been done.
+	adv._seeding = true
 	adv:SetValue(PS.Theme.ShowAdvanced and true or false)
-	adv.OnChange = function(_, on)
+	timer.Simple(0, function() if IsValid(adv) then adv._seeding = false end end)
+
+	adv.OnChange = function(s, on)
+		if s._seeding then return end
+
 		PS.Theme.ShowAdvanced = on
 		self.Providers = CollectProviders()
 		self:BuildList()
 	end
 
-	local listY = bodyY + 24
+	local listY = bodyY + math.Round(24 * S)
 
 	self.List = vgui.Create("DScrollPanel", self)
-	self.List:SetPos(10, listY)
-	self.List:SetSize(listW, h - listY - 55)
-	self.ListW = listW
+	self.List:SetPos(self.Edge, listY)
+
+	-- Stops above the owner block, which sits between it and the footer. Zero for anyone who
+	-- is not the owner, so the list is exactly as tall as it always was.
+	self.List:SetSize(listW, h - listY - self.FootH - self.Edge - self.OwnerBlockH)
 
 	-- The options column is a panel on the window body, so it is painted as one.
 	--
@@ -588,17 +705,19 @@ function PANEL:Init()
 	self.List.Paint = function(_, pw, ph) PS.Theme.PaintListBox(pw, ph) end
 
 	-- Right: the active provider's previews as subtabs.
-	local px = listW + 20
+	local px = listW + self.Edge * 2
 
 	self.Preview = vgui.Create("DPanel", self)
 	self.Preview:SetPos(px, bodyY)
-	self.Preview:SetSize(w - px - 10, h - bodyY - 55)
+	self.Preview:SetSize(w - px - self.Edge, h - bodyY - self.FootH - self.Edge)
 	self.Preview.Paint = function() end
 
 	self.SubTabH, self.SubGap = tabH, gap
 
-	self:SelectProvider(1)
+	-- Footer first: it builds the owner controls, and SelectProvider is what decides whether
+	-- they are shown. The other way round they simply did not exist yet on the first call.
 	self:BuildFooter(w, h)
+	self:SelectProvider(1)
 end
 
 -- One button per provider, across the top.
@@ -632,6 +751,18 @@ function PANEL:SelectProvider(index)
 	if not provider then return end
 
 	self._activeProvider = index
+
+	-- The owner's publish controls follow the shop's tab, because publishing sends the shop's
+	-- palette. On another provider's tab they would appear to act on what is on screen and
+	-- would not: an owner editing the gamemode's colours would publish shop colours they had
+	-- not touched and drop the ones they had.
+	--
+	-- Hidden rather than removed, so switching tabs does not rebuild them, and the band they
+	-- sit in stays reserved so the list does not resize under the cursor.
+	local showOwner = provider.isShop and true or false
+	for _, panel in ipairs(self.OwnerControls or {}) do
+		if IsValid(panel) then panel:SetVisible(showOwner) end
+	end
 
 	self:BuildList()
 	self:BuildSubTabs(provider)
@@ -735,6 +866,26 @@ function PANEL:AddRow(row, y, listW)
 	return self:AddColourRow(row, y, listW)
 end
 
+-- Called by every path that changes a value, before the change lands.
+--
+-- Default and Classic are read-only, so an edit to one moves the player to Custom, seeded
+-- from what is already on screen. That changes which look is selected, and the picker at the
+-- top of this panel is showing the old one until something rebuilds it.
+--
+-- One function because the three edit paths had drifted: the colour mixer rebuilt, the slider
+-- and toggle rows did not, so two of the three moved you to a different look while the
+-- dropdown went on naming the one you left. Anything that edits a value calls this and
+-- nothing calls BeginEdit directly.
+function PANEL:NoteEdit()
+	if not (PS.Theme.BeginEdit and PS.Theme.BeginEdit()) then return end
+
+	-- Deferred a frame: this runs from inside a control's own callback, and that control is
+	-- about to be destroyed by the rebuild it is asking for.
+	timer.Simple(0, function()
+		if IsValid(self) then self:BuildList() end
+	end)
+end
+
 -- Label above, a combo box below. Same two-line shape as the slider and for the same reason:
 -- the list column is narrow, and a combo squeezed beside a label truncates its own values.
 --
@@ -758,11 +909,17 @@ function PANEL:AddChoiceRow(row, y, listW)
 		combo:AddChoice(opt.name, opt.id, opt.id == current)
 	end
 
+	-- The preset picker is the sharpest case of this: a spurious OnSelect here does not
+	-- edit a colour, it switches the whole look.
+	combo._seeding = true
+	timer.Simple(0, function() if IsValid(combo) then combo._seeding = false end end)
+
 	-- A saved choice whose provider has gone (a preset from an addon since removed) leaves
 	-- the combo blank rather than silently showing the wrong name.
 	if not combo:GetSelected() then combo:SetValue(current and tostring(current) or "Default") end
 
-	combo.OnSelect = function(_, _, _, data)
+	combo.OnSelect = function(s, _, _, data)
+		if s._seeding then return end
 		local ok, err = pcall(row.set, data)
 		if not ok then
 			Warn("choice '" .. row.label .. "' set() errored: " .. tostring(err))
@@ -810,9 +967,14 @@ function PANEL:AddToggleRow(row, y, listW)
 	box:SetSize(listW - 30, 16)
 	box:SetText(row.label)
 	box:SetTextColor(PS.Theme.Text)
+	box._seeding = true
 	box:SetValue(row.get() and true or false)
+	timer.Simple(0, function() if IsValid(box) then box._seeding = false end end)
 
-	box.OnChange = function(_, v)
+	box.OnChange = function(s, v)
+		if s._seeding then return end
+		self:NoteEdit()
+
 		local ok, err = pcall(row.set, v and true or false)
 		if not ok then Warn("toggle '" .. row.label .. "' set() errored: " .. tostring(err)) end
 	end
@@ -830,10 +992,18 @@ function PANEL:AddSliderRow(row, y, listW)
 	slider:SetMin(row.min)
 	slider:SetMax(row.max)
 	slider:SetDecimals(row.decimals or 2)
+	-- Seeding a DNumSlider fires OnValueChanged a frame later, after the callback below is
+	-- wired up, so filling the panel in reads as the user having moved every slider on it.
+	slider._seeding = true
 	slider:SetValue(row.get())
+	timer.Simple(0, function() if IsValid(slider) then slider._seeding = false end end)
+
 	slider.Label:SetTextColor(PS.Theme.Text)
 
-	slider.OnValueChanged = function(_, v)
+	slider.OnValueChanged = function(s, v)
+		if s._seeding then return end
+		self:NoteEdit()
+
 		-- Guarded: a provider's set() is third-party code firing on every drag frame, and an
 		-- error there would otherwise spam and leave the slider half-applied.
 		local ok, err = pcall(row.set, v)
@@ -876,6 +1046,8 @@ function PANEL:OpenMixer(row)
 	mixer.ValueChanged = function(_, newCol)
 		if frame._seeding then return end
 
+		self:NoteEdit()
+
 		-- In place. Every widget style holds a reference to this exact table, so writing
 		-- channels is what makes the preview update; replacing it would orphan them.
 		col.r, col.g, col.b = newCol.r, newCol.g, newCol.b
@@ -891,17 +1063,30 @@ function PANEL:OpenMixer(row)
 end
 
 function PANEL:BuildFooter(w, h)
-	local y = h - 44
+	local S = self.S or 1
+	local y = h - self.FootH
 
-	local function Btn(x, bw, style, label, fn)
+	-- Buttons laid out left to right by a running cursor rather than at written-down x
+	-- positions.
+	--
+	-- The positions were 10, 158 and 306 against a width of 140 -- correct at scale 1 and
+	-- nowhere else. Scaling only the widths made them overlap; scaling both by hand would be
+	-- four numbers that have to agree. A cursor cannot disagree with itself.
+	local cursor = self.Edge
+
+	local function Btn(bw, style, label, fn)
+		local width = math.Round(bw * S)
+
 		local b = vgui.Create("DButton", self)
 		b:SetText("")
-		b:SetPos(x, y)
-		b:SetSize(bw, 28)
+		b:SetPos(cursor, y)
+		b:SetSize(width, PS.Theme.Metrics.ButtonH)
 		b.Paint = function(s, pw, ph)
 			PS.Theme.PaintAction(s, pw, ph, PS.Theme.Action[style], label)
 		end
 		b.DoClick = fn
+
+		cursor = cursor + width + math.Round(8 * S)
 		return b
 	end
 
@@ -926,12 +1111,44 @@ function PANEL:BuildFooter(w, h)
 		return provider.name
 	end
 
-	Btn(10, 140, "Positive", "Save", function()
+	local function DoSave()
 		local name = ActiveProvider("save", "save")
 		notification.AddLegacy((name or "Appearance") .. " settings saved.", NOTIFY_GENERIC, 3)
+	end
+
+	Btn(140, "Positive", "Save", function()
+		-- There is one Custom slot, and saving writes to it.
+		--
+		-- Worth a warning only when this session began somewhere else: the player picked
+		-- Default or Classic, changed something, and was moved to Custom to hold the change.
+		-- Saving then replaces a Custom they built earlier and may not have in mind, and there
+		-- is no undo. Saving edits made while already on Custom is just saving.
+		local T = PS.Theme
+		if T.CustomWasSeeded and T.CustomWasSeeded() and T.CustomExists and T.CustomExists() then
+			PS.UI.Confirm({
+				title = "Overwrite Custom",
+				text  = "This replaces your saved Custom appearance.",
+				yes   = "Overwrite",
+				onYes = DoSave,
+			})
+			return
+		end
+
+		DoSave()
 	end)
 
-	Btn(158, 140, "Warning", "Reset to Default", function()
+	-- The window's size, for everyone rather than just the owner.
+	--
+	-- It lives beside the colours because it is the same kind of choice: how the shop looks to
+	-- the person looking at it. A player on a 4:3 laptop and one on an ultrawide do not want
+	-- the same window, and neither of them is wrong.
+	if PS.OpenShopLayout then
+		Btn(140, "Neutral", "Window size", function()
+			PS.OpenShopLayout()
+		end)
+	end
+
+	Btn(140, "Warning", "Reset to Default", function()
 		ActiveProvider("reset", "reset")
 
 		-- Sliders and checkboxes hold their own copy of the value, so they do not notice a
@@ -941,13 +1158,73 @@ function PANEL:BuildFooter(w, h)
 		self:BuildList()
 	end)
 
-	-- No server-default control here. This panel is a player's own appearance and nothing
-	-- else; anything that changes what OTHER people see belongs on an owner surface, not
-	-- one every player opens.
+	-- Owner controls. Absent for everyone else, not disabled.
+	--
+	-- This panel is a player's own appearance, so anything that changes what OTHER people see
+	-- is built only for the client that passes the owner check. The server re-checks the same
+	-- gate when the message arrives, so this decides what is drawn and nothing more.
+	--
+	-- These two replace a pair of console commands: one that made edits land on the selected
+	-- look instead of diverting to Custom, and one that printed the result for hand-copying
+	-- into a source file. A look's colours are owner data, and the addon already keeps owner
+	-- data in data/ behind a gated message.
+	if PS_IsItemDefaultOwner and PS_IsItemDefaultOwner(LocalPlayer()) then
+		local T = PS.Theme
 
-	Btn(w - 110, 100, "Neutral", "Close", function()
+		-- Measured up from the footer, the way everything else vertical in this panel is.
+		local blockY = y - self.OwnerBlockH
+
+		local edit = vgui.Create("DCheckBoxLabel", self)
+		edit:SetPos(10, blockY)
+		edit:SetSize((self.ListW or 300) - 20, self.OwnerLabelH)
+		edit:SetText("Edit this look for everyone")
+		edit:SetTextColor(PS.Theme.GoldLabel)
+
+		edit._seeding = true
+		edit:SetValue(T.EditingLook and true or false)
+		timer.Simple(0, function() if IsValid(edit) then edit._seeding = false end end)
+
+		edit.OnChange = function(s, on)
+			if s._seeding then return end
+
+			-- Only changes where an edit LANDS. Turning it on publishes nothing, and turning
+			-- it off leaves whatever was already changed exactly where it is.
+			T.EditingLook = on
+		end
+
+		local publish = PS.UI.Button(self, "Save for everyone", "Gold", function()
+			if not T.EditingLook then
+				PS.UI.Confirm({
+					title = "Not editing the look",
+					text  = "Tick 'Edit this look for everyone' first.",
+					yes   = "OK",
+				})
+				return
+			end
+
+			PS.UI.Confirm({
+				title = "Publish look",
+				text  = "Save this look's colours for every player?",
+				yes   = "Publish",
+				onYes = function()
+					T.PublishLook()
+					notification.AddLegacy("Look published to the server.", NOTIFY_GENERIC, 3)
+				end,
+			})
+		end)
+		publish:SetPos(10, blockY + self.OwnerLabelH + PS.Theme.Metrics.Gap)
+		publish:SetWide((self.ListW or 300) - 20)
+
+		-- SelectProvider shows and hides these as the master tab changes.
+		self.OwnerControls = { edit, publish }
+	end
+
+	-- Close sits on the right rather than continuing the run, because it is the one that
+	-- ends the panel rather than acting on it.
+	local close = Btn(100, "Neutral", "Close", function()
 		self:Close()
 	end)
+	close:SetPos(w - close:GetWide() - self.Edge, y)
 end
 
 vgui.Register("DPointShopTheme", PANEL, "DFrame")

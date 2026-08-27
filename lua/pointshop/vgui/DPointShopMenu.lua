@@ -75,21 +75,38 @@ function PANEL:Init()
 	local isAdmin = LocalPlayer():IsAdmin() or LocalPlayer():IsSuperAdmin()
 
 	local slot = 0
+	-- Laid out BY THE HEADER, not by each button.
+	--
+	-- Each button used to place itself, reading self.Header:GetWide() during its own layout
+	-- pass. That is a race: when the frame resizes, a child's layout can run before the
+	-- docked header has taken its new width, so the button positions against the old one and
+	-- nothing invalidates it again. It looked like buttons that refused to go back after the
+	-- layout panel was closed.
+	--
+	-- A parent laying out its own children has the width by definition.
+	self.HeaderButtons = {}
+
 	local function HeaderButton(icon, style, onClick)
 		local btn = PS.UI.IconButton(self.Header, icon, style, onClick)
-		local mine = slot
 		slot = slot + 1
 
-		-- Wraps IconButton's own PerformLayout rather than replacing it: that one re-reads
-		-- the button SIZE from the metrics, and dropping it left the buttons at whatever size
-		-- the look active when the shop was built happened to use.
-		local sizeSelf = btn.PerformLayout
-		btn.PerformLayout = function(s)
-			if sizeSelf then sizeSelf(s) end
-			s:SetPos(self.Header:GetWide() - M.Margin - (mine + 1) * M.IconBtn - mine * M.IconGap,
-				PS.UI.IconBtnY())
-		end
+		-- Placed by Header.PerformLayout below; it must not place itself.
+		btn.PerformLayout = nil
+		table.insert(self.HeaderButtons, btn)
 		return btn
+	end
+
+	self.Header.PerformLayout = function(_, hw)
+		local Mm = PS.Theme.Metrics
+
+		for i, b in ipairs(self.HeaderButtons) do
+			if IsValid(b) then
+				local n = i - 1
+				b:SetSize(Mm.IconBtn, Mm.IconBtn)
+				b:SetPos(hw - Mm.Margin - (n + 1) * Mm.IconBtn - n * Mm.IconGap,
+					PS.UI.IconBtnY())
+			end
+		end
 	end
 
 	-- Icons come from PS.UI.GlyphIcon so the nudge table has one home. This file used to
@@ -170,8 +187,20 @@ function PANEL:Init()
 	self.CategoryScroll:DockMargin(M.Margin, M.Gap, M.Margin, M.Gap)
 	self.CategoryScroll:SetTall(M.CategoryStripH)
 
-	self.CategoryContainer = vgui.Create("DPanel", self.CategoryScroll)
-	self.CategoryContainer:Dock(FILL)
+	-- Added to the scroll panel's CANVAS, not parented to the scroll panel itself.
+	--
+	-- A DScrollPanel scrolls pnlCanvas. Anything parented straight to the scroll panel is a
+	-- sibling of that canvas and of the scrollbar, which broke this two ways at once: Dock(FILL)
+	-- stretched it across the scroll panel's whole rect INCLUDING the strip the scrollbar sits
+	-- in, so the rightmost button drew underneath the bar; and the SetTall that sized it
+	-- did nothing, because FILL overrides it, so the strip could never actually scroll.
+	--
+	-- In the canvas, the canvas width already excludes the scrollbar when one is up. That is
+	-- the number the buttons want, and it means nothing has to predict the bar.
+	self.CategoryContainer = vgui.Create("DPanel")
+	self.CategoryScroll:AddItem(self.CategoryContainer)
+	self.CategoryContainer:Dock(TOP)
+	self.CategoryContainer.PerformLayout = function(_, w) self:LayoutCategories(w) end
 	self.CategoryContainer.Paint = function(s, w, h)
 		surface.SetDrawColor(PS.Theme.MenuCategoryBG)
 		surface.DrawRect(0, 0, w, h)
@@ -228,6 +257,11 @@ function PANEL:ApplyLook()
 	-- exactly what it looked like: buttons that moved when you went looking for them.
 	self:InvalidateChildren(true)
 
+	-- Explicit, and immediate. The header positions the icon buttons from its own width,
+	-- so it has to have taken that width before they are placed -- which is the ordering
+	-- the recursive sweep above does not promise.
+	self.Header:InvalidateLayout(true)
+
 	-- Column counts come from the metrics, so both grids have to be rebuilt rather than
 	-- merely resized. PopulateCategories re-selects the current category, which repopulates
 	-- the items.
@@ -244,6 +278,60 @@ function PANEL:SetVisible(visible)
 	end
 end
 
+-- Places the category buttons across whatever width the container actually has.
+--
+-- Runs from the container's PerformLayout rather than from PopulateCategories, because the
+-- width is the one thing populate cannot know: it is called from Init, before any layout has
+-- happened, when every child still measures 0 wide. Deriving it from the frame instead was
+-- the source of a long run of off-by-a-scrollbar bugs -- the frame does not know whether the
+-- canvas has given 12px away to a scrollbar, and the canvas does.
+function PANEL:LayoutCategories(w)
+	local M = PS.Theme.Metrics
+	local list = self.CategoryList
+	if not list or #list == 0 or w <= 0 then return end
+
+	local btnH = M.CategoryBtnH
+	local gap  = M.CategoryGap
+
+	local columns = math.Clamp(math.floor(math.max(w - gap, 1) / M.CategoryW),
+		M.CategoryMinCols, M.CategoryMaxCols)
+
+	-- One gap at each edge and one between each pair, so columns + 1 of them. floor() leaves
+	-- up to columns-1 pixels over; handing one each to the leftmost columns and shifting the
+	-- rest along makes the row end flush instead of piling the leftover past the last button.
+	local contentW = w - gap * (columns + 1)
+	local btnW     = math.floor(contentW / columns)
+	local spare    = contentW - btnW * columns
+
+	for i, btn in ipairs(list) do
+		if IsValid(btn) then
+			local row = math.floor((i - 1) / columns)
+			local col = (i - 1) % columns
+
+			local extra = col < spare and 1 or 0
+			local shift = math.min(col, spare)
+
+			btn:SetSize(btnW + extra, btnH)
+			btn:SetPos(gap + col * (btnW + gap) + shift, gap + row * (btnH + gap))
+		end
+	end
+
+	local rows = math.ceil(#list / columns)
+	local needed = rows * (btnH + gap) + gap
+
+	-- Guarded, because both of these invalidate layout and this runs FROM a layout pass.
+	-- Setting them unconditionally re-enters every frame.
+	if self.CategoryContainer:GetTall() ~= needed then
+		self.CategoryContainer:SetTall(needed)
+	end
+
+	-- The viewport follows the rows actually needed, capped so a shop with many categories
+	-- scrolls instead of eating the window.
+	local viewport = math.min(needed, M.CategoryStripH)
+	if self.CategoryScroll:GetTall() ~= viewport then
+		self.CategoryScroll:SetTall(viewport)
+	end
+end
 function PANEL:PopulateCategories()
 	local M = PS.Theme.Metrics
 	-- Clear existing category buttons
@@ -261,22 +349,13 @@ function PANEL:PopulateCategories()
 	-- Four columns of 210 was fine at 900 wide and wrong at every other width -- too cramped
 	-- narrow, too much dead space wide. Column count now comes from the space available, and
 	-- the buttons divide it evenly so they always reach both edges.
-	local buttonHeight = M.CategoryBtnH
-	local spacing = M.CategoryGap
-	-- Measured off the FRAME, not off the docked scroll panel. Populate runs inside Init,
-	-- before any layout has happened, so the child's GetWide() is still 0 at this point --
-	-- it would silently produce the minimum column count on every screen.
-	local avail = math.max(self:GetWide() - M.Margin * 2 - spacing, 100)
-	local columns = math.Clamp(math.floor(avail / M.CategoryW), M.CategoryMinCols, M.CategoryMaxCols)
-	local buttonWidth = math.floor(avail / columns) - spacing
-	
 	local categories = {}
 	for _, cat in pairs(PS.Categories) do
 		-- Filter out categories the player can't see (e.g. team-restricted)
 		if cat.CanPlayerSee and not cat:CanPlayerSee(LocalPlayer()) then continue end
 		table.insert(categories, cat)
 	end
-	
+
 	-- Sort categories by order if available
 	table.sort(categories, function(a, b)
 		local orderA = a.Order or 999
@@ -286,33 +365,21 @@ function PANEL:PopulateCategories()
 		end
 		return orderA < orderB
 	end)
-	
-	-- Calculate required height for category container
-	local rows = math.ceil(#categories / columns)
-	local requiredHeight = rows * (buttonHeight + spacing) + spacing
-	self.CategoryContainer:SetTall(requiredHeight)
 
-	-- The VIEWPORT follows the rows actually needed, capped by CategoryStripH.
-	--
-	-- It used to be pinned at CategoryStripH regardless. That is wrong in both
-	-- directions: a shop with three categories reserved room for two rows of nothing,
-	-- and a look with narrower tabs -- more columns, fewer per row, but a shorter strip
-	-- -- hid whole categories behind a scrollbar 34 pixels tall. How many rows the
-	-- buttons need depends on the window width and the number of categories, neither of
-	-- which is knowable when a look is written, so it cannot be a constant.
-	self.CategoryScroll:SetTall(math.min(requiredHeight, M.CategoryStripH))
-	
+	-- Kept in order, because LayoutCategories needs to know which button is which index and
+	-- CategoryButtons is keyed by name.
+	self.CategoryList = {}
 	-- Create category buttons
 	for i, category in ipairs(categories) do
-		local row = math.floor((i - 1) / columns)
-		local col = (i - 1) % columns
-		
+		-- Created here, PLACED in LayoutCategories. Position and size depend on the container's
+		-- real width, which is 0 while this runs inside Init.
+		--
 		-- IsActive is read off the button rather than closed over, because SelectCategory
 		-- sets it on every button in the list and the flag has to be the shared truth.
 		local btn = PS.UI.Tab(self.CategoryContainer, category.Name or "Category",
 			function(s) return s.IsActive end, nil)
-		btn:SetSize(buttonWidth, buttonHeight)
-		btn:SetPos(spacing + col * (buttonWidth + spacing), spacing + row * (buttonHeight + spacing))
+
+		self.CategoryList[i] = btn
 
 		btn.Category = category
 		btn.IsActive = false
@@ -324,6 +391,10 @@ function PANEL:PopulateCategories()
 		self.CategoryButtons[category.Name] = btn
 	end
 	
+	-- Buttons exist but are still unplaced -- LayoutCategories does that, from the
+	-- container's own layout pass, where the width is real.
+	self.CategoryContainer:InvalidateLayout()
+
 	-- Select first category by default
 	if #categories > 0 then
 		self:SelectCategory(categories[1])

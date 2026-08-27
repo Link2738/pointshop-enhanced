@@ -3,19 +3,9 @@ CATEGORY.Icon = 'star'
 CATEGORY.Order = 12
 CATEGORY.AllowedTeams = { 1 }  -- TEAM_VICTIMS
 
-function CATEGORY:CanPlayerSee(ply)
-	if self.AllowedTeams and #self.AllowedTeams > 0 then
-		local validTeam = false
-		for _, tid in ipairs(self.AllowedTeams) do
-			if ply:Team() == tid then
-				validTeam = true
-				break
-			end
-		end
-		if not validTeam then return false end
-	end
-	if PS and PS.Config and PS.Config.IsVIP then
-		return PS.Config.IsVIP(ply)
-	end
-	return false
-end
+-- CanPlayerSee is not defined here any more.
+--
+-- It was an exact copy of the same team check in three category files, and none of them
+-- knew about the gamemode profile -- so a gamemode that turns team gating off could equip
+-- an item from a category the menu still refused to show. The shared default in
+-- sh_init.lua does this now and honours the profile.

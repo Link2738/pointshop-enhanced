@@ -179,6 +179,39 @@ function PANEL:Init()
     self:SetMouseInputEnabled(true)
     self:SetKeyBoardInputEnabled(true)
 
+    -- Derma's own titlebar buttons, replaced with ours.
+    --
+    -- A DFrame builds a minimise, a maximise and a close and paints them with the game's skin,
+    -- so this panel wore stock chrome above a themed body.
+    self:ShowCloseButton(false)
+    if IsValid(self.btnMaxim) then self.btnMaxim:SetVisible(false) end
+    if IsValid(self.btnMinim) then self.btnMinim:SetVisible(false) end
+
+    -- Sized around the button rather than the button squeezed into it, so there is a gap
+    -- above and below at any scale. The strip was a flat 35, which is exactly IconBtn.
+    self.StripH = PS.Theme.Metrics.IconBtn + PS.Theme.Metrics.Gap * 2
+
+    -- Where content starts, measured off the strip rather than guessed.
+    --
+    -- The three control sections began at a hardcoded 40 or 50, which cleared a 35px strip and
+    -- nothing else. Growing the strip put it straight through the first caption of each --
+    -- "Player Color" came out with its top sliced off.
+    self.ContentY = self.StripH + PS.Theme.Metrics.Gap
+
+    -- And the window grows by what the strip gained, so nothing below is pushed off the end.
+    self:SetTall(self:GetTall() + (self.StripH - 35))
+
+    local close = PS.UI.IconButton(self, PS.UI.GlyphIcon("close"), "Danger", function()
+        self:Close()
+    end)
+
+    close.PerformLayout = function(s)
+        local M = PS.Theme.Metrics
+        s:SetSize(M.IconBtn, M.IconBtn)
+        s:SetPos(self:GetWide() - M.IconBtn - M.IconInset,
+            math.floor((self.StripH - M.IconBtn) / 2))
+    end
+
     self.orbitRadius = 60
     self.orbitPhi = math.pi / 2
     self.previewEnabled = false
@@ -270,7 +303,7 @@ end
 function PANEL:CreateAccessorySliders()
     local baseX, sliderW = self:GetContentColumn()
     local sliderH = 24
-    local y = 40
+    local y = self.ContentY
     
     -- Helper function to create slider+box pair
     local function CreateSliderPair(label, min, max, default, decimals)
@@ -281,6 +314,11 @@ function PANEL:CreateAccessorySliders()
 
         local slider = self:Add("DNumSlider")
         slider:SetText(label)
+
+        -- DNumSlider's caption is a DLabel with the skin's default colour, same problem as
+        -- every other label here.
+        slider.Label:SetTextColor(PS.Theme.Text)
+
         slider:SetDecimals(decimals or 2)
         slider:SetMin(min)
         slider:SetMax(max)
@@ -373,8 +411,7 @@ function PANEL:CreateAccessorySliders()
     y = y + 8
 
     -- Color picker for accessories
-    local colorLabel = self:Add("DLabel")
-    colorLabel:SetText("Model Color:")
+    local colorLabel = self:AddLabel(self, "Model Color:")
     colorLabel:SetPos(baseX, y)
     colorLabel:SetSize(sliderW, 20)
     y = y + 22
@@ -452,11 +489,10 @@ end
 
 function PANEL:CreatePlayermodelControls()
     local baseX, w = self:GetContentColumn()
-    local y = 40
+    local y = self.ContentY
 
     -- Color mixer
-    local colorLabel = self:Add("DLabel")
-    colorLabel:SetText("Player Color")
+    local colorLabel = self:AddLabel(self, "Player Color")
     colorLabel:SetPos(baseX, y)
     colorLabel:SetSize(w, 20)
     y = y + 20
@@ -534,8 +570,7 @@ function PANEL:CreatePlayermodelControls()
     local scrollY = 0
     
     -- Skin slider
-    local skinLabel = scrollPanel:Add("DLabel")
-    skinLabel:SetText("Skin")
+    local skinLabel = self:AddLabel(scrollPanel, "Skin")
     skinLabel:SetPos(5, scrollY)
     skinLabel:SetSize(w - 10, 20)
     scrollY = scrollY + 20
@@ -554,6 +589,7 @@ function PANEL:CreatePlayermodelControls()
     -- Camera controls
     self.cameraRotationSlider = self:Add("DNumSlider")
     self.cameraRotationSlider:SetText("Camera Rotation")
+    self.cameraRotationSlider.Label:SetTextColor(PS.Theme.Text)
     self.cameraRotationSlider:SetPos(baseX, y)
     self.cameraRotationSlider:SetSize(w, 24)
     self.cameraRotationSlider:SetMin(0)
@@ -564,6 +600,7 @@ function PANEL:CreatePlayermodelControls()
 
     self.cameraYSlider = self:Add("DNumSlider")
     self.cameraYSlider:SetText("Camera Y")
+    self.cameraYSlider.Label:SetTextColor(PS.Theme.Text)
     self.cameraYSlider:SetPos(baseX, y)
     self.cameraYSlider:SetSize(w, 24)
     self.cameraYSlider:SetMin(-100)
@@ -574,6 +611,7 @@ function PANEL:CreatePlayermodelControls()
 
     self.cameraZoomSlider = self:Add("DNumSlider")
     self.cameraZoomSlider:SetText("Camera Zoom")
+    self.cameraZoomSlider.Label:SetTextColor(PS.Theme.Text)
     self.cameraZoomSlider:SetPos(baseX, y)
     self.cameraZoomSlider:SetSize(w, 24)
     self.cameraZoomSlider:SetMin(20)
@@ -663,8 +701,7 @@ function PANEL:_BuildBodygroupButtons(ent)
     if skinMax < 0 then skinMax = 0 end
 
     if skinMax > 0 then
-        local skinLabel = self.bodygroupScroll:Add("DLabel")
-        skinLabel:SetText("Skin")
+        local skinLabel = self:AddLabel(self.bodygroupScroll, "Skin")
         skinLabel:SetPos(5, 0)
         skinLabel:SetSize(self.bodygroupScroll:GetWide() - 30, 20)
 
@@ -718,8 +755,7 @@ function PANEL:_BuildBodygroupButtons(ent)
         if count > 1 then
             local name = ent:GetBodygroupName(bgID)
             
-            local label = self.bodygroupScroll:Add("DLabel")
-            label:SetText(name)
+            local label = self:AddLabel(self.bodygroupScroll, name)
             label:SetPos(5, scrollY)
             label:SetSize(w, 20)
             scrollY = scrollY + 20
@@ -1609,9 +1645,26 @@ end
 -- TRAIL CONTROLS
 -- ============================================================================
 
+-- A label that follows the theme.
+--
+-- DLabel with no SetTextColor takes its colour from the game's skin, which is a light grey
+-- chosen to sit on a dark panel. That was invisible the moment a light look existed: every
+-- caption in this panel -- Player Color, Skin, the bodygroup names, the camera sliders --
+-- was near-white text on a near-white body.
+--
+-- `parent` because these go into three different containers: the panel, the scroll panel and
+-- the bodygroup scroll.
+function PANEL:AddLabel(parent, text, font)
+    local label = parent:Add("DLabel")
+    label:SetText(text)
+    label:SetFont(font or "PS_Default")
+    label:SetTextColor(PS.Theme.Text)
+    return label
+end
+
 function PANEL:CreateTrailControls()
     local baseX, w = self:GetContentColumn()
-    local y = 50
+    local y = self.ContentY
 
     local label = self:Add("DLabel")
     label:SetText("Trail Color")
@@ -1754,7 +1807,7 @@ function PANEL:Paint(w, h)
 end
 
 function PANEL:PaintOver(w, h)
-    PS.Theme.PaintStatusStrip(w, 35, "Preview enabled. Use controls to customize.")
+    PS.Theme.PaintStatusStrip(w, self.StripH or 35, "Preview enabled. Use controls to customize.")
 end
 
 

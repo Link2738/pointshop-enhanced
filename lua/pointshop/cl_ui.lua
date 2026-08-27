@@ -51,12 +51,15 @@ end
 
 -- Icons, by name rather than by character. Call sites say UI.GlyphIcon("bolt").
 --
--- x and y are per icon because they need to be: the three glyphs come from different
--- fallback fonts and sit differently in their boxes, so one shared offset cannot fix all
--- three. Window dressing, so they are constants -- nothing to read or network at runtime.
+-- x and y are per icon because they need to be: the three glyphs come from different fallback
+-- fonts and sit differently in their own boxes, so one shared offset cannot fix all three.
 --
--- Under PS.Config.Debug each gets live convars (ps_icon_bolt_x, ps_icon_bolt_y, ...) and
--- the tuning panel drives them. Write what you settle on back into this table.
+-- Constants, deliberately. These correct for where a font draws a character, which does not
+-- vary by server or by player -- so there is nothing here for anyone to configure, and the
+-- values below are the settled ones.
+--
+-- They were client convars for a while, driven by a tuning panel, with the results printed to
+-- be pasted back here by hand. That made them neither a constant nor stored data.
 UI.Icons = {
 	close = { glyph = "X",  x = 0, y =  1 },
 	bolt  = { glyph = "⚡", x = 0, y = -4 },
@@ -66,35 +69,24 @@ UI.Icons = {
 -- Shared by every icon: the button's place in the header, and the shadow behind the glyph.
 UI.IconShared = { ButtonY = 0, ShadowX = 1, ShadowY = 1 }
 
-UI.IconCVars = nil
-
-if PS.Config and PS.Config.Debug then
-	-- Not saved to the client config: a tuning value that persists is one you forget you
-	-- set, and then what you are looking at is not the shipped constant.
-	local function CV(n, v)
-		return CreateClientConVar("ps_icon_" .. n, tostring(v), false, false)
-	end
-
-	UI.IconCVars = { shared = {}, icons = {} }
-	for k, v in pairs(UI.IconShared) do
-		UI.IconCVars.shared[k] = CV(string.lower(k), v)
-	end
-	for name, def in pairs(UI.Icons) do
-		UI.IconCVars.icons[name] = { x = CV(name .. "_x", def.x), y = CV(name .. "_y", def.y) }
-	end
+-- Both scale with the screen.
+--
+-- The numbers above are pixel nudges authored against the reference resolution, and the glyph
+-- they are nudging grows with the font. Left unscaled, a correction that centres a character
+-- at 1080p leaves it visibly off at 1440p and twice as far off at 2160p -- the shadow in
+-- particular, which is a one-pixel offset that has to stay one pixel *relative to the text*.
+local function Scaled(v)
+	return math.Round(v * PS.Theme.Scale())
 end
 
 local function Shared(k)
-	local cv = UI.IconCVars
-	if cv then return cv.shared[k]:GetInt() end
-	return UI.IconShared[k]
+	return Scaled(UI.IconShared[k] or 0)
 end
 
 local function Offset(name)
-	local cv = UI.IconCVars
-	if cv and cv.icons[name] then return cv.icons[name].x:GetInt(), cv.icons[name].y:GetInt() end
 	local d = UI.Icons[name]
-	return d and d.x or 0, d and d.y or 0
+	if not d then return 0, 0 end
+	return Scaled(d.x), Scaled(d.y)
 end
 
 function UI.IconBtnY()
@@ -184,6 +176,146 @@ function UI.IconButton(parent, icon, style, onClick)
 		if icon then icon(w, h) end
 	end
 	return btn
+end
+
+-- ============================================================================
+-- ROWS
+--
+-- Stacks labelled controls down a panel and keeps track of how tall the stack got.
+--
+-- Exists because every panel that needed a column of sliders was hand-placing them, and
+-- hand-placed coordinates are how a combo box ends up too short for its own drop arrow and
+-- a buttons row ends up half off the bottom of its window. A caller adds rows and asks for
+-- the height; it never sees a Y coordinate.
+--
+--     local rows = PS.UI.Rows(body)
+--     rows:Choice{ label = "Mode", options = {...}, get = ..., set = ... }
+--     rows:Slider{ label = "Width", min = 320, max = 2560, get = ..., set = ... }
+--     frame:SetTall(header + rows:Height() + footer)
+--
+-- Control heights come from the metrics, so they scale with the screen like everything
+-- else, and they are a floor rather than a preference: DComboBox and DNumSlider both lay
+-- out children inside themselves and misdraw when squeezed.
+-- ============================================================================
+
+-- parent may be nil, which measures instead of building.
+--
+-- A panel has to know how tall its contents are BEFORE it can size the window it will
+-- put them in, and the contents cannot be built before that window exists. So the same
+-- calls run twice: once with no parent to get a height, once for real. `width` supplies
+-- the intended content width to the measuring pass, since there is no panel to ask.
+function UI.Rows(parent, width)
+	local r = { parent = parent, y = 0 }
+
+	function r:LabelH() return math.Round(16 * PS.Theme.Scale()) end
+	function r:CtrlH()  return M().ButtonH end
+	function r:Gap()    return M().Gap end
+	function r:Width()
+		if not parent then return (width or 0) - M().Margin * 2 end
+		return parent:GetWide() - M().Margin * 2
+	end
+
+	function r:Height() return self.y end
+
+	-- A caption above a control, for controls that do not draw their own.
+	function r:Label(text)
+		if not parent then self.y = self.y + self:LabelH() return end
+
+		local l = vgui.Create("DLabel", parent)
+		l:SetText(text or "")
+		l:SetFont("PS_DefaultBold")
+		l:SetTextColor(PS.Theme.Text)
+
+		local top = self.y
+		l.PerformLayout = function(s)
+			s:SetPos(M().Margin, top)
+			s:SetSize(r:Width(), r:LabelH())
+		end
+
+		self.y = self.y + self:LabelH()
+		return l
+	end
+
+	-- DComboBox draws no label of its own, so it gets one above it.
+	function r:Choice(opts)
+		if opts.label then self:Label(opts.label) end
+		if not parent then self.y = self.y + self:CtrlH() + self:Gap() return end
+
+		local combo = vgui.Create("DComboBox", parent)
+		combo:SetSortItems(false)
+
+		local current = opts.get and opts.get()
+		for _, o in ipairs(opts.options or {}) do
+			combo:AddChoice(o.name, o.id, o.id == current)
+		end
+		if not combo:GetSelected() then combo:SetValue(opts.placeholder or "") end
+
+		local top = self.y
+		combo.PerformLayout = function(s)
+			s:SetPos(M().Margin, top)
+			s:SetSize(r:Width(), r:CtrlH())
+		end
+
+		-- Same guard, same reason: AddChoice with the selected flag can arrive as a selection.
+		combo._seeding = true
+		timer.Simple(0, function() if IsValid(combo) then combo._seeding = false end end)
+
+		combo.OnSelect = function(s, _, _, data)
+			if s._seeding then return end
+			if opts.set then opts.set(data) end
+		end
+
+		self.y = self.y + self:CtrlH() + self:Gap()
+		return combo
+	end
+
+	-- DNumSlider draws its own label inline, so it does not get one above it.
+	function r:Slider(opts)
+		if not parent then self.y = self.y + self:CtrlH() + self:Gap() return end
+
+		local sl = vgui.Create("DNumSlider", parent)
+		sl:SetText(opts.label or "")
+		sl:SetMin(opts.min or 0)
+		sl:SetMax(opts.max or 100)
+		sl:SetDecimals(opts.decimals or 0)
+
+		-- Seeded, and the seeding must not read as an edit.
+		--
+		-- DNumSlider does not fire OnValueChanged from SetValue directly -- it fires later,
+		-- when its internal DSlider settles, which is after this function has finished wiring
+		-- the callback up. So filling a panel in with its current values arrives at the caller
+		-- as the user having changed every one of them.
+		--
+		-- That is how opening the shop layout panel silently counted as editing the look, which
+		-- moved the player to Custom and left Classic showing something else entirely. The
+		-- colour mixer already guards the same thing with frame._seeding.
+		sl._seeding = true
+		if opts.get then sl:SetValue(opts.get()) end
+		timer.Simple(0, function() if IsValid(sl) then sl._seeding = false end end)
+
+		sl.Label:SetTextColor(PS.Theme.Text)
+
+		local top = self.y
+		sl.PerformLayout = function(s)
+			s:SetPos(M().Margin, top)
+			s:SetSize(r:Width(), r:CtrlH())
+		end
+
+		sl.OnValueChanged = function(s, v)
+			if s._seeding then return end
+			if opts.set then opts.set(math.Round(v)) end
+		end
+
+		self.y = self.y + self:CtrlH() + self:Gap()
+		return sl
+	end
+
+	-- Blank vertical space, for separating groups.
+	function r:Space(mul)
+		self.y = self.y + math.Round(self:Gap() * (mul or 1))
+	end
+
+	return r
 end
 
 -- One of a set where exactly one is active: category buttons, tabs, value pickers.

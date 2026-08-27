@@ -37,11 +37,14 @@ if CLIENT then
         net.SendToServer()
     end
 
-    function PS_RequestAccessoryCustomization(itemID)
-        net.Start("PS_AccessoryCustomization_Request")
-            net.WriteString(tostring(itemID))
-        net.SendToServer()
-    end
+    -- PS_RequestAccessoryCustomization lived here and was dead in three ways at once: the
+    -- net message it sent, PS_AccessoryCustomization_Request, was never registered with
+    -- util.AddNetworkString; no server handler ever received it; and nothing anywhere called
+    -- the function. It could only have errored on the net.Start.
+    --
+    -- Removed rather than registered. Adding the string would have made a message with no
+    -- receiver look supported, and the next person to call this would get silence instead of
+    -- an error, which is the worse failure.
 
     concommand.Add("ps_dump_local_accessories", function()
         print("[ps_dump_local_accessories] PS_AccessoryCustomizations:")

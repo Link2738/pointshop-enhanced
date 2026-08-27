@@ -1,12 +1,15 @@
 --[[
-	pointshop/cl_layout_owner.lua
+	pointshop/cl_layout.lua
 
-	Owner tool: the shop window's house size.
+	The shop window's size, set by whoever is looking at it.
 
-	Registers through PS_CollectOwnerTools like every other owner panel, so it appears behind
-	the star button in the shop header and nowhere else. Nothing here is drawn for anyone who
-	does not pass the owner check, and the server re-checks that gate on arrival regardless --
-	hiding a button is not security and is not treated as any.
+	Not owner-only, and nothing here is networked. A window size is a property of the screen it
+	is being drawn on -- a player on a 4:3 laptop and one on an ultrawide do not want the same
+	window, and neither of them is wrong -- so it belongs to the client the way a colour does.
+
+	The server still supplies canonical sizes through the theme it publishes. Those are the
+	starting point; this panel writes the player's own on top, into the same file as their
+	colours and without touching them.
 
 	WHAT IT EDITS
 
@@ -91,8 +94,14 @@ local function Relayout()
 	hook.Run("PS_PresetChanged", T.GetPreset())
 end
 
+-- Revert, not edit.
+--
+-- Goes through RestoreBaseMetrics rather than SetBaseMetric so the restored values are not
+-- recorded as deliberate choices -- closing this panel with the X used to pin the old size in
+-- as though it had been picked -- and so the whole set is applied in one rescale instead of
+-- one per key.
 local function Restore(tbl)
-	for k, v in pairs(tbl) do T.SetBaseMetric(k, v) end
+	T.RestoreBaseMetrics(tbl)
 	Relayout()
 end
 
@@ -100,49 +109,112 @@ end
 -- PANEL
 -- ============================================================================
 
+-- One axis: how the size is worked out, the number itself, and the two guard rails.
+--
+-- Built entirely from PS.UI.Rows. There is not a coordinate in this function -- the row
+-- builder places each control and reports how tall the stack got, which is what the panel
+-- is then sized from. Hand-placing these is what put a drop arrow on top of its own text
+-- and half a buttons row off the bottom of the window, three times.
+local function AxisRows(rows, axis, label, names)
+	local sKey, oKey = "Frame" .. axis .. "Scale", "Frame" .. axis .. "Offset"
+	local minKey, maxKey = "Frame" .. axis .. "Min", "Frame" .. axis .. "Max"
+
+	local mode, value = Decode(T.BaseMetric(sKey), T.BaseMetric(oKey))
+	local valueSlider
+
+	local function Push()
+		local scale, offset = Encode(mode, value)
+		T.SetBaseMetric(sKey, scale)
+		T.SetBaseMetric(oKey, offset)
+		Relayout()
+	end
+
+	local options = {}
+	for k = FIXED, INSET do options[#options + 1] = { id = k, name = names[k] } end
+
+	rows:Choice({
+		label   = label,
+		options = options,
+		get     = function() return mode end,
+		set     = function(picked)
+			mode = picked
+
+			-- The number means something different in each mode, so carrying the old one
+			-- across produces nonsense: 900 read as a percentage, or 62 read as pixels.
+			-- There is no honest conversion -- "900 wide" has no percentage that is right on
+			-- every monitor, which is the whole reason the modes exist -- so each mode starts
+			-- somewhere sensible and the owner adjusts from there.
+			local lo, hi = ValueRange(mode, axis)
+			local START = { [FIXED] = 900, [SHARE] = 62, [INSET] = 100 }
+			value = math.Clamp(START[mode], lo, hi)
+
+			valueSlider:SetMin(lo)
+			valueSlider:SetMax(hi)
+			valueSlider:SetValue(value)
+			Push()
+		end,
+	})
+
+	local lo, hi = ValueRange(mode, axis)
+	valueSlider = rows:Slider({
+		label = "Value", min = lo, max = hi,
+		get = function() return value end,
+		set = function(v) value = v Push() end,
+	})
+
+	-- The guard rails: what stops a share-of-screen shop being unusable on a very small
+	-- monitor or absurd on a very wide one.
+	local function Bound(key, text)
+		rows:Slider({
+			label = text, min = 240, max = 2200,
+			get = function() return T.BaseMetric(key) end,
+			set = function(v)
+				T.SetBaseMetric(key, v)
+
+				-- A max under its min silently inverts the clamp, so the pair is kept in order
+				-- here rather than at every place that reads it.
+				if T.BaseMetric(maxKey) < T.BaseMetric(minKey) then
+					if key == maxKey then
+						T.SetBaseMetric(minKey, T.BaseMetric(maxKey))
+					else
+						T.SetBaseMetric(maxKey, T.BaseMetric(minKey))
+					end
+				end
+				Relayout()
+			end,
+		})
+	end
+
+	Bound(minKey, "Minimum")
+	Bound(maxKey, "Maximum")
+end
+
 local function Open()
 	if IsValid(panel) then panel:Remove() end
 
 	local M = T.Metrics
 	before = T.FrameMetrics()
 
-	-- ------------------------------------------------------------------
-	-- SIZES, FROM THE CONTENTS OUT
-	--
-	-- Every number below is derived from the control it belongs to, and the panel is derived
-	-- from those. The previous version went the other way -- a row height was picked, then a
-	-- combo box and three sliders were told to fit inside it -- and they could not: the combo
-	-- had no room for its own drop arrow, so the arrow sat on top of its text, and the buttons
-	-- row was pushed half off the bottom.
-	--
-	-- CTRL_H is M.ButtonH, which already scales with the screen. A DComboBox and a DNumSlider
-	-- are both composites that lay out children inside themselves, so a control height is a
-	-- floor to respect, not a value to choose freely.
-	-- ------------------------------------------------------------------
-	local S       = T.Scale()
-	local LABEL_H = math.Round(16 * S)
-	local CTRL_H  = M.ButtonH
-	local STRIP   = math.Round(26 * S)
+	local STRIP = math.Round(26 * T.Scale())
 
-	-- Vertical bands inside one axis row. Each is the previous one plus its own height plus a
-	-- gap, so inserting a band means adding one line rather than re-deriving four offsets.
-	local BAND_LABEL = M.Gap
-	local BAND_MAIN  = BAND_LABEL + LABEL_H + M.Gap
-	local BAND_BOUND = BAND_MAIN  + CTRL_H  + M.Gap
-	local ROW_H      = BAND_BOUND + CTRL_H  + M.Gap
+	-- Built before the frame exists, so the frame can be sized from it.
+	--
+	-- The body panel it will fill is created below and handed in afterwards; the rows only
+	-- need a parent at the moment they build controls, and they need to be measured before
+	-- there is a window to measure into. So: measure first, build second.
+	local probe = PS.UI.Rows(nil, math.Round(560 * T.Scale()))
+	AxisRows(probe, "W", "Width",  MODE_NAMES)
+	probe:Space(2)
+	AxisRows(probe, "H", "Height", MODE_NAMES_H)
 
-	-- And the panel from the rows. Term by term, matching what actually docks.
-	local bodyH = M.Margin
-		+ (M.Margin + ROW_H + M.Gap)
-		+ (ROW_H + M.Gap)
-		+ (M.Gap + M.ButtonH + M.Margin)
-		+ M.Margin
+	local contentH = probe:Height()
 
 	local f = UI.Frame({
 		remember = "shoplayout",
 		title = "Shop layout",
-		w     = math.Round(560 * S),
-		h     = M.HeaderH + STRIP + bodyH,
+		w     = math.Round(560 * T.Scale()),
+		h     = M.HeaderH + STRIP + M.Margin * 2 + contentH
+		        + M.Gap + M.ButtonH + M.Margin * 2,
 	})
 	panel = f
 
@@ -156,7 +228,7 @@ local function Open()
 	strip:Dock(TOP)
 	strip:SetTall(STRIP)
 	strip.Paint = function(_, w, h)
-		T.PaintStatusStrip(w, h, "Live while open · reverts on close unless saved")
+		T.PaintStatusStrip(w, h, "Live while open - reverts on close unless saved")
 	end
 
 	local body = vgui.Create("DPanel", f)
@@ -170,162 +242,44 @@ local function Open()
 	buttons:SetTall(M.ButtonH)
 	buttons.Paint = function() end
 
-	local rowIndex = 0
-
-	-- One row per dimension. Heading, then mode and value side by side, then min and max.
-	local function AxisRow(axis, label, names)
-		rowIndex = rowIndex + 1
-		local i = rowIndex
-
-		local row = vgui.Create("DPanel", body)
-		row:Dock(TOP)
-		row:SetTall(ROW_H)
-		row:DockMargin(M.Margin, i == 1 and M.Margin or 0, M.Margin, M.Gap)
-		row.Paint = function(_, w, h)
-			T.PaintRow(row, w, h, i, false)
-			draw.SimpleText(label, "PS_DefaultBold", M.Margin, BAND_LABEL + LABEL_H / 2,
-				T.Text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-		end
-
-		-- Two even columns, measured off the row at layout time rather than at build time --
-		-- the row is docked, so its width is still 0 while this function runs.
-		local function halfW() return (row:GetWide() - M.Margin * 3) / 2 end
-		local function leftX()  return M.Margin end
-		local function rightX() return M.Margin * 2 + halfW() end
-
-		local sKey, oKey = "Frame" .. axis .. "Scale", "Frame" .. axis .. "Offset"
-		local minKey, maxKey = "Frame" .. axis .. "Min", "Frame" .. axis .. "Max"
-
-		local mode, value = Decode(T.BaseMetric(sKey), T.BaseMetric(oKey))
-
-		local valueSlider
-
-		local function Push()
-			local scale, offset = Encode(mode, value)
-			T.SetBaseMetric(sKey, scale)
-			T.SetBaseMetric(oKey, offset)
-			Relayout()
-		end
-
-		local combo = vgui.Create("DComboBox", row)
-		combo:SetSortItems(false)
-		for k = FIXED, INSET do combo:AddChoice(names[k], k, k == mode) end
-		combo.PerformLayout = function(s)
-			s:SetPos(leftX(), BAND_MAIN)
-			s:SetSize(halfW(), CTRL_H)
-		end
-		combo.OnSelect = function(_, _, _, data)
-			mode = data
-
-			-- The number means something different in each mode, so carrying the old one
-			-- across produces nonsense: 900 read as a percentage, or 62 read as pixels.
-			-- There is no honest conversion either -- "900 wide" has no percentage that is
-			-- right on every monitor, which is the whole reason the modes exist -- so each
-			-- mode gets a sensible starting value and the owner adjusts from there.
-			local lo, hi = ValueRange(mode, axis)
-			local START = { [FIXED] = 900, [SHARE] = 62, [INSET] = 100 }
-			value = math.Clamp(START[mode], lo, hi)
-
-			valueSlider:SetMin(lo)
-			valueSlider:SetMax(hi)
-			valueSlider:SetValue(value)
-			Push()
-		end
-
-		local lo, hi = ValueRange(mode, axis)
-		valueSlider = vgui.Create("DNumSlider", row)
-		valueSlider:SetText("")
-		valueSlider:SetMin(lo)
-		valueSlider:SetMax(hi)
-		valueSlider:SetDecimals(0)
-		valueSlider:SetValue(value)
-		valueSlider.PerformLayout = function(s)
-			s:SetPos(rightX(), BAND_MAIN)
-			s:SetSize(halfW(), CTRL_H)
-		end
-		valueSlider.OnValueChanged = function(_, v)
-			value = math.Round(v)
-			Push()
-		end
-
-		-- Min and max are the guard rails: they are what stops a share-of-screen shop from
-		-- becoming unusable on a very small or very wide monitor, so they are edited here
-		-- rather than hidden.
-		local function Bound(key, x, labelText)
-			local sl = vgui.Create("DNumSlider", row)
-			sl:SetText(labelText)
-			sl:SetMin(240)
-			sl:SetMax(2200)
-			sl:SetDecimals(0)
-			sl:SetValue(T.BaseMetric(key))
-			sl.Label:SetTextColor(T.TextDim)
-			sl.PerformLayout = function(s)
-				s:SetPos(x(), BAND_BOUND)
-				s:SetSize(halfW(), CTRL_H)
-			end
-			sl.OnValueChanged = function(_, v)
-				T.SetBaseMetric(key, math.Round(v))
-
-				-- A max under its min silently inverts the clamp, so the pair is kept in
-				-- order here rather than at every place that reads it.
-				if T.BaseMetric(maxKey) < T.BaseMetric(minKey) then
-					if key == maxKey then
-						T.SetBaseMetric(minKey, T.BaseMetric(maxKey))
-					else
-						T.SetBaseMetric(maxKey, T.BaseMetric(minKey))
-					end
-				end
-				Relayout()
-			end
-			return sl
-		end
-
-		Bound(minKey, leftX,  "Min")
-		Bound(maxKey, rightX, "Max")
-
-		return row
-	end
-
-	AxisRow("W", "Width",  MODE_NAMES)
-	AxisRow("H", "Height", MODE_NAMES_H)
+	-- The real rows, into the real panel.
+	local rows = PS.UI.Rows(body)
+	AxisRows(rows, "W", "Width",  MODE_NAMES)
+	rows:Space(2)
+	AxisRows(rows, "H", "Height", MODE_NAMES_H)
 
 	-- One Save, and it sets the server default.
 	--
-	-- Deliberately no separate "keep this for me". This panel is owner-only, and the window
-	-- size is a property of the shop rather than of whoever happens to be looking at it, so
-	-- for the one person who can open this, saving and publishing are the same act.
+	-- Saves to this client, and nothing crosses the wire.
 	--
-	-- Still confirmed, because it changes what every connected player sees.
-	local save = UI.Button(buttons, "Save", "Gold", function()
-		UI.Confirm({
-			text = "Save this as the shop's size for everyone?",
-			yes  = "Save",
-			onYes = function()
-				net.Start("PS_Theme_SetDefault")
-					net.WriteString(util.TableToJSON({
-						colours = T.Snapshot(),
-						metrics = T.FrameMetrics(),
-					}))
-				net.SendToServer()
+	-- No confirmation either: it changes what one person sees, it is reversible by opening
+	-- this panel again, and a dialog in front of a preference nobody else is affected by is
+	-- friction pretending to be safety.
+	--
+	-- T.SaveMetrics writes only the sizing section of the client's theme file. Colours live in
+	-- the same file and are not touched -- writing the whole file on every save is what
+	-- deleted a palette when a size was saved.
+	local save = UI.Button(buttons, "Save", "Positive", function()
+		T.SaveMetrics()
 
-				-- Saved, so closing must not put the old size back.
-				before = T.FrameMetrics()
-			end,
-		})
+		-- Saved, so closing must not put the old size back.
+		before = T.FrameMetrics()
+
+		notification.AddLegacy("Shop size saved.", NOTIFY_GENERIC, 3)
 	end)
 	save:Dock(RIGHT)
 	save:DockMargin(M.Gap, 0, 0, 0)
-	save:SetWide(math.Round(90 * S))
+	save:SetWide(math.Round(90 * T.Scale()))
 
 	local revert = UI.Button(buttons, "Revert", "Neutral", function()
 		if before then Restore(before) end
 	end)
 	revert:Dock(RIGHT)
-	revert:SetWide(math.Round(90 * S))
+	revert:SetWide(math.Round(90 * T.Scale()))
 
 	return f
 end
 
-hook.Add("PS_CollectOwnerTools", "PS_ShopLayout", function(add)
-	add("Shop layout", Open)
-end)
+-- Opened from the appearance panel, which is where a player already goes to change how the
+-- shop looks to them. Not on the owner menu any more: there is nothing owner-only left in it.
+PS.OpenShopLayout = Open

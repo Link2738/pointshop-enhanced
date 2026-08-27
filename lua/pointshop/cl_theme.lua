@@ -186,29 +186,42 @@ T.Metrics = {
 	-- it was briefly made a pure screen-share. The clamps are what keep it usable on a small
 	-- screen and stop it sprawling on a large one.
 	-- ========================================================================
+	-- 915 wide, and as tall as the screen less 200.
+	--
+	-- Two different shapes on purpose. Width is fixed because a shop wider than about this
+	-- stops being scannable -- the eye has to travel a row it cannot take in. Height is an
+	-- inset because vertical space is the thing a taller screen actually has more of, and a
+	-- longer grid is straightforwardly more useful.
+	--
+	-- These eight are NOT scaled -- they are the size the player asked for, and everything
+	-- else is measured against the width they produce. See T.Scale.
 	FrameWScale  = 0,
-	FrameWOffset = 900,
+	FrameWOffset = 915,
 	FrameWMin    = 640,
 	FrameWMax    = 1400,
 
 	FrameHScale  = 1,
-	FrameHOffset = -100,
+	FrameHOffset = -200,
 	FrameHMin    = 600,
 	FrameHMax    = 900,
 
 	-- ========================================================================
-	-- RESOLUTION SCALING
+	-- SCALING
 	--
-	-- Every number above is authored against a screen RefH pixels tall, and multiplied by
-	-- ScrH()/RefH at runtime. 1080 because that is what the shipped look was drawn against,
-	-- so a 1080p screen gets exactly the values written here and nothing changes for it.
+	-- Every number above is authored against a shop RefW pixels wide, and multiplied by
+	-- actualWidth/RefW at runtime. 915 is the shipped default width, so a player who never
+	-- touches the size gets exactly the values written here.
 	--
-	-- The clamps stop both extremes: below ScaleMin a 4:3 laptop would get a shop too small
-	-- to read, above ScaleMax a 4K panel would get one so large it stops being a window.
-	-- A look wanting to be scaled harder or not at all sets these like any other metric,
-	-- and ScaleMin = ScaleMax = 1 turns scaling off entirely.
+	-- The window is the reference, not the screen. Someone who makes their shop bigger wants
+	-- bigger buttons and text in it; someone who keeps it at 915 on a 4K monitor asked for a
+	-- 915 window and gets normally proportioned controls in it. Resolution reaches this only
+	-- through a size that was chosen as a share of the screen -- which is the case where
+	-- following the monitor is the point.
+	--
+	-- The clamps stop both extremes: below ScaleMin the text stops being readable, above
+	-- ScaleMax the chrome eats the content it is wrapped around.
 	-- ========================================================================
-	RefH     = 1080,
+	RefW     = 915,
 	ScaleMin = 0.75,
 	ScaleMax = 2,
 }
@@ -340,6 +353,14 @@ local DERIVED = {}   -- [variantKey] = { base = <key>, dr, dg, db, da }
 
 T.Derived = {}       -- set of variant keys, for the editor to skip
 
+-- Whether the appearance editor reveals the derived variants.
+--
+-- Declared here rather than springing into existence the first time the editor's checkbox is
+-- ticked. It lives on the theme table and is read by BuildShopSections, so the theme file is
+-- the wrong place for it to be undeclared -- nil happens to be the right default, which is
+-- exactly why nobody noticed it had no home.
+T.ShowAdvanced = false
+
 local function Derive(base, ...)
 	local b = T[base]
 
@@ -430,7 +451,8 @@ function T.RemeasureDerived(key)
 	d.dr, d.dg, d.db, d.da = v.r - b.r, v.g - b.g, v.b - b.b, v.a - b.a
 end
 
-function T.IsDerived(key) return DERIVED[key] ~= nil end
+-- T.IsDerived(key) lived here and nothing ever called it. The editor asks PS.Theme.Derived
+-- directly, which is the set it was wrapping.
 
 -- ============================================================================
 -- ITEM CARD
@@ -488,13 +510,16 @@ T.Text = Color(255, 255, 255, 255)
 -- there the two must disagree or the title vanishes into the bar.
 T.HeaderText = Color(255, 255, 255, 255)
 
--- Text drawn on top of a saturated fill: card price badges, the card's name strip, anything
--- sitting on Positive/Danger/Gold and friends.
+-- Text drawn on top of a fill, rather than on a body surface.
 --
--- Split for the same reason and it is the stronger case: those fills are chosen for their
--- own meaning, so the text on them tracks the FILL, not the theme. It stays light whether
--- the body around it is dark or light.
-T.OnFill = Color(255, 255, 255, 255)
+-- Two entries, not one. They were briefly the same token and that was wrong: a button's
+-- fill is a saturated action colour picked for its meaning, while an item card's name strip
+-- is a quiet surface picked to sit under a model. One value cannot be right on both -- white
+-- on a green Confirm button is correct and white on a pale grey name strip is invisible.
+--
+-- Both ship white, which is what the single token was, so the shipped look is unmoved.
+T.ButtonText = Color(255, 255, 255, 255)   -- on Positive / Warning / Accent / Modify fills
+T.CardText   = Color(255, 255, 255, 255)   -- item name strip and the price badge
 
 -- Category tab text, one per state.
 --
@@ -583,13 +608,13 @@ T.Action = {
 		fill = T.PositiveFill, fillHover = T.PositiveFillHover,
 		gloss = T.PositiveGloss, glossHover = T.PositiveGlossHover,
 		glow = T.PositiveGlow, glowLayers = { 80, 40 },
-		border = T.PositiveBorder, text = T.OnFill, shadow = T.ShadowStrong,
+		border = T.PositiveBorder, text = T.ButtonText, shadow = T.ShadowStrong,
 	},
 	Warning = {
 		radius = "RadiusSm", lerp = 10, font = "PS_Default",
 		fill = T.WarningFill, fillHover = T.WarningFillHover,
 		gloss = T.WarningGloss, glossHover = T.WarningGlossHover,
-		border = T.WarningBorder, text = T.OnFill, shadow = T.Shadow,
+		border = T.WarningBorder, text = T.ButtonText, shadow = T.Shadow,
 	},
 	Gold = {
 		radius = "RadiusSm", lerp = 10, font = "PS_Default",
@@ -614,14 +639,14 @@ T.Action = {
 	Modify = {
 		radius = "RadiusSm", lerp = 10, font = "PS_Default",
 		fill = T.ModifyFill, fillHover = T.ModifyFillHover,
-		border = T.ModifyBorder, text = T.OnFill, shadow = T.Shadow,
+		border = T.ModifyBorder, text = T.ButtonText, shadow = T.Shadow,
 	},
 	Accent = {
 		radius = "RadiusMd", lerp = 10, font = "PS_Default",
 		fill = T.AccentFill, fillHover = T.AccentFillHover,
 		gloss = T.AccentGloss, glossHover = T.AccentGlossHover,
 		glow = T.AccentGlow, glowLayers = { 100 },
-		border = T.AccentBorder, text = T.OnFill, shadow = T.Shadow,
+		border = T.AccentBorder, text = T.ButtonText, shadow = T.Shadow,
 	},
 }
 
@@ -983,21 +1008,60 @@ for k, v in pairs(T.Metrics) do METRIC_DEFAULTS[k] = v end
 local METRIC_BASE = {}
 for k, v in pairs(METRIC_DEFAULTS) do METRIC_BASE[k] = v end
 
--- Not pixel counts, so scaling them would be meaningless or harmful: a fraction of the
--- screen is already resolution-relative, a column count is a count, and the scale controls
--- themselves obviously cannot scale.
+-- Never scaled.
+--
+-- The frame metrics because they ARE the scale's input -- scaling them by a number derived
+-- from themselves is circular, and the window is the size the player asked for, not a size
+-- to then adjust. Column counts because they are counts. The scale controls for the obvious
+-- reason.
 local UNSCALED = {
-	FrameWScale = true, FrameHScale = true,
+	FrameWScale = true, FrameWOffset = true, FrameWMin = true, FrameWMax = true,
+	FrameHScale = true, FrameHOffset = true, FrameHMin = true, FrameHMax = true,
+
 	CategoryMinCols = true, CategoryMaxCols = true,
 	CardMinCols = true, CardMaxCols = true,
-	RefH = true, ScaleMin = true, ScaleMax = true,
+
+	RefW = true, ScaleMin = true, ScaleMax = true,
 }
 
+-- How big everything is, relative to the window it is in.
+--
+-- Taken from the shop's WIDTH, not the screen's height. A player sets the window size they
+-- want and the buttons, text and boxes follow it -- which is what "bigger window" means to
+-- the person asking for one, and it removes resolution from the question entirely.
+--
+-- Screen resolution still reaches this, just indirectly and only when asked for: a window set
+-- to a share of the screen gets wider on a bigger monitor and everything in it grows to suit,
+-- while a window set to a fixed 915 stays 915 with normal-sized controls on any monitor. Both
+-- are what was asked for.
+--
+-- Width rather than height because the width is what the grids divide, and because the
+-- shipped default width is a plain number while the default height is screen-derived -- a
+-- reference has to be something that does not move.
+--
+-- Reads the BASE, so nothing here depends on the scaled output.
 function T.Scale()
-	local ref = METRIC_BASE.RefH
+	local ref = METRIC_BASE.RefW
 	if not ref or ref <= 0 then return 1 end
 
-	return math.Clamp(ScrH() / ref, METRIC_BASE.ScaleMin or 0.5, METRIC_BASE.ScaleMax or 3)
+	local w = math.Clamp(
+		ScrW() * METRIC_BASE.FrameWScale + METRIC_BASE.FrameWOffset,
+		METRIC_BASE.FrameWMin, METRIC_BASE.FrameWMax)
+
+	local s = math.Clamp(math.min(w, ScrW()) / ref,
+		METRIC_BASE.ScaleMin or 0.5, METRIC_BASE.ScaleMax or 3)
+
+	-- Quantised to 5% steps.
+	--
+	-- The scale used to move only when the monitor did, which is rare. It now moves whenever
+	-- the window width does -- so dragging a size slider would produce a different scale on
+	-- every tick, and every one of those rebuilds eleven fonts. That is the per-frame
+	-- surface.CreateFont problem arriving through a new door.
+	--
+	-- Steps make it a staircase instead: a drag crosses a handful of values rather than
+	-- hundreds, fonts rebuild a handful of times, and the sizes in between were sub-pixel
+	-- differences nobody could see anyway.
+	return math.Round(s * 20) / 20
 end
 
 -- Writes the scaled values into T.Metrics IN PLACE.
@@ -1008,6 +1072,9 @@ end
 --
 -- Rounded, because these become panel sizes and positions, and a control on a half pixel
 -- smears its own border.
+-- The scale the fonts were last built at. nil until the first build.
+local lastFontScale = nil
+
 function T.Rescale()
 	local s = T.Scale()
 
@@ -1019,8 +1086,20 @@ function T.Rescale()
 		end
 	end
 
-	-- Text is sized in pixels too, so it moves with everything else.
-	if T.BuildFonts then T.BuildFonts() end
+	-- Text is sized in pixels too, so it moves with everything else -- but ONLY when the
+	-- scale actually changed.
+	--
+	-- Rescale runs on every metric write, and a metric write happens on every tick of a
+	-- slider drag and eight times over when the layout panel restores on close. Rebuilding
+	-- eleven fonts each time is exactly what BuildFonts documents as the thing never to do:
+	-- surface.CreateFont is not cheap and re-creating fonts at frame rate leaves the UI
+	-- drawing with handles that are being replaced underneath it.
+	--
+	-- The scale only moves when the window size does, so almost every Rescale skips this.
+	if s ~= lastFontScale and T.BuildFonts then
+		lastFontScale = s
+		T.BuildFonts()
+	end
 end
 
 local activePreset = nil
@@ -1056,8 +1135,24 @@ end
 -- instead of freezing a whole snapshot at the moment they touched one slider.
 local customMetrics = {}
 
+-- Declared here, assigned further down where the server default lives. ApplyMetrics has to
+-- be able to lay the house sizes down BETWEEN the shipped values and the preset's, and it is
+-- defined above that code.
+local serverMetrics = nil
+local ApplyServerLayer
+
+-- Order is shipped defaults, then the server's house size, then the look, then the player.
+--
+-- The house size was applied AFTER all of this, which meant it did not fill in a size for a
+-- look that had no opinion -- it overrode every look that did. An owner who saved a size
+-- while sitting on Classic gave Classic's window to Default as well, and switching between
+-- the two changed the colours and left the geometry where it was.
+--
+-- A house size is what you get before choosing; choosing is more specific, so it wins.
 local function ApplyMetrics(preset)
 	for k, v in pairs(METRIC_DEFAULTS) do METRIC_BASE[k] = v end
+
+	if ApplyServerLayer then ApplyServerLayer() end
 
 	if preset and istable(preset.metrics) then
 		for k, v in pairs(preset.metrics) do
@@ -1125,7 +1220,6 @@ function T.BuildFonts()
 	end
 end
 -- The server's house sizes, once they have arrived. nil until then.
-local serverMetrics = nil
 
 -- Applied after T.Load, since Load runs ApplyMetrics for the preset and would otherwise
 -- overwrite these a moment later.
@@ -1140,10 +1234,19 @@ local METRIC_BOUNDS = {
 	FrameHMin = { 240, 4000 }, FrameHMax = { 240, 4000 },
 }
 
-local function ApplyServerMetrics()
+-- The house size for the look currently selected.
+--
+-- Stored per look, because a size is only meaningful next to the look it was chosen for. It
+-- was stored globally, so an owner tuning Classic's window and saving handed that window to
+-- Default as well -- and the only way back was a console command, which is not a fix, it is
+-- an apology.
+function ApplyServerLayer()
 	if not istable(serverMetrics) then return end
 
-	for k, v in pairs(serverMetrics) do
+	local mine = serverMetrics[activePreset or ""]
+	if not istable(mine) then return end
+
+	for k, v in pairs(mine) do
 		if METRIC_DEFAULTS[k] ~= nil and isnumber(v) then
 			local b = METRIC_BOUNDS[k]
 			METRIC_BASE[k] = b and math.Clamp(v, b[1], b[2]) or v
@@ -1154,8 +1257,6 @@ local function ApplyServerMetrics()
 	-- intent, so the pair is straightened rather than obeyed.
 	if METRIC_BASE.FrameWMax < METRIC_BASE.FrameWMin then METRIC_BASE.FrameWMax = METRIC_BASE.FrameWMin end
 	if METRIC_BASE.FrameHMax < METRIC_BASE.FrameHMin then METRIC_BASE.FrameHMax = METRIC_BASE.FrameHMin end
-
-	T.Rescale()
 end
 
 -- The widget styles as shipped, so a preset's changes to them can be undone.
@@ -1241,8 +1342,21 @@ function T.Apply(tbl)
 	T.SyncDerived()
 end
 
--- The server's main default, once it has arrived. nil on a server that has not set one.
+-- The owner's colours, per look: { [""] = {...}, classic = {...} }.
+--
+-- Per look for the same reason the sizes are. An owner editing Classic is editing Classic,
+-- not declaring a palette for every look on the server -- which is what a single table did,
+-- and it meant a house palette saved while sitting on the default look painted itself over
+-- Classic on every client that connected.
 local serverDefault = nil
+
+-- What the owner has published for the look currently selected, or nil.
+local function ServerColoursForLook()
+	if not istable(serverDefault) then return nil end
+
+	local mine = serverDefault[activePreset or ""]
+	return istable(mine) and mine or nil
+end
 
 -- Layers 1 and 2 together: what this player sees before any of their own choices. This is
 -- what "reset" means and what `custom` is measured against.
@@ -1252,8 +1366,16 @@ local function ResolvedDefault()
 		out[k] = { v[1], v[2], v[3], v[4] }
 	end
 
-	-- The preset sits between the shipped values and the server's, so an owner who has set
-	-- a house colour keeps it whichever preset a player picks.
+	-- The look's own definition, then the owner's edits to THAT look on top.
+	--
+	-- Both are about the same look now, so the order between them is simply
+	-- shipped-then-changed: the file says what Classic is, the owner says how this server's
+	-- Classic differs, and a player's own edits go above both in SetPreset.
+	--
+	-- It used to be one house palette applied to every look, ordered before them. That is why
+	-- an owner saving while on the default look published the default look and painted it over
+	-- Classic on every client that connected -- a whole palette does not tint a look, it
+	-- replaces one.
 	local preset = activePreset and T.Presets[activePreset]
 	if preset and istable(preset.colours) then
 		for k, v in pairs(preset.colours) do
@@ -1263,8 +1385,9 @@ local function ResolvedDefault()
 		end
 	end
 
-	if istable(serverDefault) then
-		for k, v in pairs(serverDefault) do
+	local house = ServerColoursForLook()
+	if house then
+		for k, v in pairs(house) do
 			if out[k] and istable(v) then
 				out[k] = { v[1], v[2], v[3], v[4] }
 			end
@@ -1285,60 +1408,93 @@ end
 -- server's look: if the owner changes a colour the player never touched, they get the new
 -- one. A full snapshot would silently freeze every colour at whatever it was the first
 -- time they hit Save.
-local function CustomOnly()
-	local base = ResolvedDefault()
-	local out = {}
-
-	for k, b in pairs(base) do
-		local c = T[k]
-		if c.r ~= b[1] or c.g ~= b[2] or c.b ~= b[3] or c.a ~= b[4] then
-			out[k] = { c.r, c.g, c.b, c.a }
-		end
-	end
-
-	return out
-end
-
--- Switch preset. nil goes back to the shipped look.
+-- ============================================================================
+-- THE THREE LOOKS
 --
--- The player's own edits survive, because they are stored as a difference and re-resolved
--- against the new base -- which is also the one surprising part: a colour they changed to
--- exactly what the old preset had will now read as a deliberate choice and stay put.
-function T.SetPreset(id)
-	if id and not T.Presets[id] then return false end
+-- Default and Classic are READ ONLY. Nothing a player does alters them, so picking one
+-- always produces exactly that look, on any machine, at any time.
+--
+-- Custom is the single writable slot. Editing anything while on a read-only look does not
+-- refuse and does not silently modify it -- it copies what is currently on screen into
+-- Custom and switches you there, so the edit lands somewhere it is allowed to live and you
+-- carry on from the look you were already looking at.
+--
+-- Custom holds a WHOLE palette rather than a difference from something. A difference only
+-- means anything relative to a base, and this one is seeded from whichever look you happened
+-- to be on -- so storing a diff would leave a palette that changes meaning depending on what
+-- was selected when you saved it.
+-- ============================================================================
 
-	local custom = CustomOnly()
+local CUSTOM = "custom"
+
+local customPalette = nil   -- colour entries, or nil when nothing has been customised
+local customFrame   = nil   -- the frame metrics that went with it
+
+-- Which look Custom was seeded from this session, if it was seeded this session. Only used
+-- to decide whether saving needs to warn about replacing what is already stored.
+local seededFrom = nil
+
+function T.CustomExists() return customPalette ~= nil end
+function T.CustomWasSeeded() return seededFrom ~= nil end
+-- CustomOnly() lived here: it measured the palette's difference from the resolved base.
+-- Custom now stores a whole palette rather than a difference, because a difference only
+-- means something relative to a base and Custom is seeded from whichever look you were on.
+
+-- Called before any edit lands.
+--
+-- If the current look is read-only, this copies what is on screen into Custom and switches
+-- there, so the edit has somewhere legal to go and the player continues from the look they
+-- were already looking at rather than being dumped onto a blank palette.
+--
+-- Returns true if it moved, so a caller can tell the player why the selector just changed
+-- under them.
+function T.BeginEdit()
+	if activePreset == CUSTOM then return false end
+
+	-- The owner is editing this look for the server, so the edit belongs to the look and is
+	-- not diverted anywhere. Publishing it is a separate, deliberate act.
+	if T.EditingLook then return false end
+
+	seededFrom   = activePreset or ""
+	customPalette = T.Snapshot()
+	customFrame   = T.FrameMetrics()
+	activePreset  = CUSTOM
+
+	-- No repaint needed: the palette already holds exactly these values, which is the point
+	-- of seeding from them. Only the selector and anything watching the look need telling.
+	hook.Run("PS_PresetChanged", CUSTOM)
+	return true
+end
+-- Switch look. nil goes back to the shipped one.
+--
+-- Each look keeps its own customisations. Leaving one files the current edits under its
+-- name; arriving at another unpacks whatever was filed under that one, or nothing if it has
+-- never been touched -- which is what makes a freshly chosen look actually look like itself.
+-- Going back returns the edits you left there.
+function T.SetPreset(id)
+	-- CUSTOM is a slot rather than a registered preset, so it is not in T.Presets.
+	if id and id ~= CUSTOM and not T.Presets[id] then return false end
+
 	activePreset = id
 
-	local preset = id and T.Presets[id]
+	-- Choosing a look explicitly ends any seeded session: from here on Custom is whatever is
+	-- stored, not something derived from where you happened to be.
+	seededFrom = nil
 
-	-- The preset wins any argument with a customisation.
-	--
-	-- Custom sits above the preset in the layering, which is right while a look is in
-	-- use -- an edit made now has to stick. It is wrong at the moment of CHOOSING one:
-	-- an accent set red under the old look would survive into Classic and overwrite its
-	-- slate, so picking Classic gave you Classic with your old colours stamped over the
-	-- parts that make it Classic.
-	--
-	-- So a switch drops every custom the incoming preset has an opinion about. Anything
-	-- it does not mention is untouched and stays yours. After the switch the layering is
-	-- unchanged, so editing works normally and those edits persist.
-	--
-	-- The cost is real and worth naming: choosing a look discards the edits it conflicts
-	-- with, and there is no undo. That is the trade for a look actually looking like
-	-- itself when you pick it.
-	if preset and istable(preset.colours) then
-		for k in pairs(preset.colours) do custom[k] = nil end
+	-- Only Custom carries edits. The read-only looks take none, which is what makes them
+	-- reproducible.
+	local custom = {}
+	customMetrics = {}
+
+	if id == CUSTOM then
+		custom = customPalette or {}
+		customMetrics = customFrame and table.Copy(customFrame) or {}
 	end
 
-	-- Same rule for metrics: a width set under one look must not follow you into a look
-	-- that specifies its own.
-	if preset and istable(preset.metrics) then
-		for k in pairs(preset.metrics) do customMetrics[k] = nil end
-	end
+	local preset = id ~= CUSTOM and id and T.Presets[id] or nil
+
 
 	ApplyMetrics(preset)
-	ApplyServerMetrics()
 	ApplyStyles(preset)
 
 	-- Offsets first, and unconditionally: leaving a preset, or moving between two of them,
@@ -1412,33 +1568,107 @@ function T.BaseMetric(k)
 	return METRIC_BASE[k]
 end
 
+-- Sets one metric on the look that is currently selected.
+--
+-- A size is NOT a palette edit, and treating it as one is what made adjusting Classic's
+-- window turn it into Default. It went through BeginEdit, which switches the active look to
+-- Custom -- and Custom has no preset colour layer, so the instant a size slider moved,
+-- Classic's colours stopped being applied. Moving a window edge changed the theme.
+--
+-- The two are edited from different places by different people for different reasons: colours
+-- from the appearance panel by any player, sizes from the owner's layout panel. Only the
+-- first has any business converting anyone to Custom.
+--
+-- Recorded in customMetrics so the change survives a rescale, and written to whichever look
+-- is selected when the panel saves.
 function T.SetBaseMetric(k, v)
 	if METRIC_DEFAULTS[k] == nil or not isnumber(v) then return end
-	METRIC_BASE[k] = v
 
-	-- Recorded as the player's own, so T.Save persists it and ApplyMetrics puts it back
-	-- above the preset next time. Without this a change survived until the next preset
-	-- switch or resolution change and then silently vanished.
+	METRIC_BASE[k] = v
 	customMetrics[k] = v
 
 	T.Rescale()
 end
 
--- Forgets the player's metric edits, so the preset's own values apply again.
-function T.ClearCustomMetrics()
-	customMetrics = {}
+-- Puts a set of metrics back without recording them as choices, and rescales once.
+--
+-- Reverting is not editing. Writing a revert through SetBaseMetric marked every restored
+-- value as a deliberate customisation -- so cancelling out of the layout panel left the size
+-- pinned as if it had been chosen, above whatever the preset said. It also rescaled once per
+-- key, eight times for a frame size, each one a full pass over every metric.
+function T.RestoreBaseMetrics(tbl)
+	if not istable(tbl) then return end
+
+	for k, v in pairs(tbl) do
+		if METRIC_DEFAULTS[k] ~= nil and isnumber(v) then
+			METRIC_BASE[k] = v
+			customMetrics[k] = nil
+		end
+	end
+
+	T.Rescale()
 end
 
-function T.Save()
+-- Reads what is on disk, so a write can change one part of it.
+local function ReadStored()
+	if not file.Exists(DATA_PATH, "DATA") then return {} end
+
+	local raw = file.Read(DATA_PATH, "DATA")
+	if not raw or raw == "" then return {} end
+
+	local ok, tbl = pcall(util.JSONToTable, raw)
+	return (ok and istable(tbl)) and tbl or {}
+end
+
+-- Writes the file back with `changes` applied over what was already there.
+--
+-- Every save goes through here, and every save names only the keys it is about. Sizes and
+-- colours live in one file and must not disturb each other: saving a window size rewriting
+-- the palette is not a hypothetical, it is what deleted one.
+local function WriteStored(changes)
 	if not file.IsDir("pointshop", "DATA") then file.CreateDir("pointshop") end
 
-	file.Write(DATA_PATH, util.TableToJSON({
-		defaults = ResolvedDefault(),
-		custom   = CustomOnly(),
-		metrics  = customMetrics,
-		panels   = T.Panels,
+	local stored = ReadStored()
+	for k, v in pairs(changes) do stored[k] = v end
+
+	file.Write(DATA_PATH, util.TableToJSON(stored, true))
+end
+
+-- Colours only.
+function T.SaveColours()
+	if activePreset == CUSTOM then
+		customPalette = T.Snapshot()
+		seededFrom    = nil
+	end
+
+	WriteStored({
+		custom   = customPalette,
+
+		-- The look the player has chosen travels with the palette, because it is what decides
+		-- which palette applies. Sizes have no opinion about it.
 		preset   = activePreset,
-	}, true))
+
+		-- A record of what the customs were measured against. Never applied on load; kept so
+		-- a palette can be read by eye against the base it came from.
+		defaults = ResolvedDefault(),
+	})
+end
+
+-- Sizes only.
+function T.SaveMetrics()
+	if activePreset == CUSTOM then
+		customFrame = T.FrameMetrics()
+	end
+
+	WriteStored({ metrics = customFrame })
+end
+
+-- Both. Kept because the appearance panel's Save means "commit what I am looking at", which
+-- is the whole thing -- but it is still two section writes rather than one whole-file write,
+-- so it cannot clear anything it does not name.
+function T.Save()
+	T.SaveColours()
+	T.SaveMetrics()
 end
 
 -- Writes ONLY the panel positions, leaving whatever palette is on disk alone.
@@ -1447,16 +1677,7 @@ end
 -- unsaved experiment, since the appearance menu applies edits immediately and only persists
 -- them on Save. Dragging a window should not decide that.
 function T.SavePanels()
-	if not file.IsDir("pointshop", "DATA") then file.CreateDir("pointshop") end
-
-	local disk = {}
-	if file.Exists(DATA_PATH, "DATA") then
-		local ok, tbl = pcall(util.JSONToTable, file.Read(DATA_PATH, "DATA") or "")
-		if ok and istable(tbl) then disk = tbl end
-	end
-
-	disk.panels = T.Panels
-	file.Write(DATA_PATH, util.TableToJSON(disk, true))
+	WriteStored({ panels = T.Panels })
 end
 
 -- Reapplies all three layers from scratch. Called on load and whenever the server's default
@@ -1484,21 +1705,27 @@ function T.Load()
 	-- Silently ignored if the preset no longer exists -- an addon that registered one may
 	-- have been removed, and that should give the player the shipped look rather than an
 	-- error every time the shop opens.
-	-- Before the preset branch: ApplyMetrics layers these over the preset, so they have to
-	-- be in place by the time it runs.
-	if istable(tbl.metrics) then
-		customMetrics = {}
-		for k, v in pairs(tbl.metrics) do
-			if METRIC_DEFAULTS[k] ~= nil and isnumber(v) then customMetrics[k] = v end
+	-- The Custom slot: a whole palette, filtered to keys that still exist.
+	if istable(tbl.custom) then
+		customPalette = {}
+		for k, v in pairs(tbl.custom) do
+			if DEFAULTS[k] and istable(v) then customPalette[k] = v end
 		end
+		if not next(customPalette) then customPalette = nil end
 	end
 
+	if istable(tbl.metrics) then
+		customFrame = {}
+		for k, v in pairs(tbl.metrics) do
+			if METRIC_DEFAULTS[k] ~= nil and isnumber(v) then customFrame[k] = v end
+		end
+		if not next(customFrame) then customFrame = nil end
+	end
+	-- The saved look. SetPreset does the whole job -- picks the layers, applies the Custom
+	-- slot if that is what was selected, and leaves the read-only looks untouched by it.
 	if isstring(tbl.preset) then
-		if T.Presets[tbl.preset] then
-			activePreset = tbl.preset
-			ApplyMetrics(T.Presets[activePreset])
-			ApplyServerMetrics()
-			T.Apply(ResolvedDefault())
+		if tbl.preset == CUSTOM or T.Presets[tbl.preset] then
+			T.SetPreset(tbl.preset)
 		else
 			-- Not registered yet, or gone. Held for RegisterPreset to pick up; if nothing
 			-- ever claims it the player just gets the shipped look, which is the right
@@ -1507,65 +1734,41 @@ function T.Load()
 		end
 	end
 
-	-- Only `custom` is applied. The `defaults` section in the file is a record of what the
-	-- player was customising away from - applying it would pin them to a stale copy of a
-	-- server default that has since moved on.
-	--
-	-- Filtered the same way SetPreset filters: the preset wins any argument with a
-	-- customisation. Without this a conflicting custom saved before the preset was
-	-- chosen -- or chosen and never saved -- would come back over the top of it on every
-	-- rejoin, and the look would be correct exactly until you reconnected.
-	local custom = tbl.custom
-	local preset = activePreset and T.Presets[activePreset]
-
-	if istable(custom) and preset and istable(preset.colours) then
-		local filtered = {}
-		for k, v in pairs(custom) do
-			if preset.colours[k] == nil then filtered[k] = v end
-		end
-		custom = filtered
-	end
-
-	T.Apply(custom)
-
-	-- ApplyMetrics only ran above if a preset was saved. A player with metric edits and
-	-- no preset needs them too.
-	if not activePreset and next(customMetrics) then ApplyMetrics(nil) end
-
 	if istable(tbl.panels) then T.Panels = tbl.panels end
 end
 
--- The server's house look: colours, and now sizes.
+-- What the owner has published: per-look colours, per-look sizes, and the icon offsets.
 --
--- Two accepted shapes, because the old one is already on disk on live servers:
+--   { colours = { [""] = {...}, classic = {...} },
+--     metrics = { [""] = {...}, classic = {...} } }
 --
---   { FrameBG = {...}, Accent = {...} }                  legacy, colours at the top level
---   { colours = { ... }, metrics = { ... } }             current
+-- An ABSENT section means "leave that alone", never "clear it": a panel sends the sections it
+-- is about, so the layout panel saving a size must not delete the palette. An EMPTY section
+-- is a clear, which is the difference that lets one be undone.
 --
--- Told apart by the presence of a `colours` key, which no palette can collide with since
--- every colour key is capitalised. A server that never upgrades keeps working untouched.
---
--- Metrics are a separate concern from the colour layering below them: the palette resolves
--- through DEFAULTS -> preset -> serverDefault -> custom because a player edits colours, but
--- nobody edits a metric per-player yet, so the server's sizes simply sit on top of whatever
--- the preset asked for.
+-- Colours and sizes are keyed by look. Unkeyed entries are dropped rather than guessed at:
+-- there is no way to know which look they were authored on, and applying them to every look
+-- is precisely the bug the keying fixes.
+local function KeyedByLook(tbl)
+	local out = {}
+	for k, v in pairs(tbl) do
+		if isstring(k) and istable(v) then out[k] = v end
+	end
+	return next(out) and out or nil
+end
+
 function T.SetServerDefault(tbl)
 	if not istable(tbl) then return end
 
-	if istable(tbl.colours) then
-		serverDefault = tbl.colours
-		serverMetrics = istable(tbl.metrics) and tbl.metrics or nil
-	else
-		serverDefault = tbl
-		serverMetrics = nil
-	end
+	if istable(tbl.colours) then serverDefault = KeyedByLook(tbl.colours) end
+	if istable(tbl.metrics) then serverMetrics = KeyedByLook(tbl.metrics) end
 
 	T.Load()
 
-	-- Again, unconditionally. T.Load applies these inside its saved-preset branch, but it
-	-- early-returns when the player has no theme.json at all and never reaches it -- which
-	-- is every player on their first join, exactly the ones a house size is for.
-	ApplyServerMetrics()
+	-- Unconditionally. T.Load applies metrics inside its saved-look branch, but it early-
+	-- returns for a player with no theme.json at all and never reaches it -- which is every
+	-- player on their first join, exactly the ones a house size is for.
+	ApplyMetrics(activePreset and T.Presets[activePreset] or nil)
 
 	-- Sizes are applied to panels when they are built, so anything already open is still
 	-- holding the old ones. Same signal a preset change sends, for the same reason.
@@ -1575,9 +1778,74 @@ end
 T.Rescale()
 T.Load()
 
--- A player changing video settings changes the scale, and every panel already built is
--- holding sizes from the old resolution. Cheap to watch: two comparisons a frame, and the
--- work only happens on an actual change.
+-- ============================================================================
+-- AUTHORING A LOOK
+--
+-- An owner edits a look and publishes it. There is no console command and nothing gets
+-- pasted back into source: a look's colours are owner data, and this addon already keeps
+-- owner data in data/ behind a gated net message. This is that, for looks.
+--
+-- Two console commands used to do this job -- one to make edits land on the selected look
+-- instead of diverting to Custom, one to print the result for hand-copying into a file. The
+-- printing was the tell. A value nobody can save is not configuration, and the paste step
+-- was the absence of persistence dressed up as a safety property.
+-- ============================================================================
+
+-- While true, edits apply to the selected look rather than moving the player to Custom.
+--
+-- Set by the appearance panel's owner-only toggle, never persisted: it describes what the
+-- person at the keyboard is doing right now, not anything about the server.
+T.EditingLook = false
+
+-- What this client has changed the current look to, as a difference from the shipped
+-- definition. This is what gets published.
+--
+-- The difference, not the whole palette: a look file restating every default cannot inherit a
+-- later change to one, and ninety-odd values would bury the six that were actually moved.
+function T.LookOverrides()
+	local out = {}
+
+	local shipped = {}
+	for k, v in pairs(DEFAULTS) do shipped[k] = v end
+
+	local preset = activePreset and T.Presets[activePreset]
+	if preset and istable(preset.colours) then
+		for k, v in pairs(preset.colours) do
+			if shipped[k] then shipped[k] = v end
+		end
+	end
+
+	for k, base in pairs(shipped) do
+		local c = T[k]
+		if c.r ~= base[1] or c.g ~= base[2] or c.b ~= base[3] or c.a ~= base[4] then
+			out[k] = { c.r, c.g, c.b, c.a }
+		end
+	end
+
+	return out
+end
+
+-- Publishes this look's overrides to the server, for everyone.
+--
+-- Keyed by the look being edited, so editing Classic changes this server's Classic and leaves
+-- every other look alone.
+function T.PublishLook()
+	net.Start("PS_Theme_SetDefault")
+		net.WriteString(util.TableToJSON({
+			colours = { [activePreset or ""] = T.LookOverrides() },
+		}))
+	net.SendToServer()
+end
+
+
+-- A resolution change still matters, but only for the sizes that ask about the screen.
+--
+-- A window set to a fixed width does not move when the monitor changes, and neither does
+-- anything measured against it. A window set to a share of the screen does, and everything in
+-- it has to follow -- so this rescales and reflows rather than trying to work out which case
+-- it is.
+--
+-- Cheap to watch: two comparisons a frame, and the work only happens on an actual change.
 local lastW, lastH = ScrW(), ScrH()
 hook.Add("Think", "PS_ThemeWatchResolution", function()
 	if ScrW() == lastW and ScrH() == lastH then return end
@@ -1587,7 +1855,63 @@ hook.Add("Think", "PS_ThemeWatchResolution", function()
 	hook.Run("PS_PresetChanged", T.GetPreset())
 end)
 
+-- ============================================================================
+-- SERVER THEME, CACHED AND HASH-CHECKED
+--
+-- The server's canonical sizes and colours change rarely and are identical for everyone, so
+-- sending them to every player on every join is a transfer whose usual result is "you already
+-- had this". Instead the server offers a hash; a client whose cache matches says nothing.
+--
+-- The cache is a plain file. Corruption, truncation, or an owner changing something all show
+-- up the same way -- the hash does not match -- and are answered the same way, by asking for
+-- the real thing.
+-- ============================================================================
+
+local CACHE_PATH = "pointshop/theme_server.json"
+
+local function ReadCache()
+	if not file.Exists(CACHE_PATH, "DATA") then return nil end
+
+	local raw = file.Read(CACHE_PATH, "DATA")
+	if not raw or raw == "" then return nil end
+
+	local ok, tbl = pcall(util.JSONToTable, raw)
+	return (ok and istable(tbl)) and tbl or nil
+end
+
+local function WriteCache(tbl)
+	if not file.IsDir("pointshop", "DATA") then file.CreateDir("pointshop") end
+	file.Write(CACHE_PATH, util.TableToJSON(tbl))
+end
+
+-- The server has told us what it holds. Use what we have, or ask.
+net.Receive("PS_Theme_Hash", function()
+	local wanted = net.ReadString()
+
+	-- Empty means the server publishes nothing. The cache has to be cleared for that, or a
+	-- theme an owner has since removed would outlive the removal on every client that still
+	-- had it on disk.
+	if wanted == "" then
+		if file.Exists(CACHE_PATH, "DATA") then file.Delete(CACHE_PATH) end
+		return
+	end
+
+	local cached = ReadCache()
+	if cached and PS.ThemeSync.Hash(cached) == wanted then
+		T.SetServerDefault(cached)
+		return
+	end
+
+	net.Start("PS_Theme_Request")
+	net.SendToServer()
+end)
+
+-- The payload itself: either the answer to the request above, or pushed because an owner
+-- just changed something.
 net.Receive("PS_Theme_Default", function()
 	local ok, tbl = pcall(util.JSONToTable, net.ReadString())
-	if ok and istable(tbl) then T.SetServerDefault(tbl) end
+	if not (ok and istable(tbl)) then return end
+
+	WriteCache(tbl)
+	T.SetServerDefault(tbl)
 end)

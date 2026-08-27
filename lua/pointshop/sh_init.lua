@@ -393,7 +393,26 @@ function PS:LoadItems()
 			CATEGORY.Order = 0
 			CATEGORY.AllowedEquipped = -1
 			CATEGORY.AllowedUserGroups = {}
-			CATEGORY.CanPlayerSee = function() return true end
+			-- Whether this category is SHOWN, which is separate from whether its items can be
+			-- equipped (PS:CanEquipForTeam) and has to agree with it.
+			--
+			-- It did not. Three category files each carried their own copy of this team check,
+			-- none of which knew about the gamemode profile -- so a gamemode with teamGating off
+			-- could equip an item from a category the menu refused to show it in. On Hide and
+			-- Seek that meant a seeker could not see the hider categories, even though the whole
+			-- point of that profile is that both roles wear the same things.
+			--
+			-- One default here, profile-aware, and the category files no longer define it. A
+			-- category with a genuinely different rule can still override it below.
+			CATEGORY.CanPlayerSee = function(self, ply)
+				if not PS:UsesTeamGating() then return true end
+				if not self.AllowedTeams or #self.AllowedTeams == 0 then return true end
+
+				for _, tid in ipairs(self.AllowedTeams) do
+					if IsValid(ply) and ply:Team() == tid then return true end
+				end
+				return false
+			end
 			CATEGORY.ModifyTab = emptyfunc
 			
 			if SERVER then AddCSLuaFile('pointshop/items/' .. category .. '/__category.lua') end
