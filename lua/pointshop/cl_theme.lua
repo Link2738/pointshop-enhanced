@@ -143,6 +143,34 @@ T.Metrics = {
 	CardMax  = 230,
 	CardMinCols = 2,
 	CardMaxCols = 8,
+
+	-- ========================================================================
+	-- SHOP WINDOW SIZE
+	--
+	-- Each dimension is  scale * screen + offset,  then clamped to [min, max].
+	--
+	-- Two numbers rather than one because neither alone covers what the shop has actually
+	-- wanted. A pure fraction cannot express "900 wide, whatever the monitor"; a pure
+	-- constant cannot express "as tall as the screen, less a margin". The pair does both,
+	-- and an owner setting a house size does not have to know which kind theirs is:
+	--
+	--   fixed         scale 0,    offset 900     -> always 900
+	--   screen-share  scale 0.62, offset 0       -> 62% of the width
+	--   screen-inset  scale 1,    offset -100    -> the screen less 100px
+	--
+	-- These defaults are the third and first of those, which is the size the shop had before
+	-- it was briefly made a pure screen-share. The clamps are what keep it usable on a small
+	-- screen and stop it sprawling on a large one.
+	-- ========================================================================
+	FrameWScale  = 0,
+	FrameWOffset = 900,
+	FrameWMin    = 640,
+	FrameWMax    = 1400,
+
+	FrameHScale  = 1,
+	FrameHOffset = -100,
+	FrameHMin    = 600,
+	FrameHMax    = 900,
 }
 
 -- ============================================================================
@@ -920,6 +948,38 @@ local function ApplyMetrics(preset)
 	end
 end
 
+-- The server's house sizes, once they have arrived. nil until then.
+local serverMetrics = nil
+
+-- Applied after T.Load, since Load runs ApplyMetrics for the preset and would otherwise
+-- overwrite these a moment later.
+--
+-- Clamped to something sane rather than trusted. This arrives over the network from a player
+-- who passed an owner check, which makes it trusted enough to store but not trusted enough to
+-- be allowed to produce a shop 8 pixels wide that nobody can then open to fix it.
+local METRIC_BOUNDS = {
+	FrameWScale = { 0, 1 },   FrameHScale  = { 0, 1 },
+	FrameWOffset = { -4000, 4000 }, FrameHOffset = { -4000, 4000 },
+	FrameWMin = { 320, 4000 }, FrameWMax = { 320, 4000 },
+	FrameHMin = { 240, 4000 }, FrameHMax = { 240, 4000 },
+}
+
+local function ApplyServerMetrics()
+	if not istable(serverMetrics) then return end
+
+	for k, v in pairs(serverMetrics) do
+		if METRIC_DEFAULTS[k] ~= nil and isnumber(v) then
+			local b = METRIC_BOUNDS[k]
+			T.Metrics[k] = b and math.Clamp(v, b[1], b[2]) or v
+		end
+	end
+
+	-- A max below its min would make math.Clamp return the max and silently inverts the
+	-- intent, so the pair is straightened rather than obeyed.
+	if T.Metrics.FrameWMax < T.Metrics.FrameWMin then T.Metrics.FrameWMax = T.Metrics.FrameWMin end
+	if T.Metrics.FrameHMax < T.Metrics.FrameHMin then T.Metrics.FrameHMax = T.Metrics.FrameHMin end
+end
+
 -- The widget styles as shipped, so a preset's changes to them can be undone.
 --
 -- Shallow per style: the values include references to Color tables (activeFill IS
@@ -1075,6 +1135,7 @@ function T.SetPreset(id)
 	local preset = id and T.Presets[id]
 
 	ApplyMetrics(preset)
+	ApplyServerMetrics()
 	ApplyStyles(preset)
 
 	-- Offsets first, and unconditionally: leaving a preset, or moving between two of them,
@@ -1169,6 +1230,7 @@ function T.Load()
 		if T.Presets[tbl.preset] then
 			activePreset = tbl.preset
 			ApplyMetrics(T.Presets[activePreset])
+			ApplyServerMetrics()
 			T.Apply(ResolvedDefault())
 		else
 			-- Not registered yet, or gone. Held for RegisterPreset to pick up; if nothing
@@ -1186,9 +1248,41 @@ function T.Load()
 	if istable(tbl.panels) then T.Panels = tbl.panels end
 end
 
+-- The server's house look: colours, and now sizes.
+--
+-- Two accepted shapes, because the old one is already on disk on live servers:
+--
+--   { FrameBG = {...}, Accent = {...} }                  legacy, colours at the top level
+--   { colours = { ... }, metrics = { ... } }             current
+--
+-- Told apart by the presence of a `colours` key, which no palette can collide with since
+-- every colour key is capitalised. A server that never upgrades keeps working untouched.
+--
+-- Metrics are a separate concern from the colour layering below them: the palette resolves
+-- through DEFAULTS -> preset -> serverDefault -> custom because a player edits colours, but
+-- nobody edits a metric per-player yet, so the server's sizes simply sit on top of whatever
+-- the preset asked for.
 function T.SetServerDefault(tbl)
-	serverDefault = tbl
+	if not istable(tbl) then return end
+
+	if istable(tbl.colours) then
+		serverDefault = tbl.colours
+		serverMetrics = istable(tbl.metrics) and tbl.metrics or nil
+	else
+		serverDefault = tbl
+		serverMetrics = nil
+	end
+
 	T.Load()
+
+	-- Again, unconditionally. T.Load applies these inside its saved-preset branch, but it
+	-- early-returns when the player has no theme.json at all and never reaches it -- which
+	-- is every player on their first join, exactly the ones a house size is for.
+	ApplyServerMetrics()
+
+	-- Sizes are applied to panels when they are built, so anything already open is still
+	-- holding the old ones. Same signal a preset change sends, for the same reason.
+	hook.Run("PS_PresetChanged", activePreset)
 end
 
 T.Load()

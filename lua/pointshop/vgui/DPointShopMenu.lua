@@ -50,14 +50,19 @@ surface.CreateFont( "PS_CategoryButton", {
 
 local PANEL = {}
 
--- Frame size for the screen it is actually on.
+-- Frame size, entirely from metrics: scale * screen + offset, clamped.
 --
--- Was a flat 900 wide: 70% of a 1280 screen, a strip on an ultrawide. Now a share of the
--- screen, floored so it stays usable on something small and capped so it does not sprawl on
--- something huge. The original PointShop clamped to the screen this way; the fork lost it.
+-- No formula lives here any more. The shipped values reproduce the size the shop has always
+-- had -- 900 wide, and as tall as the screen less 100px -- and a look or an owner can supply
+-- any of the three useful shapes (fixed, screen-share, screen-inset) without this function
+-- knowing which it was given. See T.Metrics for the arithmetic.
 local function FrameSize()
-	return math.Clamp(ScrW() * 0.62, 760, 1400),
-	       math.Clamp(ScrH() * 0.82, 560, 980)
+	local M = PS.Theme.Metrics
+
+	-- Floored: a frame on a half pixel smears its own rounded corners and drags every
+	-- centred child half a pixel with it.
+	return math.floor(math.Clamp(ScrW() * M.FrameWScale + M.FrameWOffset, M.FrameWMin, M.FrameWMax)),
+	       math.floor(math.Clamp(ScrH() * M.FrameHScale + M.FrameHOffset, M.FrameHMin, M.FrameHMax))
 end
 
 function PANEL:Init()
