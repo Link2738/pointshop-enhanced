@@ -83,10 +83,67 @@ rather than an early return that quietly removes a feature.
 - `pointshop/gamemodes/<name>.lua` — per-gamemode behaviour, missing file changes nothing
 - Owner gate, currently ULX `owner` via `PS_IsItemDefaultOwner`
 
+## The authority layer replaces ULX, bans included
+
+**Decided.** Not a wrapper over ULib, not ULib kept underneath for the hard parts. The point
+of one roof is owning every backend piece, and a dependency nobody on the server can read is
+worth less than one we wrote.
+
+The counter-argument was that ULib's ban handling represents years of accumulated edge cases
+worth inheriting. An audit says otherwise, and the audit took minutes.
+
+### What the ban audit found
+
+`ulib/lua/ulib/server/bans.lua` is 316 lines, roughly a third comments and a migration path
+from a pre-2.7 text file. The whole system:
+
+- One SQLite table, `ulib_bans`, steamid64 as INTEGER primary key
+- `ULib.bans` held in memory, refilled from the table on `Initialize`
+- `hook.Add("CheckPassword", ..., HOOK_LOW)` returning `false, message` to refuse a connect
+- `ULib.addBan` kicks the player, then *also* fires `kickid` at the console in case they are
+  mid-join, then `REPLACE INTO` the table
+- `ULib.unban` fires `removeid` + `writeid` to clear the engine's own banlist, then deletes
+  the row
+
+**The check has no expiry.** `checkBan` (bans.lua:52) looks up the steamid and refuses the
+connection if a row exists. It never compares `unban` against `os.time()`. A ban row is a ban,
+full stop.
+
+**Expiry lives in the admin GUI.** `ulx/lua/ulx/xgui/server/sv_bans.lua:259` runs a poll every
+3600 seconds; for each ban whose `unban` falls inside the next hour it creates a one-shot
+timer that calls `ULib.unban`. That module also monkey-patches `ULib.unban` to tear its own
+timer down.
+
+So the authoritative gate does not know bans end, and the thing that ends them is a GUI
+module on an hourly cycle. Disable XGUI and every temp ban on the server becomes permanent.
+That is a layering mistake that survived because nobody read it, not a hard-won edge case.
+
+### What ours must get right
+
+Taken from the audit, so the replacement is not a reimplementation of the same shape:
+
+- **Expiry belongs in the check.** `IsBanned(steamid)` compares against `os.time()` and
+  returns false for an elapsed ban. A sweep that deletes stale rows is housekeeping, never
+  the mechanism.
+- **The gate is server-side and works with the UI absent.** No admin panel is load-bearing.
+- **Refuse at `CheckPassword`,** which runs before the player entity exists — the kick path
+  is a fallback for someone already in, not the primary.
+- **Store steamid64,** and pick one representation for the whole layer rather than converting
+  at every boundary the way ULib does.
+- **Persist synchronously on write.** A ban must survive a crash one second later.
+- **Keep the engine banlist out of it,** or own it deliberately. ULib writes to both and the
+  two can disagree.
+
+### Migration
+
+Reading `ulib_bans` is a `SELECT` against a table whose schema is six lines above. Import it
+once and keep ULib's table untouched so a rollback is just re-enabling the addon.
+
 ## Not decided
 
 - Whether the addon gets a new name. "pointshop" stops describing it once the shop is one
   of three layers, and every server owner reading the file tree pays that papercut.
-- Whether the authority layer replaces ULX or sits beside it. Replacing means bans, groups
-  and commands, which is a large piece of work with an existing, battle-tested incumbent.
 - Whether chat is a port of betterchat onto `PS.UI` or a rewrite.
+- Order of work. Chat is lowest-risk (already ours, no upstream). Authority is the larger
+  piece and bans are the part that must be right on the first try, since the failure modes
+  are a banned player walking in or a legitimate one locked out.
