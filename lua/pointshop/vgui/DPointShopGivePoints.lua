@@ -1,59 +1,90 @@
 local PANEL = {}
 
 function PANEL:Init()
-	self:SetTitle("PointShop Give "..PS.Config.PointsName)
-	self:SetSize(300, 144)
-	
+	local UI = PS.UI
+	local M  = PS.Theme.Metrics
+
+	-- The 144 was the whole window before it had a bar across the top. Adding the bar to it
+	-- rather than into it keeps the content area exactly the size it was.
+	UI.SetupFrame(self, {
+		title    = "Give " .. PS.Config.PointsName,
+		w        = 300,
+		h        = 144 + UI.HeaderH("strip"),
+		remember = "givepoints",
+	})
+
 	self:SetDeleteOnClose(true)
 	self:SetBackgroundBlur(true)
 	self:SetDrawOnTop(true)
-	
-	local l1 = vgui.Create("DLabel", self)
-	l1:SetText("Player:")
-	l1:Dock(TOP)
-	l1:DockMargin(4, 0, 4, 4)
-	l1:SizeToContents()
+
+	local function Label(text)
+		local l = vgui.Create("DLabel", self)
+		l:SetText(text)
+		l:SetTextColor(PS.Theme.Text)
+		l:Dock(TOP)
+		l:DockMargin(M.Gap, 0, M.Gap, M.Gap)
+		l:SizeToContents()
+		return l
+	end
+
+	Label("Player:")
 
 	local pselect = vgui.Create("DComboBox", self)
 	pselect:SetValue("Select A Player")
-	pselect:SetTall(24)
+	pselect:SetTall(M.ButtonH)
 	pselect:Dock(TOP)
+	pselect:DockMargin(M.Gap, 0, M.Gap, 0)
 	self.playerselect = pselect
 
 	self:FillPlayers()
 
-	local l2 = vgui.Create("DLabel", self)
-	l2:SetText(PS.Config.PointsName..":")
-	l2:Dock(TOP)
-	l2:DockMargin(4, 2, 4, 4)
-	l2:SizeToContents()
+	Label(PS.Config.PointsName .. ":")
 
 	local pointsselector = vgui.Create("DNumberWang", self)
-	pointsselector:SetTextColor( Color(0, 0, 0, 255) )
-	pointsselector:SetTall(24)
+	pointsselector:SetTextColor(Color(0, 0, 0, 255))
+	pointsselector:SetTall(M.ButtonH)
 	pointsselector:Dock(TOP)
+	pointsselector:DockMargin(M.Gap, 0, M.Gap, 0)
 	self.pselector = pointsselector
-	
+
 	local btnlist = vgui.Create("DPanel", self)
-	btnlist:SetDrawBackground(false)
-	btnlist:DockMargin(0, 5, 0, 0)
+	btnlist:SetPaintBackground(false)
+	btnlist:SetTall(M.ButtonH)
+	btnlist:DockMargin(M.Gap, M.Gap, M.Gap, M.Gap)
 	btnlist:Dock(BOTTOM)
 
-	local cancel = vgui.Create('DButton', btnlist)
-	cancel:SetText('Cancel')
-	cancel:DockMargin(4, 0, 0, 0)
+	-- Widths set explicitly: UI.Button only sets a height, and a panel docked RIGHT keeps
+	-- whatever width it already had -- which for a bare DButton is its default, not anything
+	-- anyone chose. Derived from ButtonH so it scales with the rest.
+	local btnW = M.ButtonH * 3
+
+	local cancel = UI.Button(btnlist, "Cancel", "Neutral", function()
+		self:Close()
+	end)
 	cancel:Dock(RIGHT)
+	cancel:SetWide(btnW)
+	cancel:DockMargin(M.Gap, 0, 0, 0)
 	self.cancel = cancel
 
-	local done = vgui.Create('DButton', btnlist)
-	done:SetText('Send')
-	done:SetDisabled(true)
-	done:DockMargin(0, 0, 4, 0)
+	local done = UI.Button(btnlist, "Send", "Positive", function()
+		self:Submit()
+		self:Close()
+	end)
 	done:Dock(RIGHT)
+	done:SetWide(btnW)
+	done:SetDisabled(true)
 	self.submit = done
-	
+
+	-- Repainted from the disabled state rather than the style it was built with, so a Send
+	-- that cannot be pressed does not sit there looking pressable. SetDisabled alone blocks
+	-- the click and says nothing.
+	done.Paint = function(s, w, h)
+		local style = s:GetDisabled() and PS.Theme.Action.Neutral or PS.Theme.Action.Positive
+		PS.Theme.PaintAction(s, w, h, style, "Send")
+	end
+
 	self.selected_uid = nil
-	pselect.OnSelect = function( s, idx, val, data )
+	pselect.OnSelect = function(s, idx, val, data)
 		if data then self.selected_uid = data end
 
 		self:Update()
@@ -62,18 +93,6 @@ function PANEL:Init()
 	pointsselector.OnValueChanged = function()
 		self:Update()
 	end
-
-	done.DoClick = function()
-		self:Submit()
-		self:Close()
-	end
-
-	cancel.DoClick = function()
-		self:Close()
-	end
-
-	self:Center()
-	self:MakePopup()
 end
 
 function PANEL:FillPlayers()

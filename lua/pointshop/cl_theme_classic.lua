@@ -52,7 +52,6 @@ local SLATE_MID  = { 112, 136, 160, 255 }
 -- PS1's own 218 line was drawn on its 232 body and is genuinely faint; it gets away with it
 -- because it has almost no nested panels. Ours has rows inside panels inside frames, and at
 -- that depth a 6% line is not a line.
-local SUNK      = { 214, 214, 214, 255 }   -- recessed containers: the category strip
 local BODY      = { 226, 226, 226, 255 }   -- window ground (:107 is 232, one step up from here)
 local RAISED    = { 236, 236, 236, 255 }   -- panel bodies and list rows sitting on the ground
 local CARD      = { 250, 250, 250, 255 }   -- the top of the stack
@@ -127,7 +126,6 @@ T.RegisterPreset("classic", {
 
 	colours = {
 		-- The header keeps its slate and its white text; everything below it goes light.
-		HeaderBG   = SLATE,
 		HeaderText = { 255, 255, 255, 255 },
 		PointsText = { 255, 255, 255, 255 },   -- PS1's balance is white, not yellow (:468)
 
@@ -138,7 +136,6 @@ T.RegisterPreset("classic", {
 		-- grey window body so the two cannot be mistaken for each other.
 		ListBG         = SLATE_TINT,
 		ListBorder     = OUTLINE,
-		MenuCategoryBG = SUNK,
 
 		-- No alternating stripe in PS1. Rows are the body until hovered.
 		RowBG    = RAISED,

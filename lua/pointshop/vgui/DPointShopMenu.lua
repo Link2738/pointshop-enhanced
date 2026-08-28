@@ -40,6 +40,12 @@ function PANEL:Init()
 	self:SetDraggable(true)
 	self:SetSizable(false)
 	self:ShowCloseButton(false)
+
+	-- Flush to the top. DFrame reserves room at the top of its dock area for the title bar it
+	-- is no longer drawing, so the header docked below it and left a band of bare frame above
+	-- -- the extra space at the top of the shop. The rounding is unaffected: that comes from
+	-- PaintFrame, not from the padding.
+	self:DockPadding(0, 0, 0, 0)
 	self:SetDeleteOnClose(false)
 	
 	self.CurrentCategory = nil
@@ -51,6 +57,24 @@ function PANEL:Init()
 	self.Header = vgui.Create("DPanel", self)
 	self.Header:Dock(TOP)
 	self.Header:SetTall(M.HeaderH)
+
+	-- The header drags the window.
+	--
+	-- DFrame only drags from its own top 24 pixels, and it used to get them because the dock
+	-- padding left a band of bare frame above the header. With the header flush to the top
+	-- that band is gone and the frame never sees the click, so the header hands it one.
+	-- Setting self.Dragging is what DFrame's own Think reads, so the movement itself is
+	-- unchanged -- and this drags from the whole bar rather than a 24px sliver of it.
+	self.Header.OnMousePressed = function(_, code)
+		if code ~= MOUSE_LEFT then return end
+		self.Dragging = { gui.MouseX() - self.x, gui.MouseY() - self.y }
+		self:MouseCapture(true)
+	end
+
+	self.Header.OnMouseReleased = function()
+		self.Dragging = nil
+		self:MouseCapture(false)
+	end
 	self.Header.Paint = function(s, w, h)
 		PS.Theme.PaintHeader(w, h, "PointShop")
 
@@ -216,15 +240,20 @@ function PANEL:Init()
 	self.CategoryScroll:AddItem(self.CategoryContainer)
 	self.CategoryContainer:Dock(TOP)
 	self.CategoryContainer.PerformLayout = function(_, w) self:LayoutCategories(w) end
-	self.CategoryContainer.Paint = function(s, w, h)
-		surface.SetDrawColor(PS.Theme.MenuCategoryBG)
-		surface.DrawRect(0, 0, w, h)
-	end
+	-- A box on the body, painted by the shared role rather than a colour of its own. This had
+	-- a private MenuCategoryBG, which is the reason it read as a different kind of thing from
+	-- every other box in the addon -- same shape, own colour, drifting on its own.
+	self.CategoryContainer.Paint = function(_, w, h) PS.Theme.PaintPanelBody(w, h) end
 
 	-- Item Grid ScrollPanel
 	self.ItemScroll = PS.UI.Scroll(self)
 	self.ItemScroll:Dock(FILL)
 	self.ItemScroll:DockMargin(M.Margin, 0, M.Margin, M.Margin)
+
+	-- Sits in a body rather than straight on the frame. The cards were painted directly onto
+	-- the window, so the shop had one surface where every other panel has box-in-body-in-frame
+	-- -- that missing layer is what made it read flat next to the appearance panel.
+	self.ItemScroll.Paint = function(_, w, h) PS.Theme.PaintPanelBody(w, h) end
 
 	-- Item Grid Layout
 	self.ItemGrid = vgui.Create("DIconLayout", self.ItemScroll)

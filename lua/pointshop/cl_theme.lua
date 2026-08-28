@@ -53,7 +53,10 @@ local T = PS.Theme
 -- panel was (30,30,35) and gets very slightly lighter, which is the point: it was the one
 -- disagreeing.
 T.FrameBG  = Color(40, 40, 45, 255)     -- every window body
-T.HeaderBG = Color(30, 30, 30, 255)     -- every header bar
+
+-- HeaderBG lived here. The shop's bar now uses StatusBar, the same colour and the same fade
+-- as the strip every other window uses as its header -- so there was one bar left painting
+-- with this, and no reason for it to be a different colour from the others.
 
 -- A panel sitting ON the window body, rather than the body itself: the boxed sections in
 -- the appearance editor, the owner panels, anything PaintPanelBody draws.
@@ -84,9 +87,11 @@ T.ListBorder = Color(0, 0, 0, 0)
 -- Both now draw from T.Accent, with their own alphas applied at paint time.
 T.StatusBar = Color(20, 40, 60)         -- status strip gradient base, a surface not an accent
 
--- Still its own: the strip behind the category buttons is a recessed container within a
--- window rather than a window, and nothing else in the shop draws one.
-T.MenuCategoryBG = Color(40, 40, 40, 255)
+-- MenuCategoryBG lived here: a recessed block behind the shop's category buttons. Removed
+-- because the appearance panel draws the same buttons in the same style straight on the
+-- window body, and the block was the only reason the two rows looked like different things.
+-- The shop now matches it, so nothing painted this and a colour nothing paints is a knob in
+-- the editor that does nothing.
 
 -- List rows.
 T.RowBG    = Color(40, 40, 45, 255)
@@ -805,16 +810,30 @@ function T.PaintFrame(w, h, body)
 	surface.DrawOutlinedRect(1, 1, w - 2, h - 2)
 end
 
--- Header bar: flat background, accent stripe along the top, left-aligned title.
-function T.PaintHeader(w, h, title)
-	surface.SetDrawColor(T.HeaderBG)
-	surface.DrawRect(0, 0, w, h)
+-- The fill behind a window's top bar. One definition for both bars.
+--
+-- The shop's header and the status strip had separately written versions of this and did not
+-- match, because the alphas here are not what they look like: PS_DrawScrimFade samples the
+-- gradient material PROPORTIONALLY, over 0 -> 1 - bottom/top. Lowering the top alpha to
+-- account for starting the draw further down does not shift the ramp, it dims the whole bar.
+-- Two call sites doing that arithmetic separately is two chances to get it wrong, so neither
+-- does it any more.
+--
+-- One draw, whole bar. There was a flat rounded box over the top Radius pixels to round the
+-- header's corners, and it did not match the gradient starting underneath it -- a solid band
+-- across the top of the window. A flat patch cannot be made to agree with a sampled gradient
+-- at its seam, so it is gone and the corners are square for now.
+local function PaintBarFill(w, h)
+	PS_DrawScrimFade(0, 0, w, h, T.StatusBar, 150, 150 - (h * 1.5))
+end
 
-	surface.SetDrawColor(T.Accent)
-	surface.DrawRect(0, 0, w, T.Metrics.HeaderRule)
+-- Header bar: gradient background, left-aligned title.
+function T.PaintHeader(w, h, title)
+	PaintBarFill(w, h)
 
 	if title then
-		draw.SimpleText(title, "PS_LargeTitle", 15, h / 2, T.HeaderText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText(title, "PS_LargeTitle", T.Metrics.Margin, h / 2, T.HeaderText,
+			TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 	end
 end
 
@@ -868,14 +887,20 @@ end
 -- 150 down to 150 - barH * 1.5, which for a 35px bar stops at 97.5 - so it never reaches
 -- transparent inside the bar, and letting it fade out fully would be a different look.
 function T.PaintStatusStrip(w, barH, text)
-	PS_DrawScrimFade(0, 0, w, barH, T.StatusBar, 150, 150 - (barH * 1.5))
+	PaintBarFill(w, barH)
 
 	surface.SetDrawColor(T.Alpha(sBorder, T.Accent, 150))
 	surface.DrawRect(10, barH, w - 20, 2)
 
+	-- Centred in the bar it is given, not pinned at y=15. The bar has two heights now -- the
+	-- shop's and the strip every other window uses -- and both move with the window size, so
+	-- a fixed y was only ever right for one bar at one scale.
 	if text then
-		draw.SimpleText(text, "PS_Default", w / 2 + 1, 16, T.Shadow, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
-		draw.SimpleText(text, "PS_Default", w / 2, 15, T.TextDim, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
+		local cy = barH / 2
+		draw.SimpleText(text, "PS_Default", w / 2 + 1, cy + 1, T.Shadow,
+			TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		draw.SimpleText(text, "PS_Default", w / 2, cy, T.TextDim,
+			TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 	end
 end
 

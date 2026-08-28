@@ -90,8 +90,13 @@ local function Offset(name)
 	return Scaled(d.x), Scaled(d.y)
 end
 
-function UI.IconBtnY()
-	return math.floor((M().HeaderH - M().IconBtn) / 2) + Shared("ButtonY")
+-- Vertical centre for an icon button sitting in a bar of the given height.
+--
+-- Takes the height rather than reading HeaderH, because there are two bars: the shop's tall
+-- header and the status strip every other window uses as its header. A function that could
+-- only centre in one of them stranded the X halfway up the other.
+function UI.IconBtnY(barH)
+	return math.floor(((barH or M().HeaderH) - M().IconBtn) / 2) + Shared("ButtonY")
 end
 
 function UI.GlyphIcon(name, font)
@@ -421,14 +426,32 @@ end
 -- FRAMES
 -- ============================================================================
 
--- A themed window: body, border, header with a title, and a close button.
+-- The bar across the top of a window, in its two forms.
 --
--- opts: title, w, h, closable (default true), onClose, center (default true),
---       remember (a key: the panel opens where it was last dragged)
-function UI.Frame(opts)
+-- "bar" is the shop's alone: tall, left-aligned title, with room for the points readout and a
+-- row of icon buttons inside it. "strip" is every other window's: thin, centred title. Both
+-- paint StatusBar on the same fade, so only the shape differs.
+function UI.HeaderH(mode)
+	if mode == "bar" then return M().HeaderH end
+	return M().IconBtn + M().Gap * 2
+end
+
+-- Applies the standard window chrome to a frame that already exists.
+--
+-- Separate from UI.Frame because a registered panel IS the frame -- DPointShopMenu and the
+-- rest derive from DFrame, so they cannot call something whose first act is to create one.
+-- Before this there were thirteen windows each setting up its own body, header, close button
+-- and remembered position, and that is the reason the palette grew a token every time a panel
+-- was added: a window that builds its own chrome is a window that can invent a colour for it.
+--
+-- opts: title, w, h, header ("bar" | "strip", default "strip"), closable (default true),
+--       onClose, center (default true), draggable (default true), sizable (default false),
+--       popup (default true), remember (a key: the panel opens where it was last dragged)
+function UI.SetupFrame(frame, opts)
 	opts = opts or {}
 
-	local frame = vgui.Create("DFrame")
+	local mode = opts.header or "strip"
+
 	frame:SetSize(opts.w or 600, opts.h or 400)
 	frame:SetTitle("")
 	frame:ShowCloseButton(false)
@@ -439,21 +462,59 @@ function UI.Frame(opts)
 	if opts.popup ~= false then frame:MakePopup() end
 	if opts.remember then UI.RememberPosition(frame, opts.remember) end
 
-	frame.Paint = function(_, w, h) PS.Theme.PaintFrame(w, h) end
+	frame.HeaderMode = mode
 
+	-- Functions rather than stored numbers, for the same reason the icon buttons re-read
+	-- their size: both metrics move with the look and with the window size, and a height
+	-- captured once at build time cannot follow either.
+	function frame:BarH() return UI.HeaderH(mode) end
+	function frame:ContentTop() return self:BarH() + M().Gap end
+
+	-- The strip is painted by the FRAME, not by the header panel, because its accent rule
+	-- sits below the bar -- a panel exactly bar-height would clip the rule off its own
+	-- bottom edge. Every hand-rolled strip panel already drew it on the frame for this
+	-- reason; this just makes that the one place it happens.
+	frame.Paint = function(self, w, h)
+		PS.Theme.PaintFrame(w, h)
+		if mode ~= "bar" then
+			PS.Theme.PaintStatusStrip(w, self:BarH(), opts.title)
+		end
+	end
+
+	-- Positioned, NOT docked.
+	--
+	-- DFrame reserves space at the top of its dock area for the title bar it is no longer
+	-- drawing, so a docked header lands below the bar the frame paints at y=0. The bar and
+	-- the panel sitting in it end up in different places, which is what put the X under the
+	-- strip instead of in it.
+	--
+	-- Sizing itself in its OWN PerformLayout rather than the frame's, because a registered
+	-- panel defines PANEL:PerformLayout and setting one on the instance here would silently
+	-- replace it.
 	local header = vgui.Create("DPanel", frame)
-	header:Dock(TOP)
-	header:SetTall(M().HeaderH)
+	header.PerformLayout = function(s)
+		s:SetPos(0, 0)
+		s:SetSize(frame:GetWide(), frame:BarH())
+	end
 
-	-- Re-read on layout, for the same reason the icon buttons do: HeaderH moves with the
-	-- look and with the screen resolution, and a height set once cannot follow either.
-	header.PerformLayout = function(s) s:SetTall(M().HeaderH) end
-	header.Paint = function(_, w, h) PS.Theme.PaintHeader(w, h, opts.title) end
+	if mode == "bar" then
+		header.Paint = function(_, w, h) PS.Theme.PaintHeader(w, h, opts.title) end
+	else
+		header.Paint = function() end
+	end
+
 	frame.Header = header
+
+	-- Docked content clears the bar through padding instead. This is what the docked header
+	-- was doing, minus the offset that came with it.
+	frame:DockPadding(0, frame:BarH(), 0, 0)
 
 	if opts.closable ~= false then
 		local close = UI.IconButton(header, UI.GlyphIcon("close"), "Danger", function()
-			if opts.onClose then opts.onClose(frame) end
+			-- An onClose that returns true has taken responsibility for the window. The
+			-- loadout panel slides home and removes itself when it arrives; closing it here
+			-- as well would cut that off at the first frame.
+			if opts.onClose and opts.onClose(frame) then return end
 			frame:Close()
 		end)
 
@@ -463,16 +524,30 @@ function UI.Frame(opts)
 		--
 		-- Wraps IconButton's own PerformLayout rather than replacing it, so the button still
 		-- re-reads its SIZE from the metrics when the look or the resolution changes.
+		--
+		-- Measured against the FRAME rather than the header. The header is full width in both
+		-- modes so the two agree, but a panel that overrides PerformLayout without calling its
+		-- base can leave the header unsized, and a width of zero puts the X off the left edge.
+		-- The frame's width is always known.
 		local sizeSelf = close.PerformLayout
 		close.PerformLayout = function(s)
 			if sizeSelf then sizeSelf(s) end
-			s:SetPos(header:GetWide() - M().IconBtn - M().IconInset, UI.IconBtnY())
+			s:SetPos(frame:GetWide() - M().IconBtn - M().IconInset,
+				UI.IconBtnY(frame:BarH()))
 		end
 
 		frame.CloseButton = close
 	end
 
 	return frame
+end
+
+-- A themed window: body, border, header with a title, and a close button.
+--
+-- The thin wrapper for callers that want the frame made for them rather than applying the
+-- chrome to one they already are.
+function UI.Frame(opts)
+	return UI.SetupFrame(vgui.Create("DFrame"), opts or {})
 end
 
 -- Modal yes/no.

@@ -23,36 +23,32 @@ function PANEL:Init()
 	self.RowH  = M.ButtonH + M.Gap
 	self.SlotW = math.Round(150 * S)
 
-	local w = math.Round(520 * S)
-	local h = math.Round(420 * S)
+	UI.SetupFrame(self, {
+		title = "Loadouts",
+		w     = math.Round(520 * S),
+		h     = math.Round(420 * S),
 
-	self:SetSize(w, h)
-	self:SetTitle("")
+		-- Not draggable: it is anchored to the shop's edge, and dragging it away from that
+		-- edge would leave it floating with a slide animation that no longer goes anywhere.
+		draggable = false,
 
-	-- Not draggable: it is anchored to the shop's edge, and dragging it away from that edge
-	-- would leave it floating with a slide animation that no longer goes anywhere sensible.
-	self:SetDraggable(false)
-	self:SetSizable(false)
-	self:ShowCloseButton(false)
-	if IsValid(self.btnMaxim) then self.btnMaxim:SetVisible(false) end
-	if IsValid(self.btnMinim) then self.btnMinim:SetVisible(false) end
+		-- Not centred, because Deploy positions it against the shop.
+		center = false,
 
-	self.StripH = M.IconBtn + M.Gap * 2
+		-- NOT A POPUP, and this is load-bearing rather than incidental. The shop is not one
+		-- either, so the two are siblings under the base panel and MoveToBack can order this
+		-- behind it. MakePopup would promote this to a layer the shop is not on, and no
+		-- amount of ordering would bring it back down.
+		popup = false,
 
-	self.Paint = function(_, pw, ph)
-		T.PaintFrame(pw, ph)
-		T.PaintStatusStrip(pw, self.StripH, "Loadouts")
-	end
+		-- Slides home and removes itself on arrival, so it owns its own close.
+		onClose = function()
+			self:Retract()
+			return true
+		end,
+	})
 
-	local close = UI.IconButton(self, UI.GlyphIcon("close"), "Danger", function()
-		self:Retract()
-	end)
-	close.PerformLayout = function(s)
-		local Mm = PS.Theme.Metrics
-		s:SetSize(Mm.IconBtn, Mm.IconBtn)
-		s:SetPos(self:GetWide() - Mm.IconBtn - Mm.IconInset,
-			math.floor((self.StripH - Mm.IconBtn) / 2))
-	end
+	self.StripH = self:BarH()
 
 	self.Preview = vgui.Create("DPointShopPreview", self)
 
