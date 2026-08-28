@@ -40,6 +40,10 @@ include "cl_theme_classic.lua"
 include "cl_ui.lua"
 include "cl_layout.lua"
 
+-- Loadout storage. Below cl_ui.lua because the panel that reads it is built with that, and
+-- above the vgui includes for the same reason.
+include "cl_loadout.lua"
+
 -- ============================================================================
 -- SHARED DRAW HELPERS
 -- ============================================================================
@@ -124,6 +128,7 @@ end
 
 include "vgui/DPointShopMenu.lua"
 include "vgui/DPointShopItem.lua"
+include "vgui/DPointShopLoadouts.lua"
 include "vgui/DPointShopInspector.lua"
 include "vgui/DPointShopPreview.lua"
 

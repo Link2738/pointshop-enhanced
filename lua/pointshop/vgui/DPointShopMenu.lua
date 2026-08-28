@@ -132,6 +132,21 @@ function PANEL:Init()
 		end
 	end, "Neutral", function() vgui.Create("DPointShopTheme") end)
 
+	-- Loadouts. Slides out from behind this window, so it is opened from this window.
+	--
+	-- Toggles rather than stacks: pressing it twice should put it away, not build a second one
+	-- behind the first.
+	self.loadoutBtn = HeaderButton(GlyphIcon("wear"), "Neutral", function()
+		if IsValid(self.LoadoutPanel) then
+			self.LoadoutPanel:Retract()
+			self.LoadoutPanel = nil
+			return
+		end
+
+		self.LoadoutPanel = vgui.Create("DPointShopLoadouts")
+		self.LoadoutPanel:Deploy(self)
+	end)
+
 	if isAdmin then
 		self.adminBtn = HeaderButton(GlyphIcon("bolt"), "Accent", function()
 			vgui.Create("DPointShopAdmin")
@@ -271,10 +286,18 @@ end
 function PANEL:SetVisible(visible)
 	-- Call parent SetVisible
 	self.BaseClass.SetVisible(self, visible)
-	
+
 	-- Repopulate categories when menu becomes visible (handles team changes)
 	if visible then
 		self:PopulateCategories()
+	end
+
+	-- The loadout panel is anchored to this window's edge, so it goes when this window goes.
+	-- Left alone it would sit on screen attached to nothing, and reopening the shop would
+	-- build a second one beside it.
+	if not visible and IsValid(self.LoadoutPanel) then
+		self.LoadoutPanel:Remove()
+		self.LoadoutPanel = nil
 	end
 end
 

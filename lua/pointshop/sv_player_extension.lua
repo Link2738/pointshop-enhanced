@@ -476,14 +476,28 @@ end
 
 -- equip/hoster items
 
-function Player:PS_EquipItem(item_id)
+-- May this player wear this item at all?
+--
+-- Returns ok, reason. The reason is returned rather than notified, because the caller decides
+-- whether one refusal is worth telling someone about: equipping one item says so, applying a
+-- loadout of six would otherwise print six lines about the two it skipped.
+--
+-- Deliberately only the checks that depend on the PLAYER and the ITEM, not on what else is
+-- being worn. The AllowedEquipped and shared-category limits are counts over a SET, and the
+-- two callers have different sets -- equip counts against what is currently on, a loadout
+-- counts against itself -- so a single predicate cannot answer for both and pretending it can
+-- is how a loadout of two hats gets past a one-hat limit.
+--
+-- Extracted so there is one implementation. Three hand-rolled copies of a team check had
+-- already drifted apart elsewhere in this addon before anyone noticed.
+function Player:PS_CanEquipItem(item_id)
 	-- Buy and sell already gate on this; equip/holster/modify didn't, and they all reach
 	-- the provider's save path. Acting before the load callback returns means writing
 	-- against an inventory that isn't populated yet.
-	if not self.PS_DataLoaded then return false end
-	if not PS.Items[item_id] then return false end
-	if not self:PS_HasItem(item_id) then return false end
-	if not self:PS_CanPerformAction(item_id) then return false end
+	if not self.PS_DataLoaded then return false, 'Your inventory has not finished loading.' end
+	if not PS.Items[item_id] then return false, 'That item does not exist.' end
+	if not self:PS_HasItem(item_id) then return false, 'You do not own that item.' end
+	if not self:PS_CanPerformAction(item_id) then return false, 'You cannot do that right now.' end
 
 	local ITEM = PS.Items[item_id]
 
@@ -497,18 +511,31 @@ function Player:PS_EquipItem(item_id)
 	end
 
 	if not allowed then
-		self:PS_Notify(message or 'You\'re not allowed to equip this item!')
+		return false, message or 'You\'re not allowed to equip this item!'
+	end
+
+	if not PS:CanEquipForTeam(self, ITEM) then
+		return false, 'You\'re not on the right team to equip this item!'
+	end
+
+	return true
+end
+
+function Player:PS_EquipItem(item_id)
+	local ok, reason = self:PS_CanEquipItem(item_id)
+	if not ok then
+		-- Only the refusals that used to speak still speak. The three silent ones above --
+		-- data not loaded, no such item, not owned -- returned false without a word, and
+		-- saying something now would be a behaviour change smuggled in with a refactor.
+		if reason and PS.Items[item_id] and self.PS_DataLoaded and self:PS_HasItem(item_id) then
+			self:PS_Notify(reason)
+		end
 		return false
 	end
 
+	local ITEM = PS.Items[item_id]
 	local cat_name = ITEM.Category
 	local CATEGORY = PS:FindCategoryByName(cat_name)
-
-	-- Enforce team restriction from category (e.g. bear models vs victim models)
-	if not PS:CanEquipForTeam(self, ITEM) then
-		self:PS_Notify('You\'re not on the right team to equip this item!')
-		return false
-	end
 
 	if CATEGORY and CATEGORY.AllowedEquipped > -1 then
 		if self:PS_NumItemsEquippedFromCategory(cat_name) + 1 > CATEGORY.AllowedEquipped then

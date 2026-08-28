@@ -64,6 +64,7 @@ UI.Icons = {
 	close = { glyph = "X",  x = 0, y =  1 },
 	bolt  = { glyph = "⚡", x = 0, y = -4 },
 	star  = { glyph = "★", x = 0, y = -2 },
+	wear  = { glyph = "◨", x = 0, y = -1 },   -- loadouts: a panel half out from behind another
 }
 
 -- Shared by every icon: the button's place in the header, and the shadow behind the glyph.

@@ -22,11 +22,20 @@ include "sv_manifest.lua"
 -- written defensively rather than assuming the function exists.
 include "sv_theme.lua"
 
+-- Loadouts. Below sv_player_extension.lua, which is where PS_CanEquipItem lives, and below
+-- the PS.RateLimit assignment above that it guards itself with.
+include "sv_loadout.lua"
+
 -- net hooks
 
 -- Per-player action rate limiter. Prevents spam that could cause race conditions or server load.
 -- Cooldowns are intentionally short — just enough to prevent machine-speed abuse.
-local PS_COOLDOWNS = { buy = 0.5, sell = 0.5, equip = 0.3, holster = 0.3, modify = 1.0 }
+-- `loadout` is one message that stands in for a whole outfit's worth of equips, so it is
+-- limited harder than a single equip: there is no reason to change your entire appearance
+-- twice a second, and the handler it guards does more work than any of the others.
+local PS_COOLDOWNS = { buy = 0.5, sell = 0.5, equip = 0.3, holster = 0.3, modify = 1.0,
+	loadout = 1.0 }
+
 local function PS_RateLimit(ply, action)
 	if not IsValid(ply) then return false end
 	ply._PS_LastAction = ply._PS_LastAction or {}
@@ -35,6 +44,10 @@ local function PS_RateLimit(ply, action)
 	ply._PS_LastAction[action] = CurTime()
 	return true
 end
+
+-- Exposed for handlers in other files. sv_loadout.lua guards itself with this, and a second
+-- copy of the same six lines is how two limiters end up disagreeing about what a cooldown is.
+PS.RateLimit = PS_RateLimit
 
 -- Payload ceilings, checked BEFORE any net.Read* call.
 --
