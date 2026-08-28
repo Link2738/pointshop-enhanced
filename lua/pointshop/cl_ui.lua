@@ -503,6 +503,26 @@ function UI.SetupFrame(frame, opts)
 		header.Paint = function() end
 	end
 
+	-- The header drags the window.
+	--
+	-- DFrame only drags from its own top 24 pixels, and it used to get them because the dock
+	-- padding left a band of bare frame above the header. With the header flush to the top
+	-- that band is covered and the frame never sees the click, so the header hands it one.
+	-- Setting frame.Dragging is what DFrame's own Think reads, so the movement is unchanged --
+	-- and this drags from the whole bar rather than a 24px sliver of it.
+	if opts.draggable ~= false then
+		header.OnMousePressed = function(_, code)
+			if code ~= MOUSE_LEFT then return end
+			frame.Dragging = { gui.MouseX() - frame.x, gui.MouseY() - frame.y }
+			frame:MouseCapture(true)
+		end
+
+		header.OnMouseReleased = function()
+			frame.Dragging = nil
+			frame:MouseCapture(false)
+		end
+	end
+
 	frame.Header = header
 
 	-- Docked content clears the bar through padding instead. This is what the docked header

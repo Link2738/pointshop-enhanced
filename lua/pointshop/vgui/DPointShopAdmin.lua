@@ -13,6 +13,21 @@ local ADMIN_REQ_TIMEOUT = 5
 -- client has no way to read them off the remote player entity.
 local _adminSummary = {}
 
+-- Applies a change the admin just made to the cached summary, so the row shows it now instead
+-- of when the next poll lands up to two seconds later.
+--
+-- Done without waiting for the server because the admin's own action is what the server is
+-- being asked to do, and it accepts it. The poll overwrites this with the real number
+-- regardless, so the worst case for a change that was somehow refused is one wrong number for
+-- one interval -- against every give and set looking like it did nothing, which is what the
+-- panel did before.
+local function AdminPatchSummary(ply, fn)
+	if not IsValid(ply) then return end
+
+	local entry = _adminSummary[ply:EntIndex()]
+	if entry then fn(entry) end
+end
+
 -- Upper bound for both point prompts. Mirrors the math.Clamp in PS_GivePoints /
 -- PS_SetPoints server-side; keep the two in step.
 local PS_ADMIN_POINTS_MAX = 1000000
@@ -55,13 +70,19 @@ end
 local PANEL = {}
 
 function PANEL:Init()
-	self:SetSize(1200, 600)
-	PS.UI.RememberPosition(self, "admin")
-	self:SetTitle("")
-	self:SetDraggable(true)
-	self:SetSizable(true)
-	self:ShowCloseButton(false)
-	self:MakePopup()
+	local M = PS.Theme.Metrics
+
+	-- Its own header, close button and remembered position lived here, hand-rolled. The
+	-- close button drew its own "X" from two draw.SimpleText calls rather than using the
+	-- glyph every other window's close button uses, and its 35x35 and (w - 50, 8) were
+	-- written down rather than measured, so it sat wrong at any scale but one.
+	PS.UI.SetupFrame(self, {
+		title    = "PointShop Admin",
+		w        = 1200,
+		h        = 600,
+		sizable  = true,
+		remember = "admin",
+	})
 
 	-- The row layout positions its buttons from the right edge at fixed offsets, the
 	-- furthest being 550px. Without a floor, dragging the sizable frame narrower than
@@ -70,37 +91,16 @@ function PANEL:Init()
 	self:SetMinWidth(900)
 	self:SetMinHeight(300)
 
-	-- Header
-	self.Header = vgui.Create("DPanel", self)
-	self.Header:Dock(TOP)
-	self.Header:SetTall(50)
-	self.Header.Paint = function(s, w, h)
-		PS.Theme.PaintHeader(w, h, "PointShop Admin")
-	end
-	
-	-- Close button.
-	-- Positioned in PerformLayout rather than once in Init: the frame is sizable, and a
-	-- one-shot SetPos against the Init width left the button stranded mid-header (or off
-	-- the panel entirely) the moment it was resized.
-	local closeBtn = vgui.Create("DButton", self.Header)
-	closeBtn:SetSize(35, 35)
-	closeBtn:SetText("")
-	closeBtn.PerformLayout = function(s)
-		s:SetPos(self.Header:GetWide() - 50, 8)
-	end
-	closeBtn.Paint = function(s, w, h)
-		PS.Theme.PaintAction(s, w, h, PS.Theme.Action.Danger)
-		draw.SimpleText("X", "PS_Heading2", w/2 + 1, h/2 + 1, PS.Theme.Shadow, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-		draw.SimpleText("X", "PS_Heading2", w/2, h/2, PS.Theme.HeaderText, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-	end
-	closeBtn.DoClick = function()
-		self:Close()
-	end
-	
 	-- Player list with scrollbar
 	self.PlayerList = vgui.Create("DScrollPanel", self)
 	self.PlayerList:Dock(FILL)
-	self.PlayerList:DockMargin(50, 10, 50, 10)
+	-- Tighter at the sides than at the top and bottom. This is a wide window holding rows of
+	-- columns, and the horizontal room is what the content actually wants.
+	self.PlayerList:DockMargin(M.Gap, M.Gap, M.Gap, M.Gap)
+
+	-- A box on the body, like the shop's item grid and the appearance panel's columns. The
+	-- rows were painted straight onto the window.
+	self.PlayerList.Paint = function(_, w, h) PS.Theme.PaintPanelBody(w, h) end
 	
 	local sbar = self.PlayerList:GetVBar()
 	sbar:SetWide(12)
@@ -108,9 +108,12 @@ function PANEL:Init()
 	sbar.Paint = function(s, w, h) PS.Theme.PaintScrollTrack(w, h) end
 	sbar.btnGrip.Paint = function(s, w, h) PS.Theme.PaintScrollGrip(s, w, h) end
 	
-	-- List container
-	self.ListContainer = vgui.Create("DListLayout", self.PlayerList)
-	self.ListContainer:Dock(FILL)
+	-- List container, in the scroll panel's CANVAS rather than parented to the scroll panel.
+	-- See the item windows below: parented directly, Dock(FILL) pins it to the viewport and
+	-- the roster cannot scroll however many players are on.
+	self.ListContainer = vgui.Create("DListLayout")
+	self.PlayerList:AddItem(self.ListContainer)
+	self.ListContainer:Dock(TOP)
 
 	self._KnownPlayerCount = 0
 	self:PopulatePlayerList()
@@ -219,71 +222,40 @@ function PANEL:AddPlayerRow(ply)
 		draw.SimpleText(itemCount, "PS_Default", w - 450, h / 2, PS.Theme.TextDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 	end
 	
-	-- View Items button
-	local viewBtn = vgui.Create("DButton", row)
-	viewBtn:SetSize(80, 40)
-	viewBtn:SetText("")
-	viewBtn.PerformLayout = function(s, w, h)
-		s:SetPos(row:GetWide() - 410, 10)
+	-- Laid out right to left by slot rather than from four written-down offsets. Removing the
+	-- Give Item button meant shifting every one of those by hand, which is how they end up
+	-- disagreeing with the column headers above them.
+	local btnW = 88
+	local btnH = 40
+	local gap  = PS.Theme.Metrics.Gap
+
+	local slot = 0
+	local function Action(style, label, onClick)
+		local at = slot
+		slot = slot + 1
+
+		local b = vgui.Create("DButton", row)
+		b:SetText("")
+		b.PerformLayout = function(s)
+			s:SetSize(btnW, btnH)
+			s:SetPos(row:GetWide() - (at + 1) * (btnW + gap),
+				math.floor((row:GetTall() - btnH) / 2))
+		end
+		b.Paint = function(s, w, h)
+			PS.Theme.PaintAction(s, w, h, PS.Theme.Action[style], label)
+		end
+		b.DoClick = onClick
+		b:InvalidateLayout(true)
+		return b
 	end
-	viewBtn.Paint = function(s, w, h)
-		PS.Theme.PaintAction(s, w, h, PS.Theme.Action.Modify, "View Items")
-	end
-	viewBtn.DoClick = function()
-		self:OpenPlayerItemsWindow(ply)
-	end
-	
-	-- Give Points button
-	local giveBtn = vgui.Create("DButton", row)
-	giveBtn:SetSize(75, 40)
-	giveBtn:SetText("")
-	giveBtn.PerformLayout = function(s, w, h)
-		s:SetPos(row:GetWide() - 330, 10)
-	end
-	giveBtn.Paint = function(s, w, h)
-		PS.Theme.PaintAction(s, w, h, PS.Theme.Action.Positive, "Give Points")
-	end
-	giveBtn.DoClick = function()
-		self:PromptGivePoints(ply)
-	end
-	
-	-- Set Points button
-	local setBtn = vgui.Create("DButton", row)
-	setBtn:SetSize(75, 40)
-	setBtn:SetText("")
-	setBtn.PerformLayout = function(s, w, h)
-		s:SetPos(row:GetWide() - 255, 10)
-	end
-	setBtn.Paint = function(s, w, h)
-		PS.Theme.PaintAction(s, w, h, PS.Theme.Action.Accent, "Set Points")
-	end
-	setBtn.DoClick = function()
-		self:PromptSetPoints(ply)
-	end
-	
-	-- Initialize button positions
-	viewBtn:InvalidateLayout(true)
-	giveBtn:InvalidateLayout(true)
-	setBtn:InvalidateLayout(true)
-	
-	-- Give Item button
-	local giveItemBtn = vgui.Create("DButton", row)
-	giveItemBtn:SetSize(80, 40)
-	giveItemBtn:SetText("")
-	giveItemBtn.PerformLayout = function(s, w, h)
-		s:SetPos(row:GetWide() - 180, 10)
-	end
-	giveItemBtn.Paint = function(s, w, h)
-		PS.Theme.PaintAction(s, w, h, PS.Theme.Action.Warning, "Give Item")
-	end
-	giveItemBtn.DoClick = function()
-		self:PromptGiveItem(ply)
-	end
-	
-	giveItemBtn:InvalidateLayout(true)
+
+	-- Right to left: Set Points, Give Points, Items.
+	Action("Accent",   "Set Points",  function() self:PromptSetPoints(ply) end)
+	Action("Positive", "Give Points", function() self:PromptGivePoints(ply) end)
+	Action("Modify",   "Items",       function() self:OpenItemsWindow(ply) end)
 end
 
-function PANEL:OpenPlayerItemsWindow(ply)
+function PANEL:OpenItemsWindow(ply)
 	if not IsValid(ply) then return end
 
 	-- PS_Items are only networked to the item owner; request them from the server
@@ -292,7 +264,7 @@ function PANEL:OpenPlayerItemsWindow(ply)
 		expires = CurTime() + ADMIN_REQ_TIMEOUT,
 		fn = function(resolvedPly, items)
 			if not IsValid(self) then return end
-			self:_BuildPlayerItemsWindow(resolvedPly, items)
+			self:_BuildItemsWindow(resolvedPly, items)
 		end,
 	}
 
@@ -301,29 +273,38 @@ function PANEL:OpenPlayerItemsWindow(ply)
 	net.SendToServer()
 end
 
-function PANEL:_BuildPlayerItemsWindow(ply, items)
+-- Every item that exists, and what this player can be done with it.
+--
+-- This was two windows: View Items listed what they owned with a Take button, Give Item
+-- listed everything with a Give button. Same list, filtered two ways, opened from two row
+-- buttons. Worse, the Give list did not know what they already owned, and the server refuses
+-- a give for an item they have -- silently -- so those rows looked live and did nothing.
+--
+-- One list now. The action follows ownership, which is the thing the admin is actually
+-- deciding, and the row says which state it is in rather than the window saying it.
+function PANEL:_BuildItemsWindow(ply, owned)
 	if not IsValid(ply) then return end
 
-	local frame = vgui.Create("DFrame")
-	frame:SetTitle(ply:Nick() .. "'s Items")
-	frame:SetSize(900, 600)
-	frame:Center()
-	frame:MakePopup()
+	local frame = PS.UI.Frame({
+		title = ply:Nick() .. "'s Items",
+		w     = 900,
+		h     = 600,
+	})
 
-	local itemCount = table.Count(items)
-
-	if itemCount == 0 then
-		local label = vgui.Create("DLabel", frame)
-		label:SetText("This player has no items.")
-		label:Dock(FILL)
-		label:SetContentAlignment(5)
-		label:SetFont("PS_LargeTitle")
-		return
+	-- Ownership, kept current locally as buttons are pressed. The server sends no
+	-- acknowledgement for a give or a take, and re-requesting the whole inventory per click
+	-- would trip its own 0.5s rate limit on the request.
+	local ownedNow = {}
+	for id, data in pairs(owned or {}) do
+		ownedNow[id] = data or {}
 	end
 
 	-- Scrollable item list
 	local scroll = vgui.Create("DScrollPanel", frame)
 	scroll:Dock(FILL)
+	scroll:DockMargin(PS.Theme.Metrics.Gap, PS.Theme.Metrics.Gap,
+		PS.Theme.Metrics.Gap, PS.Theme.Metrics.Gap)
+	scroll.Paint = function(_, w, h) PS.Theme.PaintPanelBody(w, h) end
 
 	local sbar = scroll:GetVBar()
 	sbar:SetWide(12)
@@ -331,8 +312,13 @@ function PANEL:_BuildPlayerItemsWindow(ply, items)
 	sbar.Paint = function(s, w, h) PS.Theme.PaintScrollTrack(w, h) end
 	sbar.btnGrip.Paint = function(s, w, h) PS.Theme.PaintScrollGrip(s, w, h) end
 
-	local list = vgui.Create("DListLayout", scroll)
-	list:Dock(FILL)
+	-- Added to the scroll panel's CANVAS, not parented to the scroll panel itself. Parented
+	-- directly it is a sibling of the canvas and of the scrollbar, so Dock(FILL) stretched it
+	-- across the whole rect including the bar's strip -- the rightmost column drew under the
+	-- scrollbar, and the list could not scroll at all because FILL pins it to the viewport.
+	local list = vgui.Create("DListLayout")
+	scroll:AddItem(list)
+	list:Dock(TOP)
 
 	-- Add header
 	local header = vgui.Create("DPanel", list)
@@ -342,33 +328,45 @@ function PANEL:_BuildPlayerItemsWindow(ply, items)
 		surface.SetDrawColor(PS.Theme.RowHover)
 		surface.DrawRect(0, 0, w, h)
 		draw.SimpleText("Item Name", "PS_DefaultBold", 15, h/2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-		draw.SimpleText("Equipped", "PS_DefaultBold", w - 275, h/2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText("Category", "PS_DefaultBold", w - 400, h/2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText("Owned", "PS_DefaultBold", w - 250, h/2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 		draw.SimpleText("Actions", "PS_DefaultBold", w - 150, h/2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 	end
 
-	-- Sorted for a stable order; pairs() over the inventory table meant the list
-	-- reshuffled every time the window was opened.
-	local sorted = {}
-	for itemID, itemData in pairs(items) do
-		sorted[#sorted + 1] = { id = itemID, data = itemData, ITEM = PS.Items[itemID] }
+	-- Everything that exists, plus anything this player owns that no longer does.
+	--
+	-- The orphans matter: an item whose Lua file was deleted while players still owned it is
+	-- invisible in their own shop and unreachable from it, so if it is not listed here there
+	-- is no in-game way to take it back. Take still works on one, because the server takes
+	-- by ID and does not need the item to exist.
+	local rows = {}
+	for _, ITEM in pairs(PS.Items) do
+		rows[#rows + 1] = { id = ITEM.ID, ITEM = ITEM }
 	end
-	table.sort(sorted, function(a, b)
+	for id in pairs(ownedNow) do
+		if not PS.Items[id] then rows[#rows + 1] = { id = id } end
+	end
+
+	-- Sorted by category then name, and orphans last under their own heading. pairs() over
+	-- the table gave a different order on every open, which makes finding anything in a list
+	-- this long a matter of luck.
+	local ORPHAN = "zzz orphaned - no item file"
+	table.sort(rows, function(a, b)
+		local ac = a.ITEM and string.lower(a.ITEM.Category or "Misc") or ORPHAN
+		local bc = b.ITEM and string.lower(b.ITEM.Category or "Misc") or ORPHAN
+		if ac ~= bc then return ac < bc end
+
 		local an = a.ITEM and a.ITEM.Name or a.id
 		local bn = b.ITEM and b.ITEM.Name or b.id
 		return string.lower(an) < string.lower(bn)
 	end)
 
-	-- Add each item
-	for _, entry in ipairs(sorted) do
-		local itemID, itemData, ITEM = entry.id, entry.data, entry.ITEM
+	for _, entry in ipairs(rows) do
+		local itemID, ITEM = entry.id, entry.ITEM
 
-		-- Rows with no matching PS.Items entry used to be skipped outright. That hides
-		-- exactly the rows an admin most needs to act on — an item whose Lua file was
-		-- deleted while players still owned it is invisible here *and* unreachable from
-		-- the player's own shop, so there was no in-game way to take it back. Shown as
-		-- an orphan instead; Take still works, because the server takes by ID.
 		local displayName = ITEM and ITEM.Name or (itemID .. "  (orphaned - no item file)")
-		local nameCol = ITEM and PS.Theme.Text or PS.Theme.WarningBorder
+		local category    = ITEM and (ITEM.Category or "Misc") or "-"
+		local nameCol     = ITEM and PS.Theme.Text or PS.Theme.WarningBorder
 
 		local itemRow = vgui.Create("DPanel", list)
 		itemRow:SetTall(50)
@@ -378,41 +376,68 @@ function PANEL:_BuildPlayerItemsWindow(ply, items)
 		itemRow.Paint = function(s, w, h)
 			PS.Theme.PaintRow(s, w, h)
 
-			-- Item name - clip if too long
-			local shown = FitText(s, displayName, "PS_Default", w - 300)
+			local shown = FitText(s, displayName, "PS_Default", w - 420)
 			draw.SimpleText(shown, "PS_Default", 15, h/2, nameCol, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 
-			local equipped = itemData.Equipped and "Yes" or "No"
-			local equipCol = itemData.Equipped and PS.Theme.PriceAfford or PS.Theme.MenuRowText
-			draw.SimpleText(equipped, "PS_Default", w - 275, h/2, equipCol, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+			draw.SimpleText(category, "PS_Default", w - 400, h/2, PS.Theme.TextDim,
+				TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+
+			-- Owned, and equipped as a qualifier on it. Equipped without owned cannot happen,
+			-- so it is one column rather than two.
+			local data = ownedNow[itemID]
+			local label, col
+
+			if data and data.Equipped then
+				label, col = "Equipped", PS.Theme.PriceAfford
+			elseif data then
+				label, col = "Yes", PS.Theme.Text
+			else
+				label, col = "No", PS.Theme.MenuRowText
+			end
+
+			draw.SimpleText(label, "PS_Default", w - 250, h/2, col,
+				TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 		end
 
-		-- Take button
-		local takeBtn = vgui.Create("DButton", itemRow)
-		takeBtn:SetSize(100, 25)
-		takeBtn:SetText("")
-		takeBtn.PerformLayout = function(btn, w, h)
+		-- One button, and which one it is follows ownership. Re-read in Paint rather than
+		-- decided at build time, because pressing it changes the answer.
+		local actBtn = vgui.Create("DButton", itemRow)
+		actBtn:SetSize(100, 25)
+		actBtn:SetText("")
+		actBtn.PerformLayout = function(btn)
 			btn:SetPos(itemRow:GetWide() - 120, 12)
 		end
-		takeBtn.Paint = function(s, w, h)
-			PS.Theme.PaintAction(s, w, h, PS.Theme.Action.Danger,
-				s:IsEnabled() and "Take Item" or "Taken")
+
+		actBtn.Paint = function(s, w, h)
+			local has = ownedNow[itemID] ~= nil
+			PS.Theme.PaintAction(s, w, h,
+				has and PS.Theme.Action.Danger or PS.Theme.Action.Positive,
+				has and "Take Item" or "Give Item")
 		end
-		takeBtn.DoClick = function(s)
-			net.Start('PS_TakeItem')
-				net.WriteEntity(ply)
-				net.WriteString(itemID)
-			net.SendToServer()
 
-			-- Was frame:Close(). Taking one item tore down the whole window, so clearing
-			-- out a player's inventory meant reopening it and paying another server round
-			-- trip per item. Disable the row's button instead and leave the list up.
-			s:SetEnabled(false)
+		actBtn.DoClick = function()
+			if ownedNow[itemID] then
+				net.Start('PS_TakeItem')
+					net.WriteEntity(ply)
+					net.WriteString(itemID)
+				net.SendToServer()
+				ownedNow[itemID] = nil
+				AdminPatchSummary(ply, function(e) e.items = math.max(0, e.items - 1) end)
+			else
+				net.Start('PS_GiveItem')
+					net.WriteEntity(ply)
+					net.WriteString(itemID)
+				net.SendToServer()
+				ownedNow[itemID] = {}
+				AdminPatchSummary(ply, function(e) e.items = e.items + 1 end)
+			end
 
+			-- The window stays up. It used to close on every take, so clearing a player out
+			-- meant reopening and re-scrolling once per item.
 			if IsValid(self) then self:RequestSummary() end
 		end
 
-		takeBtn:InvalidateLayout(true)
+		actBtn:InvalidateLayout(true)
 	end
 end
 
@@ -422,11 +447,11 @@ function PANEL:PromptGivePoints(ply)
 	
 	local pointsName = (PS and PS.Config and PS.Config.PointsName) or "Points"
 	
-	local frame = vgui.Create("DFrame")
-	frame:SetTitle("Give " .. pointsName .. " to " .. ply:Nick())
-	frame:SetSize(300, 120)
-	frame:Center()
-	frame:MakePopup()
+	local frame = PS.UI.Frame({
+		title = "Give " .. pointsName .. " to " .. ply:Nick(),
+		w     = 300,
+		h     = 120 + PS.UI.HeaderH("strip"),
+	})
 	
 	local label = vgui.Create("DLabel", frame)
 	label:SetText("Amount:")
@@ -454,6 +479,8 @@ function PANEL:PromptGivePoints(ply)
 		net.SendToServer()
 		frame:Close()
 
+		AdminPatchSummary(ply, function(e) e.points = e.points + amount end)
+
 		-- Was a full PopulatePlayerList(), which tears down and rebuilds every row and
 		-- resets the scroll position. Only the numbers changed, so schedule a summary
 		-- refresh instead. The delay clears the server's 0.5s rate limit on the request,
@@ -467,11 +494,11 @@ function PANEL:PromptSetPoints(ply)
 	
 	local pointsName = (PS and PS.Config and PS.Config.PointsName) or "Points"
 	
-	local frame = vgui.Create("DFrame")
-	frame:SetTitle("Set " .. pointsName .. " for " .. ply:Nick())
-	frame:SetSize(300, 120)
-	frame:Center()
-	frame:MakePopup()
+	local frame = PS.UI.Frame({
+		title = "Set " .. pointsName .. " for " .. ply:Nick(),
+		w     = 300,
+		h     = 120 + PS.UI.HeaderH("strip"),
+	})
 	
 	local label = vgui.Create("DLabel", frame)
 	label:SetText("Amount:")
@@ -533,122 +560,22 @@ function PANEL:PromptSetPoints(ply)
 		net.SendToServer()
 		frame:Close()
 
+		AdminPatchSummary(ply, function(e) e.points = amount end)
+
 		-- See PromptGivePoints: summary refresh rather than a full list rebuild, delayed
 		-- past the server's rate limit on the request.
 		if IsValid(self) then self._NextSummary = CurTime() + 0.6 end
 	end
 end
 
-function PANEL:PromptGiveItem(ply)
-	if not IsValid(ply) then return end
-	
-	local frame = vgui.Create("DFrame")
-	frame:SetTitle("Give Item to " .. ply:Nick())
-	frame:SetSize(900, 600)
-	frame:Center()
-	frame:MakePopup()
-	
-	local items = PS.Items
-	if not items or table.Count(items) == 0 then
-		local label = vgui.Create("DLabel", frame)
-		label:SetText("No items available.")
-		label:Dock(FILL)
-		label:SetContentAlignment(5)
-		label:SetFont("PS_LargeTitle")
-		return
-	end
-	
-	-- Scrollable item list
-	local scroll = vgui.Create("DScrollPanel", frame)
-	scroll:Dock(FILL)
-	
-	local sbar = scroll:GetVBar()
-	sbar:SetWide(12)
-	sbar:SetHideButtons(true)
-	sbar.Paint = function(s, w, h) PS.Theme.PaintScrollTrack(w, h) end
-	sbar.btnGrip.Paint = function(s, w, h) PS.Theme.PaintScrollGrip(s, w, h) end
-	
-	local list = vgui.Create("DListLayout", scroll)
-	list:Dock(FILL)
-	
-	-- Add header
-	local header = vgui.Create("DPanel", list)
-	header:SetTall(45)
-	header:Dock(TOP)
-	header.Paint = function(s, w, h)
-		surface.SetDrawColor(PS.Theme.RowHover)
-		surface.DrawRect(0, 0, w, h)
-		draw.SimpleText("Item Name", "PS_DefaultBold", 15, h/2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-		draw.SimpleText("Category", "PS_DefaultBold", w - 200, h/2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-		draw.SimpleText("Actions", "PS_DefaultBold", w - 120, h/2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-	end
-	
-	-- Sorted by category then name. pairs() over PS.Items gave a different order on every
-	-- open, which makes finding anything in a list this long a matter of luck — and the
-	-- window already has a Category column implying a grouping that was never applied.
-	local sorted = {}
-	for _, ITEM in pairs(items) do
-		sorted[#sorted + 1] = ITEM
-	end
-	table.sort(sorted, function(a, b)
-		local ac, bc = string.lower(a.Category or "Misc"), string.lower(b.Category or "Misc")
-		if ac ~= bc then return ac < bc end
-		return string.lower(a.Name or "") < string.lower(b.Name or "")
-	end)
+-- PromptGiveItem lived here: a second 900x600 window listing every item with a Give button,
+-- opened from its own row button. It is _BuildItemsWindow now -- one list where the action
+-- follows ownership, rather than two lists that differ by which action they offer.
 
-	-- Add each item
-	for _, ITEM in ipairs(sorted) do
-		local itemRow = vgui.Create("DPanel", list)
-		itemRow:SetTall(50)
-		itemRow:Dock(TOP)
-		itemRow:DockMargin(0, 1, 0, 1)
-		
-		itemRow.Paint = function(s, w, h)
-			PS.Theme.PaintRow(s, w, h)
-			
-			-- Item name - clip if too long
-			local displayName = FitText(s, ITEM.Name, "PS_Default", w - 250)
-			draw.SimpleText(displayName, "PS_Default", 15, h/2, PS.Theme.Text, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-			
-			local category = ITEM.Category or "Misc"
-			draw.SimpleText(category, "PS_Default", w - 200, h/2, PS.Theme.TextDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-		end
-		
-		-- Give button
-		local giveBtn = vgui.Create("DButton", itemRow)
-		giveBtn:SetSize(100, 25)
-		giveBtn:SetText("")
-		giveBtn.PerformLayout = function(btn, w, h)
-			btn:SetPos(itemRow:GetWide() - 110, 12)
-		end
-		giveBtn.Paint = function(s, w, h)
-			PS.Theme.PaintAction(s, w, h, PS.Theme.Action.Positive,
-				s:IsEnabled() and "Give Item" or "Given")
-		end
-		giveBtn.DoClick = function(s)
-			net.Start('PS_GiveItem')
-				net.WriteEntity(ply)
-				net.WriteString(ITEM.ID)
-			net.SendToServer()
-
-			-- Was frame:Close(). Handing a player a loadout meant reopening and re-scrolling
-			-- this list once per item. Disable the row instead and keep the window up.
-			s:SetEnabled(false)
-
-			timer.Simple(0.1, function()
-				if IsValid(self) then
-					self:RequestSummary()
-				end
-			end)
-		end
-		
-		giveBtn:InvalidateLayout(true)
-	end
-end
-
-function PANEL:Paint(w, h)
-	PS.Theme.PaintFrame(w, h)
-end
+-- PANEL:Paint lived here and drew the frame body. SetupFrame sets Paint on the instance,
+-- which shadows a class method, so this had stopped being the one that ran -- and it drew
+-- the body without the header strip, so leaving it would have been a silent difference
+-- waiting for someone to move the call order.
 
 vgui.Register('DPointShopAdmin', PANEL, 'DFrame')
 

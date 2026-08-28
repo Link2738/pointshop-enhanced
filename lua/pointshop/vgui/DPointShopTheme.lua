@@ -560,7 +560,7 @@ function PANEL:Init()
 	-- edge with nothing around it and looked wedged in. A gap above and below is the whole
 	-- difference, and taking the height from the button means it stays a gap at every scale
 	-- instead of closing up as the button grows.
-	self.StripH = M.IconBtn + M.Gap * 2
+	self.StripH = PS.UI.HeaderH("strip")
 
 	-- The panel itself scales, not just what is in it.
 	--
@@ -578,47 +578,19 @@ function PANEL:Init()
 	local h = math.min(math.Round(660 * S) + self.OwnerBlockH + (self.StripH - math.Round(35 * S)),
 		ScrH() - 80)
 
-	self:SetSize(w, h)
-	PS.UI.RememberPosition(self, "theme")
-	self:SetTitle("")
-	self:SetDraggable(true)
-	self:SetSizable(false)
-	self:MakePopup()
-
-	-- Derma's own titlebar buttons, hidden.
+	-- The frame, the strip, the close button, the remembered position and Derma's own titlebar
+	-- buttons were all set up by hand here. The close button in particular was a near copy of
+	-- the one in the constructor, down to the floor on its y.
 	--
-	-- A DFrame builds a minimise, a maximise and a close in its top right and paints them with
-	-- the game's skin, so this panel was wearing stock Windows-ish chrome above a themed body.
-	-- Two of the three did nothing here anyway: the frame is not sizable and there is nothing
-	-- to minimise to.
-	--
-	-- ShowCloseButton covers the close; the other two have to be hidden by hand, and are
-	-- checked for validity because they only exist on a DFrame.
-	self:ShowCloseButton(false)
-	if IsValid(self.btnMaxim) then self.btnMaxim:SetVisible(false) end
-	if IsValid(self.btnMinim) then self.btnMinim:SetVisible(false) end
-
-	-- Ours instead: the same red X every other window in the shop uses.
-	local close = PS.UI.IconButton(self, PS.UI.GlyphIcon("close"), "Danger", function()
-		self:Close()
-	end)
-
-	-- Centred in the status strip this panel paints at the top, rather than in a header panel
-	-- it does not have.
-	close.PerformLayout = function(s)
-		local Mm = PS.Theme.Metrics
-		s:SetSize(Mm.IconBtn, Mm.IconBtn)
-
-		-- Floored: a button on a half pixel smears its own rounded corners, and this one sits
-		-- against an accent rule that makes the smear obvious.
-		s:SetPos(self:GetWide() - Mm.IconBtn - Mm.IconInset,
-			math.floor((self.StripH - Mm.IconBtn) / 2))
-	end
-
-	self.Paint = function(_, pw, ph)
-		PS.Theme.PaintPanelBody(pw, ph)
-		PS.Theme.PaintStatusStrip(pw, self.StripH, "Appearance - changes preview instantly")
-	end
+	-- One difference is deliberate and visible: the body was PaintPanelBody, so this window
+	-- painted itself in the colour meant for a box sitting ON a window. It is a window, so it
+	-- gets the window body like every other one.
+	PS.UI.SetupFrame(self, {
+		title    = "Appearance - changes preview instantly",
+		w        = w,
+		h        = h,
+		remember = "theme",
+	})
 
 	self.Providers = CollectProviders()
 
@@ -1022,11 +994,14 @@ function PANEL:OpenMixer(row)
 	local col = row.get()
 	if not istable(col) then return end
 
+	-- Parented to the panel so it dies with it, then given the standard chrome. The bar is
+	-- added to the height rather than taken out of it, so the mixer keeps the room it had.
 	local frame = vgui.Create("DFrame", self)
-	frame:SetSize(260, 220)
-	frame:SetTitle(row.label)
-	frame:Center()
-	frame:MakePopup()
+	PS.UI.SetupFrame(frame, {
+		title = row.label,
+		w     = 260,
+		h     = 220 + PS.UI.HeaderH("strip"),
+	})
 
 	local mixer = vgui.Create("DColorMixer", frame)
 	mixer:Dock(FILL)

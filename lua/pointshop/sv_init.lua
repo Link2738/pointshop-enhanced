@@ -126,18 +126,35 @@ net.Receive('PS_SendPoints', function(length, ply)
 	ply.PS_LastGavePoints = CurTime()
 end)
 
+-- Shared gate for every admin-tab net handler. The client-side check that decides whether
+-- the tab is drawn is cosmetic; this one is the actual authority.
+--
+-- Defined up here rather than beside the first handler that called it, because five handlers
+-- below had their own inline copy and only two used the function. They had already drifted:
+-- a rank could be allowed to take an item and refused the list it appears in.
+--
+-- It defers to PS.Config.CanAccessAdminTab, which is in sh_config.lua and therefore already
+-- in both realms. This file had its own version asking IsAdmin/IsSuperAdmin only, and that
+-- is a different question: those are engine admin status, and a rank defined in the admin
+-- mod the server actually runs on does not necessarily set it. The shared one reads the
+-- usergroup, so it says yes to an owner.
+--
+-- That mismatch is the bug behind the admin tab showing nothing. The client drew the tab
+-- because the shared check passed, every request the tab made hit this file's stricter
+-- version, and a refusal here is a bare return -- no response, no denial. The panel sat on
+-- "?" forever and looked broken rather than refused.
+local function PS_AdminTabAllowed(ply)
+	if not IsValid(ply) then return false end
+	return PS.Config.CanAccessAdminTab(ply) == true
+end
+
 -- admin points
 
 net.Receive('PS_GivePoints', function(length, ply)
 	local other = net.ReadEntity()
 	local points = math.Clamp(net.ReadInt(32), 0, 1000000)
 	
-	if not PS.Config.AdminCanAccessAdminTab and not PS.Config.SuperAdminCanAccessAdminTab then return end
-	
-	local admin_allowed = PS.Config.AdminCanAccessAdminTab and ply:IsAdmin()
-	local super_admin_allowed = PS.Config.SuperAdminCanAccessAdminTab and ply:IsSuperAdmin()
-	
-	if (admin_allowed or super_admin_allowed) and other and points and IsValid(other) and other:IsPlayer() then
+	if PS_AdminTabAllowed(ply) and other and points and IsValid(other) and other:IsPlayer() then
 		other:PS_GivePoints(points)
 		other:PS_Notify(ply:Nick(), ' gave you ', points, ' ', PS.Config.PointsName, '.')
 	end
@@ -147,12 +164,7 @@ net.Receive('PS_TakePoints', function(length, ply)
 	local other = net.ReadEntity()
 	local points = math.Clamp(net.ReadInt(32), 0, 1000000)
 	
-	if not PS.Config.AdminCanAccessAdminTab and not PS.Config.SuperAdminCanAccessAdminTab then return end
-	
-	local admin_allowed = PS.Config.AdminCanAccessAdminTab and ply:IsAdmin()
-	local super_admin_allowed = PS.Config.SuperAdminCanAccessAdminTab and ply:IsSuperAdmin()
-	
-	if (admin_allowed or super_admin_allowed) and other and points and IsValid(other) and other:IsPlayer() then
+	if PS_AdminTabAllowed(ply) and other and points and IsValid(other) and other:IsPlayer() then
 		other:PS_TakePoints(points)
 		other:PS_Notify(ply:Nick(), ' took ', points, ' ', PS.Config.PointsName, ' from you.')
 	end
@@ -162,12 +174,7 @@ net.Receive('PS_SetPoints', function(length, ply)
 	local other = net.ReadEntity()
 	local points = math.Clamp(net.ReadInt(32), 0, 1000000)
 	
-	if not PS.Config.AdminCanAccessAdminTab and not PS.Config.SuperAdminCanAccessAdminTab then return end
-	
-	local admin_allowed = PS.Config.AdminCanAccessAdminTab and ply:IsAdmin()
-	local super_admin_allowed = PS.Config.SuperAdminCanAccessAdminTab and ply:IsSuperAdmin()
-	
-	if (admin_allowed or super_admin_allowed) and other and points and IsValid(other) and other:IsPlayer() then
+	if PS_AdminTabAllowed(ply) and other and points and IsValid(other) and other:IsPlayer() then
 		other:PS_SetPoints(points)
 		other:PS_Notify(ply:Nick(), ' set your ', PS.Config.PointsName, ' to ', points, '.')
 	end
@@ -179,12 +186,7 @@ net.Receive('PS_GiveItem', function(length, ply)
 	local other = net.ReadEntity()
 	local item_id = net.ReadString()
 	
-	if not PS.Config.AdminCanAccessAdminTab and not PS.Config.SuperAdminCanAccessAdminTab then return end
-	
-	local admin_allowed = PS.Config.AdminCanAccessAdminTab and ply:IsAdmin()
-	local super_admin_allowed = PS.Config.SuperAdminCanAccessAdminTab and ply:IsSuperAdmin()
-	
-	if (admin_allowed or super_admin_allowed) and other and item_id and PS.Items[item_id] and IsValid(other) and other:IsPlayer() and not other:PS_HasItem(item_id) then
+	if PS_AdminTabAllowed(ply) and other and item_id and PS.Items[item_id] and IsValid(other) and other:IsPlayer() and not other:PS_HasItem(item_id) then
 		other:PS_GiveItem(item_id)
 	end
 end)
@@ -193,12 +195,7 @@ net.Receive('PS_TakeItem', function(length, ply)
 	local other = net.ReadEntity()
 	local item_id = net.ReadString()
 
-	if not PS.Config.AdminCanAccessAdminTab and not PS.Config.SuperAdminCanAccessAdminTab then return end
-
-	local admin_allowed = PS.Config.AdminCanAccessAdminTab and ply:IsAdmin()
-	local super_admin_allowed = PS.Config.SuperAdminCanAccessAdminTab and ply:IsSuperAdmin()
-
-	if not (admin_allowed or super_admin_allowed) then return end
+	if not PS_AdminTabAllowed(ply) then return end
 	if not item_id or item_id == '' then return end
 	if not IsValid(other) or not other:IsPlayer() then return end
 	if not other:PS_HasItem(item_id) then return end
@@ -275,16 +272,8 @@ util.AddNetworkString('PS_AdminItemsResponse')
 util.AddNetworkString('PS_AdminRequestSummary')
 util.AddNetworkString('PS_AdminSummaryResponse')
 
--- Shared gate for every admin-tab net handler. Mirrors the client-side check that
--- decides whether the tab is drawn at all — the client one is cosmetic, this one is
--- the actual authority.
-local function PS_AdminTabAllowed(ply)
-	if not IsValid(ply) then return false end
-	if not PS.Config.AdminCanAccessAdminTab and not PS.Config.SuperAdminCanAccessAdminTab then return false end
-	local admin_allowed = PS.Config.AdminCanAccessAdminTab and ply:IsAdmin()
-	local super_allowed = PS.Config.SuperAdminCanAccessAdminTab and ply:IsSuperAdmin()
-	return (admin_allowed or super_allowed) == true
-end
+-- PS_AdminTabAllowed was defined here, below five handlers that could not see it and so
+-- carried their own copy. It now lives above all of them.
 
 -- Admin request: fetch another player's items (not synced to other clients by default)
 net.Receive('PS_AdminRequestItems', function(len, ply)
