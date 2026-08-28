@@ -190,7 +190,15 @@ local function AxisRows(rows, axis, label, names)
 end
 
 local function Open()
-	if IsValid(panel) then panel:Remove() end
+	-- Brought forward rather than torn down and rebuilt. Rebuilding re-captured `before`,
+	-- which is what a revert restores -- so reopening the panel quietly made the current
+	-- values the ones you would revert TO, and the changes you meant to undo became the
+	-- baseline.
+	if IsValid(panel) then
+		panel:MoveToFront()
+		panel:RequestFocus()
+		return
+	end
 
 	local M = T.Metrics
 	before = T.FrameMetrics()

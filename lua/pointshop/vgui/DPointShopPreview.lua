@@ -77,6 +77,31 @@ function PANEL:SetOutfit(outfit)
 
 	if IsValid(self.Entity) and outfit.colour then
 		PS:ApplyColorToModel(self.Entity, outfit.colour, outfit.useColor2)
+
+		-- The body goes through the panel's own colour when the item uses modulation, for the
+		-- same reason the accessories do: Paint sets modulation from colColor before drawing
+		-- the entity, so the entity's SetColor never survives to the screen.
+		--
+		-- Reset to white for a proxy item, or the last modulated model's colour would linger
+		-- and tint a body that is meant to be untinted.
+		self:SetColor(outfit.useColor2 and color_white or outfit.colour)
+	end
+
+	-- Skin and bodygroups, from the playermodel item's own modifiers.
+	--
+	-- They are part of the outfit rather than part of the model: two players wearing the same
+	-- playermodel with different bodygroups are wearing different things, and a preview that
+	-- shows the model at its defaults is not showing the loadout.
+	if IsValid(self.Entity) and istable(outfit.mods) then
+		if outfit.mods.skin then
+			self.Entity:SetSkin(math.Round(tonumber(outfit.mods.skin) or 0))
+		end
+
+		if istable(outfit.mods.bodygroups) then
+			for id, value in pairs(outfit.mods.bodygroups) do
+				self.Entity:SetBodygroup(tonumber(id) or 0, tonumber(value) or 0)
+			end
+		end
 	end
 
 	for _, entry in ipairs(outfit.items or {}) do
@@ -171,7 +196,21 @@ function PANEL:DrawAccessory(ITEM, model, mods)
 
 	model:SetPos(pos)
 	model:SetAngles(ang)
+
+	-- Modulation is a RENDER state, not a property of the entity.
+	--
+	-- DModelPanel sets it once for the whole 3D block from its own colour, so an accessory
+	-- coloured through SetColor drew in the panel's colour rather than its own -- and SetColor
+	-- is the channel every item with UseColor2Proxy = false uses, which is most of them. The
+	-- proxy path was unaffected, which is why some items coloured and others did not.
+	local c = model:GetColor()
+	render.SetColorModulation(c.r / 255, c.g / 255, c.b / 255)
+
 	model:DrawModel()
+
+	-- Back to the panel's own, so one accessory cannot tint the next.
+	local base = self.colColor
+	render.SetColorModulation(base.r / 255, base.g / 255, base.b / 255)
 end
 
 function PANEL:DrawOtherModels()
@@ -183,7 +222,12 @@ function PANEL:DrawOtherModels()
 		for _, entry in ipairs(self.Outfit.items or {}) do
 			local ITEM = PS.Items[entry.id]
 			if ITEM then
-				self:DrawAccessory(ITEM, self.OutfitModels[entry.id], entry.mods)
+				-- Falls back to what the item declares. An accessory that has never been
+				-- customized has nothing stored, and its DefaultModifications are its
+				-- offset, angle and scale -- without them it draws at the origin of the
+				-- bone, unrotated, which is not where it goes.
+				self:DrawAccessory(ITEM, self.OutfitModels[entry.id],
+					entry.mods or ITEM.DefaultModifications)
 			end
 		end
 		return

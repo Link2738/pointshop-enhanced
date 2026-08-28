@@ -109,8 +109,12 @@ function UI.GlyphIcon(name, font)
 		local cx, cy = w / 2 + ox, h / 2 + oy
 		draw.SimpleText(glyph, font, cx + Shared("ShadowX"), cy + Shared("ShadowY"),
 			PS.Theme.Shadow, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		-- ButtonText, not HeaderText. A glyph sits on a button fill -- Danger, Modify, Accent
+		-- -- which is exactly what ButtonText is for. HeaderText is the title on the bar, and
+		-- one token covering both meant a look could not have a dark title on a pale bar and
+		-- white glyphs on a red one. Classic wants precisely that.
 		draw.SimpleText(glyph, font, cx, cy,
-			PS.Theme.HeaderText, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+			PS.Theme.ButtonText, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 	end
 end
 
@@ -567,6 +571,31 @@ function UI.SetupFrame(frame, opts)
 	end
 
 	return frame
+end
+
+-- One window per class, at most.
+--
+-- Every open site was a bare vgui.Create, so pressing the button twice built a second panel
+-- on top of the first -- two appearance editors writing the same palette, two admin panels
+-- polling the same summary, and only the top one reachable to close.
+--
+-- Brings the open one forward rather than refusing silently, because from the player's side
+-- the button did nothing either way and the honest response to "open this" is to show it.
+UI.Windows = UI.Windows or {}
+
+function UI.Open(class)
+	local open = UI.Windows[class]
+
+	if IsValid(open) then
+		open:MoveToFront()
+		open:RequestFocus()
+		return open
+	end
+
+	local panel = vgui.Create(class)
+	UI.Windows[class] = panel
+
+	return panel
 end
 
 -- A themed window: body, border, header with a title, and a close button.

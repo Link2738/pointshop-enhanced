@@ -19,7 +19,20 @@ PS.Loadouts = PS.Loadouts or {}
 
 local L = PS.Loadouts
 
-local DATA_PATH = "pointshop/loadouts.json"
+-- One file per slot, named after the slot number.
+--
+-- The folder is the list, and the names are the slots -- so trying someone else's loadout is
+-- dropping their file in and renaming it to the slot you want it in. A single blob could not
+-- do that: you would have to open it, find the right entry, and paste theirs over it.
+--
+-- Which is also why the active slot does NOT live in there. The folder holds exactly 1.json
+-- through 8.json and nothing else, so there is never a question about what a file in it is.
+local DIR       = "pointshop/loadouts"
+local DATA_PATH = "pointshop/loadouts.json"   -- the active slot, and nothing else
+
+local function SlotFile(i)
+	return DIR .. "/" .. i .. ".json"
+end
 
 -- Eight is a decision, not a limit of the format: a fixed set of slots keeps the panel a
 -- simple list and bounds what the server validates on each apply.
@@ -57,21 +70,47 @@ local function WriteStored(changes)
 	file.Write(DATA_PATH, util.TableToJSON(stored, true))
 end
 
+-- A slot per file: written when it holds something, deleted when it does not.
+--
+-- Deleting is what makes an empty slot actually empty on disk, so the folder always says the
+-- truth about what you have -- an 8.json left behind by a slot you cleared would come back
+-- the next time anything reloaded.
 function L.Save()
-	WriteStored({ slots = L.Slots, active = L.Active })
-end
+	if not file.IsDir("pointshop", "DATA") then file.CreateDir("pointshop") end
+	if not file.IsDir(DIR, "DATA") then file.CreateDir(DIR) end
 
-function L.Load()
-	local stored = ReadStored()
+	for i = 1, L.MAX do
+		local path = SlotFile(i)
+		local slot = L.Slots[i]
 
-	L.Slots = {}
-	if istable(stored.slots) then
-		for i = 1, L.MAX do
-			local slot = stored.slots[i] or stored.slots[tostring(i)]
-			if istable(slot) and istable(slot.items) then L.Slots[i] = slot end
+		if istable(slot) then
+			file.Write(path, util.TableToJSON(slot, true))
+		elseif file.Exists(path, "DATA") then
+			file.Delete(path)
 		end
 	end
 
+	WriteStored({ active = L.Active })
+end
+
+-- Re-read from disk. Called on load and whenever the panel opens, so a file dropped into the
+-- folder mid-session is picked up rather than needing a restart -- which is the whole point
+-- of the folder being the list.
+function L.Load()
+	L.Slots = {}
+
+	for i = 1, L.MAX do
+		local raw = file.Read(SlotFile(i), "DATA")
+
+		if raw and raw ~= "" then
+			-- Guarded: these are files a player can hand-edit or be handed by someone else,
+			-- so a malformed one is expected eventually and must cost only its own slot.
+			local ok, slot = pcall(util.JSONToTable, raw)
+			if ok and istable(slot) and istable(slot.items) then L.Slots[i] = slot end
+		end
+	end
+
+	local stored = ReadStored()
 	L.Active = isnumber(stored.active) and stored.active or nil
 	if L.Active and not L.Slots[L.Active] then L.Active = nil end
 end
@@ -85,37 +124,80 @@ end
 -- Reads the client's own copy of the inventory rather than asking the server, because the
 -- client already has it -- PS_Items is synced for its owner -- and because a capture is about
 -- what this person can see on themselves.
+-- A playermodel's current settings, read off the character.
+--
+-- Not from PS_Items[id].Modifiers, which is where everything else comes from. That cache is
+-- filled when the client joins and never again for a playermodel: the customization handler
+-- updates the server's copy and the customization store, and the client's copy sits at
+-- whatever it was at join. Reading it captured the colour, skin and bodygroups the player had
+-- when they connected rather than the ones they are wearing.
+--
+-- Accessories are not affected and keep using the cache -- their base writes the client's copy
+-- in ApplyAccessorySettings, so it stays current.
+--
+-- The channel is the item's, not a guess. UseColor2Proxy true means the colour is in the
+-- proxy, which reads back as a 0-1 vector; false means it is modulation, which reads back as
+-- a Color. The other channel is neutral by then and reading it gives white.
+local function WornModelMods(ply, ITEM)
+	-- Only the ones the ITEM says are choices.
+	--
+	-- Walking 0 to GetNumBodyGroups() captured every group the model has, including the ones
+	-- the item pins to a single value and group 0, which it does not declare at all. Those are
+	-- not settings -- a bodygroup with one option cannot be chosen wrong or right, and storing
+	-- it writes down a decision nobody made.
+	--
+	-- ITEM.Bodygroups is the item saying which are which: an entry with more than one value is
+	-- offered to the player, and an entry with one is fixed. No declaration means nothing is
+	-- adjustable, so nothing is captured.
+	local bodygroups = {}
+
+	for _, def in pairs(ITEM.Bodygroups or {}) do
+		if istable(def) and def.id and istable(def.values) and #def.values > 1 then
+			bodygroups[def.id] = ply:GetBodygroup(def.id)
+		end
+	end
+
+	local colour
+
+	if ITEM.UseColor2Proxy then
+		local v = ply:GetPlayerColor()
+		colour = { math.Round(v.x * 255), math.Round(v.y * 255), math.Round(v.z * 255) }
+	else
+		local c = ply:GetColor()
+		colour = { c.r, c.g, c.b }
+	end
+
+	return {
+		skin        = ply:GetSkin(),
+		bodygroups  = bodygroups,
+		playercolor = colour,
+	}
+end
+
 function L.Capture(name)
 	local ply = LocalPlayer()
 	local items = {}
 
 	for id, data in pairs(ply.PS_Items or {}) do
-		if data.Equipped and PS.Items[id] then
-			items[#items + 1] = {
-				id = id,
+		local ITEM = PS.Items[id]
 
-				-- Modifiers as stored, not as displayed. The customization panel may be open
-				-- with unsaved changes on screen, and a loadout should record what the player
-				-- has committed to, not what they are mid-experiment with.
-				mods = data.Modifiers,
+		if data.Equipped and ITEM then
+			items[#items + 1] = {
+				id   = id,
+				mods = PS.IsPlayermodelItem(ITEM) and WornModelMods(ply, ITEM) or data.Modifiers,
 			}
 		end
 	end
 
-	local pc = ply:GetPlayerColor()
-	local rc = ply:GetColor()
-
-	-- Which channel is carrying the colour decides which value means anything. The proxy path
-	-- writes SetPlayerColor and neutralises SetColor; modulation does the reverse.
-	local useColor2 = pc and (pc.x + pc.y + pc.z) < 2.99
-
+	-- Items only.
+	--
+	-- There were `colour` and `useColor2` fields alongside. The colour was a duplicate of the
+	-- playermodel entry's own playercolor, and the flag was a copy of ITEM.UseColor2Proxy --
+	-- a property of the item, so a saved loadout held a snapshot of it and went on asserting
+	-- the old value after the item changed.
 	return {
 		name  = name or ("Loadout " .. os.date("%H:%M")),
 		items = items,
-		useColor2 = useColor2,
-		colour = useColor2
-			and { math.Round(pc.x * 255), math.Round(pc.y * 255), math.Round(pc.z * 255) }
-			or  { rc.r, rc.g, rc.b },
 	}
 end
 
@@ -127,10 +209,11 @@ function L.Apply(index)
 	local slot = L.Slots[index]
 	if not slot then return end
 
+	-- Items only. The colour is in the playermodel entry's own modifiers, which are in this
+	-- table already, and the channel is ITEM.UseColor2Proxy from the shared item table -- so
+	-- the server can work both out and neither is ours to assert.
 	net.Start("PS_Loadout_Apply")
 		net.WriteTable(slot.items)
-		net.WriteColor(Color(slot.colour[1] or 255, slot.colour[2] or 255, slot.colour[3] or 255))
-		net.WriteBool(slot.useColor2 and true or false)
 	net.SendToServer()
 
 	L.Active = index

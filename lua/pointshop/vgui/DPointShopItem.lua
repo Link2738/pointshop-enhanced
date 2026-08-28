@@ -124,7 +124,7 @@ function PANEL:DoClick()
 
 	if not LocalPlayer():PS_HasItem(self.Data.ID) and self.Data.Model then
 		AddMenuButton("Inspect", PS.Theme.Accent, function()
-			local inspector = vgui.Create("DPointShopInspector")
+			local inspector = PS.UI.Open("DPointShopInspector")
 			inspector:SetItem(self.Data)
 		end)
 	end
@@ -157,7 +157,7 @@ function PANEL:DoClick()
 		AddSpacer()
 		AddMenuButton("Edit Default...", PS.Theme.GoldBorder, function()
 			if IsValid(PS._OwnerDefaultsPanel) then PS._OwnerDefaultsPanel:Remove() end
-			local panel = vgui.Create("PSOwnerDefaultsPanel")
+			local panel = PS.UI.Open("PSOwnerDefaultsPanel")
 			panel:SetItem(self.Data)
 			PS._OwnerDefaultsPanel = panel
 		end)

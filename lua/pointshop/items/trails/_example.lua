@@ -32,7 +32,7 @@ end
 -- Opens the shared customization panel (lets players recolor the trail).
 function ITEM:Modify(modifications)
     if CLIENT then
-        local panel = vgui.Create("PSItemCustomizationPanel")
+        local panel = PS.UI.Open("PSItemCustomizationPanel")
         panel:SetItem(self)
         if PS and PS.ToggleMenu then PS:ToggleMenu() end
     end

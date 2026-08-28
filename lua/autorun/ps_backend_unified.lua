@@ -21,7 +21,33 @@ if SERVER then
     
     -- Server-side sanitization function (mirrors client-side for security)
     -- Global so other server code (e.g. PS_BuyItem's initial-mods path) can reuse it.
-    function PS_SanitizeCustomizationData(mods, itemType)
+    -- A real, finite number or nil.
+    --
+    -- tonumber accepts "1e400", and the arithmetic below does not reject what comes back.
+    -- math.Clamp on a NaN returns NaN, because every comparison against NaN is false, and a
+    -- NaN reaching SetBodygroup or SetSkin is undefined behaviour in the engine rather than a
+    -- clamped value. inf survives Clamp only when it is the bound, which is its own surprise.
+    --
+    -- v ~= v is the NaN test: it is the only value that is not equal to itself.
+    local function Finite(v)
+        local n = tonumber(v)
+        if not n then return nil end
+        if n ~= n then return nil end
+        if n == math.huge or n == -math.huge then return nil end
+        return n
+    end
+
+    -- How many entries the bodygroup loop will look at, whatever the table's size.
+    --
+    -- The accepted-count cap did not bound the work: an entry that fails validation does not
+    -- increment it, so a table of ten thousand invalid keys was walked in full and returned
+    -- nothing. The payload cap upstream is on bytes, and a lot of short numeric keys fit in
+    -- eight kilobytes.
+    local MAX_BODYGROUP_ENTRIES = 128
+
+    -- ITEM is optional and is what turns a type-shaped check into an item-shaped one. Pass it
+    -- wherever the item is known, which is everywhere that has an itemID.
+    function PS_SanitizeCustomizationData(mods, itemType, ITEM)
         if not mods or type(mods) ~= "table" then return {} end
 
         -- Upgrade legacy shapes before sanitizing. This addon is distributed, so a
@@ -90,20 +116,61 @@ if SERVER then
             end
 
         elseif itemType == "playermodel" then
-            -- Sanitize playermodel data
-            if mods.skin then
-                sanitized.skin = math.Clamp(math.Round(tonumber(mods.skin) or 0), 0, 255)
+            -- Narrowed by the ITEM where it says something, not just clamped to a type range.
+            --
+            -- These bounds used to be the item-independent ones below: skin 0-255, bodygroup
+            -- id 0-31, value 0-15. Every one of those passes values the model does not have.
+            -- A model declaring SkinCount = 2 accepted skin 200; one declaring
+            -- ["hair"] = { id = 5, values = { 0 } } accepted hair = 9. The generic range says
+            -- what a bodygroup COULD be; the item says what this one may be, and only the item
+            -- knows.
+            --
+            -- The wide bounds stay as the outer limit for an item that declares nothing.
+            local skinIn = Finite(mods.skin)
+            if skinIn then
+                local skin = math.Clamp(math.Round(skinIn), 0, 255)
+
+                local count = ITEM and Finite(ITEM.SkinCount)
+                if count then
+                    skin = math.Clamp(skin, 0, math.max(0, math.floor(count) - 1))
+                end
+
+                sanitized.skin = skin
             end
-            
+
             if mods.bodygroups and type(mods.bodygroups) == "table" then
                 sanitized.bodygroups = {}
-                local count = 0
+
+                -- What this model actually offers, by id: { [id] = { [value] = true } }.
+                -- Absent when the item declares none, and then only the generic range applies.
+                local allowed
+                if ITEM and type(ITEM.Bodygroups) == "table" then
+                    allowed = {}
+                    for _, def in pairs(ITEM.Bodygroups) do
+                        if type(def) == "table" and def.id and type(def.values) == "table" then
+                            local set = {}
+                            for _, v in ipairs(def.values) do set[tonumber(v) or -1] = true end
+                            allowed[tonumber(def.id)] = set
+                        end
+                    end
+                end
+
+                local count, seen = 0, 0
+
                 for bgID, bgValue in pairs(mods.bodygroups) do
+                    -- Bounded on entries LOOKED AT, not entries accepted. An invalid entry
+                    -- never incremented the accepted count, so junk was free.
+                    seen = seen + 1
+                    if seen > MAX_BODYGROUP_ENTRIES then break end
                     if count >= 32 then break end  -- Max 32 bodygroups
-                    local id = tonumber(bgID)
-                    local val = tonumber(bgValue)
-                    if id and val and id >= 0 and id < 32 and val >= 0 and val < 16 then
-                        sanitized.bodygroups[id] = math.floor(val)
+
+                    local id  = Finite(bgID)
+                    local val = Finite(bgValue)
+
+                    if id and val and id >= 0 and id < 32 and val >= 0 and val < 16
+                        and (not allowed or (allowed[id] and allowed[id][math.floor(val)])) then
+
+                        sanitized.bodygroups[math.floor(id)] = math.floor(val)
                         count = count + 1
                     end
                 end
@@ -261,7 +328,7 @@ if SERVER then
             return
         end
 
-        local mods = PS_SanitizeCustomizationData(rawMods, itemType)
+        local mods = PS_SanitizeCustomizationData(rawMods, itemType, PS.Items and PS.Items[itemID])
 
         if next(rawMods) ~= nil and next(mods) == nil then
             print(string.format("[PS SECURITY] All customization data was invalid from %s", ply:Nick()))
@@ -289,6 +356,22 @@ if SERVER then
 
         elseif itemType == "playermodel" then
             PS_SetCustomization(ply, itemID, mods)
+
+            -- The item's own record, updated the same way the accessory branch above does it.
+            --
+            -- This branch used to write the customization store and the entity and stop, so
+            -- PS_Items[itemID].Modifiers kept whatever it held when the player joined. Two
+            -- stores that are meant to say the same thing, and only one of them moving:
+            -- anything reading the cached modifiers got the colour, skin and bodygroups the
+            -- player had at load rather than the ones they are wearing. The loadout capture
+            -- reads exactly that, which is how a loadout ended up saving a colour its owner
+            -- had changed away from.
+            if ply.PS_Items and ply.PS_Items[itemID] then
+                ply.PS_Items[itemID].Modifiers = mods
+                if PS and PS.SavePlayerItem then
+                    pcall(function() PS:SavePlayerItem(ply, itemID, ply.PS_Items[itemID]) end)
+                end
+            end
 
             ply:SetModel(ply:GetModel())
             if mods.skin then ply:SetSkin(mods.skin) end

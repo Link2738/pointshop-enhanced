@@ -210,7 +210,19 @@ local function PresetSection()
 				type    = "choice",
 				options = options,
 				get     = function() return T.GetPreset() or "" end,
-				set     = function(id) T.SetPreset(id ~= "" and id or nil) end,
+
+				-- Written to disk as soon as it is picked, not on Save.
+				--
+				-- Which look you are on is a choice in its own right, separate from the
+				-- colours in it: picking Classic and closing the panel without saving anything
+				-- still means you chose Classic, and the shop should open there next time.
+				-- Leaving it to Save meant browsing looks and closing lost the one you settled
+				-- on, and you came back to whatever you had before.
+				set     = function(id)
+					local to = id ~= "" and id or nil
+					T.SetPreset(to)
+					T.SavePreset(to)
+				end,
 			},
 
 			-- One control for the whole family, sat between the preset that sets everything
@@ -227,8 +239,22 @@ local function PresetSection()
 				min      = 0,
 				max      = 359,
 				decimals = 0,
+				enabled  = function() return T.HueLinked end,
 				get      = function() return T.GetGroupHue(HUE_GROUP) end,
 				set      = function(h) T.SetGroupHue(HUE_GROUP, h) end,
+			},
+
+			-- Structure rather than colour, and the thing that most makes Classic look like
+			-- PS1: its active tab is not filled, it is underlined, with the text weight
+			-- carrying the selection instead. It was reachable only by choosing Classic --
+			-- a look you could not have on any other palette.
+			{
+				label = "Underline the active category",
+				type  = "toggle",
+				get   = function() return T.GetStyle("Category", "activeMode") == "underline" end,
+				set   = function(on)
+					T.SetStyle("Category", "activeMode", on and "underline" or nil)
+				end,
 			},
 		},
 	}
@@ -634,6 +660,11 @@ function PANEL:Init()
 		remember = "theme",
 	})
 
+	-- Re-read the looks folder on open. They are files, so one can appear or disappear while
+	-- the game is running, and the dropdown should say what is actually there rather than what
+	-- was there at startup.
+	PS.Theme.LoadLooks()
+
 	self.Providers = CollectProviders()
 
 	-- Every fixed number in this panel scales with the rest of the UI.
@@ -678,9 +709,14 @@ function PANEL:Init()
 	--
 	-- Toggling rebuilds from the providers rather than filtering what is already there: the
 	-- rows are generated, so the honest way to change what is generated is to generate again.
+	-- Two checkboxes on one line, so half the column each.
+	local boxY = bodyY + math.Round(2 * S)
+	local boxH = math.Round(16 * S)
+	local boxW = math.floor((listW - self.Edge * 2) / 2)
+
 	local adv = vgui.Create("DCheckBoxLabel", self)
-	adv:SetPos(self.Edge + math.Round(2 * S), bodyY + math.Round(2 * S))
-	adv:SetSize(listW - self.Edge * 2, math.Round(16 * S))
+	adv:SetPos(self.Edge + math.Round(2 * S), boxY)
+	adv:SetSize(boxW, boxH)
 	adv:SetText("Advanced")
 	adv:SetTextColor(PS.Theme.TextDim)
 	-- Seeded, so the callback has to ignore the seed. A checkbox fires OnChange from SetValue
@@ -695,6 +731,32 @@ function PANEL:Init()
 
 		PS.Theme.ShowAdvanced = on
 		self.Providers = CollectProviders()
+		self:BuildList()
+	end
+
+	-- Arms the base hue slider. Off by default and greyed rather than hidden, so it is
+	-- visible as something you could turn on without being something the cursor can knock.
+	--
+	-- It earns the guard: moving it pulls every colour in its group onto one hue, including
+	-- ones set by hand a moment before. That is what makes it useful and also what makes it
+	-- worth a deliberate act.
+	local hue = vgui.Create("DCheckBoxLabel", self)
+	hue:SetPos(self.Edge + math.Round(2 * S) + boxW, boxY)
+	hue:SetSize(boxW, boxH)
+	hue:SetText("Base hue")
+	hue:SetTextColor(PS.Theme.TextDim)
+
+	hue._seeding = true
+	hue:SetValue(PS.Theme.HueLinked and true or false)
+	timer.Simple(0, function() if IsValid(hue) then hue._seeding = false end end)
+
+	hue.OnChange = function(s, on)
+		if s._seeding then return end
+
+		PS.Theme.HueLinked = on
+
+		-- Rebuild rather than reach in and enable the slider: the row is generated, and the
+		-- generated thing is what has to change. Same reason Advanced rebuilds.
 		self:BuildList()
 	end
 
@@ -842,6 +904,10 @@ end
 function PANEL:BuildList()
 	local provider = self.Providers[self._activeProvider or 1]
 	if not provider then return end
+
+	-- The footer follows the look too: Delete is there for a saved look and absent otherwise,
+	-- and every path that changes the look already comes through here.
+	if self._footer then self:BuildFooter(self:GetWide(), self:GetTall()) end
 
 	local listW = self.ListW
 	self.List:Clear()
@@ -1010,6 +1076,13 @@ function PANEL:AddSliderRow(row, y, listW)
 
 	slider.Label:SetTextColor(PS.Theme.Text)
 
+	-- Optional, so a row that says nothing is live -- which is every row but the base hue.
+	-- Greyed rather than removed: a control that vanishes when off cannot be found to turn on.
+	if row.enabled and not row.enabled() then
+		slider:SetEnabled(false)
+		slider.Label:SetTextColor(PS.Theme.TextDim)
+	end
+
 	slider.OnValueChanged = function(s, v)
 		if s._seeding then return end
 		self:NoteEdit()
@@ -1075,9 +1148,116 @@ function PANEL:OpenMixer(row)
 	end
 end
 
+-- Asks for a name, and whether the window size travels with it.
+--
+-- The size is asked rather than assumed both ways round. A look is about colour, and someone
+-- who has sized their shop to their monitor does not necessarily want that size following a
+-- palette around -- but someone building a look for a 4:3 window does. Neither default is
+-- right often enough to pick silently.
+-- Runs the active provider's own save.
+--
+-- Saving a look writes the look file, which is the shop's palette and nothing else. A provider
+-- is free to keep state this panel knows nothing about -- that is the point of the contract --
+-- so it still gets told to save. Dropping this when the look files arrived would have made
+-- every other provider quietly stop persisting.
+function PANEL:SaveProviders()
+	local ok, err = pcall(function()
+		local provider = self.Providers[self._activeProvider or 1]
+		if provider and isfunction(provider.save) then provider.save() end
+	end)
+
+	if not ok then Warn("provider failed to save: " .. tostring(err)) end
+end
+
+function PANEL:PromptSaveLook()
+	local T = PS.Theme
+	local M = PS.Theme.Metrics
+
+	local frame = PS.UI.Frame({
+		title = "Save",
+		w     = math.Round(320 * self.S),
+		h     = math.Round(150 * self.S) + PS.UI.HeaderH(),
+	})
+
+	local label = vgui.Create("DLabel", frame)
+	label:SetText("Name")
+	label:SetTextColor(PS.Theme.Text)
+	label:Dock(TOP)
+	label:DockMargin(M.Margin, M.Gap, M.Margin, 0)
+	label:SizeToContents()
+
+	local entry = vgui.Create("DTextEntry", frame)
+	entry:Dock(TOP)
+	entry:DockMargin(M.Margin, M.Gap, M.Margin, 0)
+	entry:SetTall(M.ButtonH)
+	entry:RequestFocus()
+
+	local size = vgui.Create("DCheckBoxLabel", frame)
+	size:Dock(TOP)
+	size:DockMargin(M.Margin, M.Gap, M.Margin, 0)
+	size:SetTall(math.Round(18 * self.S))
+	size:SetText("Include the window size")
+	size:SetTextColor(PS.Theme.TextDim)
+	size:SetValue(false)
+
+	local row = vgui.Create("DPanel", frame)
+	row:Dock(BOTTOM)
+	row:SetTall(M.ButtonH)
+	row:DockMargin(M.Margin, M.Gap, M.Margin, M.Margin)
+	row:SetPaintBackground(false)
+
+	local function Commit()
+		local name = string.Trim(entry:GetValue() or "")
+		if name == "" then return end
+
+		-- An existing name is an overwrite, so it asks first rather than replacing a look the
+		-- player may have forgotten they had.
+		if T.Presets[T.LookID(name)] then
+			PS.UI.Confirm({
+				title = "Overwrite",
+				text  = 'Replace "' .. name .. '"?',
+				yes   = "Overwrite",
+				onYes = function()
+					T.SaveLook(name, size:GetChecked())
+		self:SaveProviders()
+					frame:Close()
+					if IsValid(self) then self:BuildList() end
+					notification.AddLegacy('Saved "' .. name .. '".', NOTIFY_GENERIC, 3)
+				end,
+			})
+			return
+		end
+
+		T.SaveLook(name, size:GetChecked())
+		self:SaveProviders()
+		frame:Close()
+		if IsValid(self) then self:BuildList() end
+		notification.AddLegacy('Saved "' .. name .. '".', NOTIFY_GENERIC, 3)
+	end
+
+	entry.OnEnter = Commit
+
+	local cancel = PS.UI.Button(row, "Cancel", "Neutral", function() frame:Close() end)
+	cancel:Dock(RIGHT)
+	cancel:SetWide(M.ButtonH * 3)
+	cancel:DockMargin(M.Gap, 0, 0, 0)
+
+	local save = PS.UI.Button(row, "Save", "Positive", Commit)
+	save:Dock(RIGHT)
+	save:SetWide(M.ButtonH * 3)
+end
+
 function PANEL:BuildFooter(w, h)
 	local S = self.S or 1
 	local y = h - self.FootH
+
+	-- Torn down and rebuilt, because which buttons belong here depends on the look: Delete
+	-- exists only for the player's own saved ones. Built once in Init, choosing a saved look
+	-- would not grow a Delete button until the panel was closed and reopened.
+	for _, b in ipairs(self._footer or {}) do
+		if IsValid(b) then b:Remove() end
+	end
+	self._footer = {}
 
 	-- Buttons laid out left to right by a running cursor rather than at written-down x
 	-- positions.
@@ -1098,6 +1278,8 @@ function PANEL:BuildFooter(w, h)
 			PS.Theme.PaintAction(s, pw, ph, PS.Theme.Action[style], label)
 		end
 		b.DoClick = fn
+
+		self._footer[#self._footer + 1] = b
 
 		cursor = cursor + width + math.Round(8 * S)
 		return b
@@ -1124,30 +1306,50 @@ function PANEL:BuildFooter(w, h)
 		return provider.name
 	end
 
-	local function DoSave()
-		local name = ActiveProvider("save", "save")
-		notification.AddLegacy((name or "Appearance") .. " settings saved.", NOTIFY_GENERIC, 3)
-	end
 
+	-- Saving files what is on screen under a NAME, rather than into one Custom slot that every
+	-- preset you tried overwrote.
+	--
+	-- Which question it asks depends on where the edits came from, which SeededFrom records:
+	--
+	--   started on one of your own looks   offer to overwrite that one
+	--   started anywhere else              ask for a name
+	--
+	-- The second case is what stops Classic and Default stomping your work: there is nowhere
+	-- for an unnamed edit to go, so it has to be given somewhere to live.
 	Btn(140, "Positive", "Save", function()
-		-- There is one Custom slot, and saving writes to it.
-		--
-		-- Worth a warning only when this session began somewhere else: the player picked
-		-- Default or Classic, changed something, and was moved to Custom to hold the change.
-		-- Saving then replaces a Custom they built earlier and may not have in mind, and there
-		-- is no undo. Saving edits made while already on Custom is just saving.
 		local T = PS.Theme
-		if T.CustomWasSeeded and T.CustomWasSeeded() and T.CustomExists and T.CustomExists() then
+
+		local from = T.SeededFrom and T.SeededFrom()
+		local here = T.GetPreset and T.GetPreset()
+
+		local onLook = (T.IsLook and T.IsLook(from) and from)
+			or (T.IsLook and T.IsLook(here) and here)
+			or nil
+
+		if onLook then
+			local name = T.LookName(onLook)
 			PS.UI.Confirm({
 				title = "Overwrite",
-				text  = "This replaces your saved Custom appearance.",
+				text  = 'Replace "' .. name .. '" with what you are looking at?',
 				yes   = "Overwrite",
-				onYes = DoSave,
+				onYes = function()
+					-- Keeps whatever the look already carried: a look saved with a window
+					-- size keeps one, a look saved without stays colours only. Overwriting is
+					-- not the moment to silently change what a look is.
+					local def  = T.Presets[onLook]
+					local hadM = def and istable(def.metrics) or false
+
+					T.SaveLook(name, hadM)
+					self:SaveProviders()
+					self:BuildList()
+					notification.AddLegacy('Saved "' .. name .. '".', NOTIFY_GENERIC, 3)
+				end,
 			})
 			return
 		end
 
-		DoSave()
+		self:PromptSaveLook()
 	end)
 
 	-- The window's size, for everyone rather than just the owner.
@@ -1161,7 +1363,30 @@ function PANEL:BuildFooter(w, h)
 		end)
 	end
 
-	Btn(140, "Warning", "Reset to Default", function()
+	-- Only for the player's own looks. Classic and Crimson are registered by code and there is
+	-- nothing on disk to remove, so the button is absent rather than present and refusing.
+	local here = PS.Theme.GetPreset and PS.Theme.GetPreset()
+
+	if PS.Theme.IsLook and PS.Theme.IsLook(here) then
+		local name = PS.Theme.LookName(here)
+
+		Btn(140, "Danger", "Delete", function()
+			PS.UI.Confirm({
+				title = "Delete",
+				text  = 'Delete "' .. name .. '"?',
+				yes   = "Delete",
+				onYes = function()
+					PS.Theme.DeleteLook(name)
+					if IsValid(self) then self:BuildList() end
+					notification.AddLegacy('Deleted "' .. name .. '".', NOTIFY_GENERIC, 3)
+				end,
+			})
+		end)
+	end
+
+	-- "Revert", not "Reset to Default". It reloads the look you are on rather than jumping to
+	-- the shipped palette, so the old label described the one case it no longer does.
+	Btn(140, "Warning", "Revert", function()
 		ActiveProvider("reset", "reset")
 
 		-- Sliders and checkboxes hold their own copy of the value, so they do not notice a

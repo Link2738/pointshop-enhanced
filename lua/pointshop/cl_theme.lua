@@ -85,7 +85,7 @@ T.ListBorder = Color(0, 0, 0, 0)
 -- and (60,140,200), which meant setting the accent left both behind.
 --
 -- Both now draw from T.Accent, with their own alphas applied at paint time.
-T.StatusBar = Color(20, 40, 60)         -- status strip gradient base, a surface not an accent
+T.StatusBar = Color(20, 40, 60)         -- header bars and status strips, a surface of its own
 
 -- MenuCategoryBG lived here: a recessed block behind the shop's category buttons. Removed
 -- because the appearance panel draws the same buttons in the same style straight on the
@@ -368,6 +368,18 @@ T.Derived = {}       -- set of variant keys, for the editor to skip
 -- exactly why nobody noticed it had no home.
 T.ShowAdvanced = false
 
+-- Whether the base hue slider is live.
+--
+-- Off by default, and the slider greys out rather than disappearing, because the point of it
+-- is that it overrides individual swatches: moving it pulls every member of its group back to
+-- one hue, including ones set by hand a moment earlier. That is the right behaviour and it is
+-- also worth having to opt into -- a slider that quietly undoes your last ten edits should not
+-- be a thing the cursor can brush past.
+--
+-- Declared here for the same reason ShowAdvanced is: it is read while the editor builds, so
+-- springing into existence when a checkbox is first ticked leaves it homeless until then.
+T.HueLinked = false
+
 local function Derive(base, ...)
 	local b = T[base]
 
@@ -482,6 +494,45 @@ function T.GetGroupHue(keys)
 	end
 
 	return 0
+end
+
+-- ============================================================================
+-- STYLE, AS A CHOICE
+--
+-- Some of what separates two looks is structure rather than colour: whether the active tab is
+-- filled or underlined, what radius its corners take. Those lived only in preset files, so
+-- they were reachable by writing Lua and not otherwise -- you could have Classic's underline
+-- by picking Classic, and no other way.
+--
+-- These put them on the same footing as a colour: readable, settable, and carried into Custom
+-- and into a saved look like everything else.
+-- ============================================================================
+
+function T.GetStyle(name, key)
+	local style = T.Selectable[name]
+	return istable(style) and style[key] or nil
+end
+
+function T.SetStyle(name, key, value)
+	local style = T.Selectable[name]
+	if not istable(style) then return end
+
+	style[key] = value
+
+	-- Recorded as well as applied. The live table is rebuilt from scratch by ApplyStyles on
+	-- every look change, so a setting that only touched it would survive exactly until the
+	-- next time anything switched looks.
+	--
+	-- Seeded from the look currently on, when there is nothing recorded yet. Starting empty
+	-- would mean saving a look after one toggle stored that toggle and dropped everything
+	-- else the look expressed as style -- Classic's three tab text weights, for one.
+	if not customStyles then
+		local cur = activePreset and T.Presets[activePreset]
+		customStyles = cur and istable(cur.styles) and table.Copy(cur.styles) or {}
+	end
+
+	customStyles[name] = customStyles[name] or {}
+	customStyles[name][key] = value
 end
 
 function T.SyncDerived()
@@ -904,8 +955,28 @@ end
 -- header's corners, and it did not match the gradient starting underneath it -- a solid band
 -- across the top of the window. A flat patch cannot be made to agree with a sampled gradient
 -- at its seam, so it is gone and the corners are square for now.
+-- The bar is its own surface, not a tint of the window body.
+--
+-- It used to be a scrim: StatusBar drawn at partial alpha with the body showing through. That
+-- made the header and the body one decision -- change the body and the header moved with it,
+-- and the darkest a header could get was bounded by whatever was underneath. Classic's slate
+-- was simply unreachable over a light body, and no value of StatusBar could fix it, because
+-- the body was in the answer.
+--
+-- Painted solid, the body underneath stops mattering and the two are independent. StatusBar
+-- is the colour of the bar, exactly as written.
+--
+-- The gradient is kept, but it now comes from the bar rather than from what is behind it: a
+-- darkened base with the full colour faded over the top. Same look, and it survives the body
+-- being any colour at all -- which the old one did not, because the old one WAS the body.
 local function PaintBarFill(w, h)
-	PS_DrawScrimFade(0, 0, w, h, T.StatusBar, 150, 150 - (h * 1.5))
+	local c = T.StatusBar
+
+	sFill.r, sFill.g, sFill.b, sFill.a = c.r * 0.5, c.g * 0.5, c.b * 0.5, 255
+	surface.SetDrawColor(sFill)
+	surface.DrawRect(0, 0, w, h)
+
+	PS_DrawScrimFade(0, 0, w, h, c, 255, 40)
 end
 
 -- Header bar: gradient background and a title.
@@ -1515,8 +1586,27 @@ local function ResolvedDefault()
 	return out
 end
 
+-- Discards unsaved edits by reloading the look you are on.
+--
+-- It used to mean the SHIPPED default, whatever look you were standing on. That was the only
+-- sensible reading when there was one Custom slot and the shipped palette was the only thing
+-- to fall back to -- but with named looks it is wrong and destructive: reset on a saved look
+-- threw the look away rather than the edits, and the look was the part worth keeping.
+--
+-- So it reloads instead. On a saved look that is the last saved state of it. On Classic or
+-- Crimson it is that preset as registered. On Custom, where there is no saved state to return
+-- to, it is the shipped default -- the old behaviour, for the one case it fitted.
 function T.ResetToDefaults()
-	ApplyMetrics(activePreset and T.Presets[activePreset])
+	local id = activePreset
+
+	if id and id ~= CUSTOM and T.Presets[id] then
+		-- Through SetPreset rather than by hand, so the layering, the offset re-measure and
+		-- the sync all happen in the order they have to.
+		T.SetPreset(id)
+		return
+	end
+
+	ApplyMetrics(id and T.Presets[id])
 	T.Apply(ResolvedDefault())
 end
 
@@ -1548,12 +1638,29 @@ local CUSTOM = "custom"
 local customPalette = nil   -- colour entries, or nil when nothing has been customised
 local customFrame   = nil   -- the frame metrics that went with it
 
+-- The style overrides that went with it: activeMode, per-state text, and anything else a look
+-- expresses as structure rather than colour.
+--
+-- Custom used to carry the palette and nothing else, so editing Classic gave you its colours
+-- with the default's shapes -- the tab strip went back to filling its active button instead of
+-- underlining it, which is the thing that makes Classic look like PS1 in the first place. A
+-- look is not only its colours, so what gets seeded cannot be only its colours.
+local customStyles  = nil
+
 -- Which look Custom was seeded from this session, if it was seeded this session. Only used
 -- to decide whether saving needs to warn about replacing what is already stored.
 local seededFrom = nil
 
 function T.CustomExists() return customPalette ~= nil end
 function T.CustomWasSeeded() return seededFrom ~= nil end
+
+-- Which look the current Custom edits came from, if any.
+--
+-- The Save flow reads this to decide what question to ask: edits that started on one of the
+-- player's own named looks offer to overwrite it, edits that started anywhere else have to be
+-- given a name. Without it, saving could only ever mean "replace Custom", which is the
+-- behaviour these looks exist to end.
+function T.SeededFrom() return seededFrom end
 -- CustomOnly() lived here: it measured the palette's difference from the resolved base.
 -- Custom now stores a whole palette rather than a difference, because a difference only
 -- means something relative to a base and Custom is seeded from whichever look you were on.
@@ -1573,9 +1680,22 @@ function T.BeginEdit()
 	-- not diverted anywhere. Publishing it is a separate, deliberate act.
 	if T.EditingLook then return false end
 
-	seededFrom   = activePreset or ""
+	-- One of the player's OWN looks is editable in place. Diverting here was the bug: touching
+	-- a colour on a look you made threw you onto Custom, so the selector stopped naming what
+	-- you were working on and saving meant answering questions about a slot you had not asked
+	-- for. Custom exists to catch edits that have nowhere to go, and an editable look is
+	-- somewhere to go.
+	--
+	-- Nothing is written until Save, so the look on disk is untouched until you say so, and
+	-- Revert reloads it.
+	if T.IsLook(activePreset) then return false end
+
+	local from = activePreset and T.Presets[activePreset]
+
+	seededFrom    = activePreset or ""
 	customPalette = T.Snapshot()
 	customFrame   = T.FrameMetrics()
+	customStyles  = from and istable(from.styles) and table.Copy(from.styles) or nil
 	activePreset  = CUSTOM
 
 	-- No repaint needed: the palette already holds exactly these values, which is the point
@@ -1599,21 +1719,36 @@ function T.SetPreset(id)
 	-- stored, not something derived from where you happened to be.
 	seededFrom = nil
 
-	-- Only Custom carries edits. The read-only looks take none, which is what makes them
-	-- reproducible.
+	-- Only Custom carries colour edits. The read-only looks take none, which is what makes
+	-- them reproducible.
 	local custom = {}
-	customMetrics = {}
+	if id == CUSTOM then custom = customPalette or {} end
 
-	if id == CUSTOM then
-		custom = customPalette or {}
-		customMetrics = customFrame and table.Copy(customFrame) or {}
+	-- The WINDOW SIZE is different, and used to be treated the same.
+	--
+	-- It was dropped on every look change, so choosing a look reset the shop to whatever size
+	-- that look specified -- or to the shipped size if it specified none. That is why moving
+	-- to Default changed the spacing and lettering of everything: the scale is derived from
+	-- the window width, so losing the width re-scaled every metric and rebuilt every font.
+	--
+	-- A size is the player's, not the look's. It survives a look change unless the look has
+	-- an opinion, and a look that does is adopted as the new size rather than applying only
+	-- while it happens to be selected.
+	local presetMetrics = id ~= CUSTOM and id and T.Presets[id] and T.Presets[id].metrics
+
+	if istable(presetMetrics) then
+		customFrame = table.Copy(presetMetrics)
 	end
+
+	customMetrics = customFrame and table.Copy(customFrame) or {}
 
 	local preset = id ~= CUSTOM and id and T.Presets[id] or nil
 
-
 	ApplyMetrics(preset)
-	ApplyStyles(preset)
+
+	-- Custom applies the styles it was seeded with. Everything else applies its own, and a
+	-- look with none gets the defaults back -- which is what ApplyStyles does with nil.
+	ApplyStyles(id == CUSTOM and customStyles and { styles = customStyles } or preset)
 
 	-- Offsets first, and unconditionally: leaving a preset, or moving between two of them,
 	-- must not inherit the relationships the previous one measured.
@@ -1752,6 +1887,185 @@ local function WriteStored(changes)
 	file.Write(DATA_PATH, util.TableToJSON(stored, true))
 end
 
+-- ============================================================================
+-- NAMED LOOKS
+--
+-- The player's own looks, saved under names they choose, alongside the shipped ones.
+--
+-- There was one Custom slot. Every preset you tried overwrote it, so keeping two looks of
+-- your own was impossible and trying Classic to see what it looked like cost you whatever you
+-- had built. These are the fix: as many as you want, named, and deletable.
+--
+-- They are registered as PRESETS rather than being a parallel concept. A saved look is the
+-- same shape as a shipped one -- a name, a palette, optionally a window size -- so it goes
+-- through the same SetPreset path, appears in the same dropdown, and gets the same layering.
+-- The only differences are that these are written by the player and can be removed.
+--
+-- The id carries a prefix so the two can be told apart without a second table: anything under
+-- LOOK_PREFIX came from this file and may be overwritten or deleted, anything else was
+-- registered by code and may not.
+-- ============================================================================
+
+local LOOK_PREFIX = "look:"
+local LOOKS_DIR   = "pointshop/themes"
+
+-- A look is a FILE, not a section of theme.json.
+--
+-- One per look, named after it, so the folder is the list: you can see what you have without
+-- opening anything, copy one out to hand to somebody, drop one in that someone gave you, and
+-- delete one by deleting it. A blob inside theme.json can do none of that, and it puts every
+-- look at risk of one bad write.
+--
+-- Sanitised because the name becomes a filename. Kept to the characters that are safe
+-- everywhere rather than the ones this OS happens to allow, and collapsed rather than
+-- rejected so a name with a slash in it saves as something sensible instead of failing.
+local function LookFile(name)
+	local safe = string.gsub(name, "[^%w %-_]", "")
+	safe = string.Trim(safe)
+
+	if safe == "" then return nil end
+	return LOOKS_DIR .. "/" .. safe .. ".json", safe
+end
+
+function T.LookID(name)   return LOOK_PREFIX .. name end
+function T.IsLook(id)     return isstring(id) and id:sub(1, #LOOK_PREFIX) == LOOK_PREFIX end
+function T.LookName(id)   return T.IsLook(id) and id:sub(#LOOK_PREFIX + 1) or nil end
+
+-- Registers a look without writing anything. Used by the loader and by SaveLook.
+function T.RegisterLook(name, colours, metrics, styles)
+	T.RegisterPreset(T.LookID(name), {
+		name    = name,
+		colours = colours,
+		metrics = metrics,
+
+		-- Carried, because a look is not only its colours. One saved off Classic keeps the
+		-- underlined tab strip; one saved off Default keeps the filled one.
+		styles  = styles,
+	})
+end
+
+-- Everything currently registered that the player owns, by name.
+function T.SavedLooks()
+	local out = {}
+
+	for id, def in pairs(T.Presets) do
+		if T.IsLook(id) then out[#out + 1] = def.name or T.LookName(id) end
+	end
+
+	table.sort(out)
+	return out
+end
+
+-- Reads every look in the folder and registers it.
+--
+-- Anything unreadable is skipped rather than fatal: these are files a player can edit or drop
+-- in by hand, so a malformed one is expected eventually and must not cost them the rest.
+-- Re-reads the folder: registers what is there, and drops what is not.
+--
+-- Both halves matter, and the second is the one that is easy to forget. A look deleted from
+-- the folder while the game is running would otherwise stay in the dropdown for the rest of
+-- the session -- selectable, applying from memory, and writing nothing back if saved.
+--
+-- Called on load and whenever the appearance panel opens, so the folder is the list rather
+-- than a snapshot taken at startup.
+function T.LoadLooks()
+	local seen = {}
+
+	if file.IsDir(LOOKS_DIR, "DATA") then
+		for _, fname in ipairs(file.Find(LOOKS_DIR .. "/*.json", "DATA") or {}) do
+			local name = string.StripExtension(fname)
+			local raw  = file.Read(LOOKS_DIR .. "/" .. fname, "DATA")
+
+			-- Guarded: these are files a player can hand-edit or be handed, so a malformed
+			-- one is expected eventually and must cost only itself.
+			local ok, def = pcall(util.JSONToTable, raw or "")
+
+			if ok and istable(def) and istable(def.colours) then
+				T.RegisterLook(name, def.colours, def.metrics, def.styles)
+				seen[T.LookID(name)] = true
+			end
+		end
+	end
+
+	local active = T.GetPreset()
+	local lost   = false
+
+	for id in pairs(T.Presets) do
+		if T.IsLook(id) and not seen[id] then
+			T.Presets[id] = nil
+			if id == active then lost = true end
+		end
+	end
+
+	-- Standing on one that has just been deleted from under us, so go somewhere that exists.
+	if lost then
+		T.SetPreset(nil)
+		T.SavePreset(nil)
+	end
+end
+
+-- Saves what is on screen under `name`.
+--
+-- withMetrics decides whether the window size travels with it. Asked rather than assumed,
+-- because the two are genuinely separate choices: a look is about colour, and someone who has
+-- sized their shop to their monitor does not necessarily want that size following a palette.
+function T.SaveLook(name, withMetrics)
+	if not isstring(name) or name == "" then return false end
+
+	local path, safe = LookFile(name)
+	if not path then return false end
+
+	local colours = T.Snapshot()
+	local metrics = withMetrics and T.FrameMetrics() or nil
+	local styles  = customStyles and table.Copy(customStyles) or nil
+
+	if not file.IsDir("pointshop", "DATA") then file.CreateDir("pointshop") end
+	if not file.IsDir(LOOKS_DIR, "DATA") then file.CreateDir(LOOKS_DIR) end
+
+	file.Write(path, util.TableToJSON({
+		colours = colours,
+		metrics = metrics,
+		styles  = styles,
+	}, true))
+
+	T.RegisterLook(safe, colours, metrics, styles)
+
+	-- Switch to it, so the selector names what is now on screen rather than still saying
+	-- Custom while the thing it describes has been filed under a name.
+	T.SetPreset(T.LookID(safe))
+	T.SavePreset(T.LookID(safe))
+
+	return true
+end
+
+function T.DeleteLook(name)
+	if not isstring(name) then return false end
+
+	local path = LookFile(name)
+	if path and file.Exists(path, "DATA") then file.Delete(path) end
+
+	local id = T.LookID(name)
+	T.Presets[id] = nil
+
+	-- Standing on the one being deleted, so go somewhere that still exists. Default rather
+	-- than another saved look: it is the one thing guaranteed to be there.
+	if T.GetPreset() == id then
+		T.SetPreset(nil)
+		T.SavePreset(nil)
+	end
+
+	return true
+end
+
+-- The chosen look, and nothing else.
+--
+-- Its own write because choosing a look is its own act. It used to ride along with the palette
+-- on Save, so browsing the looks and closing without saving lost the one you settled on -- the
+-- shop reopened on whatever you had before you started looking.
+function T.SavePreset(id)
+	WriteStored({ preset = id })
+end
+
 -- Colours only.
 function T.SaveColours()
 	if activePreset == CUSTOM then
@@ -1839,6 +2153,11 @@ function T.Load()
 		end
 		if not next(customFrame) then customFrame = nil end
 	end
+	-- The player's own named looks, from pointshop/themes/. Registered before the selection
+	-- below is resolved -- otherwise a file whose chosen look is one of these would find it
+	-- missing and fall through to pendingPreset.
+	T.LoadLooks()
+
 	-- The saved look. SetPreset does the whole job -- picks the layers, applies the Custom
 	-- slot if that is what was selected, and leaves the read-only looks untouched by it.
 	if isstring(tbl.preset) then

@@ -5,8 +5,17 @@
 
 	A loadout is a look a player saved on their own machine. Applying one puts it on their
 	character so everyone can see it, and that is all it does -- nothing here writes to the
-	item store, so a loadout cannot overwrite the appearance the player actually owns. Taking
-	it off puts that appearance back.
+	item store or to the customization store, so a loadout cannot overwrite the appearance the
+	player actually owns. Taking it off puts that appearance back.
+
+	That claim used to be false. Show called ITEM:OnEquip, and both item bases persist: the
+	playermodel base through applyAndPersist, the accessory base directly. So applying a
+	loadout wrote its modifiers over the player's saved ones for every item in it. Worse,
+	applyAndPersist reads the STORED modifiers in preference to the ones passed in, so the
+	loadout's own skin, bodygroups and colour were dropped and the player's saved ones applied
+	instead -- the loadout was overwriting your data and not even showing you its own.
+
+	Wear() below is the visual half of an equip with the storing half left out.
 
 	WHY NOT JUST EQUIP THE ITEMS
 
@@ -87,7 +96,23 @@ local function Filter(ply, requested)
 		end
 
 		if ok then
-			accepted[#accepted + 1] = { id = id, mods = istable(entry.mods) and entry.mods or nil }
+			-- Modifiers are sanitised, not taken as sent.
+			--
+			-- The loadout is a file in the player's own data folder, so its modifiers are
+			-- theirs to write -- and they were being applied straight to the character. A
+			-- hand-edited entry could set a bodygroup the model never offers or a skin outside
+			-- the ones it has, which is wearing something the shop does not sell.
+			--
+			-- Same sanitiser the customization path uses, and it now narrows to the item's own
+			-- declaration rather than a generic range.
+			local mods = istable(entry.mods) and entry.mods or nil
+
+			if mods and PS_SanitizeCustomizationData then
+				mods = PS_SanitizeCustomizationData(mods, ITEM.TYPE or "accessory", ITEM)
+				if not next(mods) then mods = nil end
+			end
+
+			accepted[#accepted + 1] = { id = id, mods = mods }
 		else
 			refused[#refused + 1] = { id = id, reason = reason or "Refused." }
 		end
@@ -110,6 +135,11 @@ local function EquippedSet(ply)
 	end
 	return out
 end
+
+-- Forward declaration. Unshow calls Wear and is defined above it, and a local is not in scope
+-- above its own declaration -- the call would resolve to a nil global and take the holster out
+-- with it.
+local Wear
 
 -- Stops showing whatever the overlay put on, and returns the player to what they own.
 --
@@ -145,16 +175,60 @@ local function Unshow(ply)
 	worn[ply] = nil
 
 	-- Put the owned appearance back on, including anything the overlay had holstered.
+	--
+	-- Through Wear, not OnEquip, for the same reason: OnEquip would write the player's stored
+	-- customization back over itself, and taking a loadout OFF is not a moment anything should
+	-- be written. It also re-broadcasts the real modifiers, which is what puts other clients
+	-- back to the wearer's own offsets and colours after the overlay borrowed them.
 	for id, mods in pairs(real) do
-		local ITEM = PS.Items[id]
-		if ITEM then
-			ITEM:OnEquip(ply, mods)
-			ply:PS_AddClientsideModel(id)
-		end
+		Wear(ply, id, mods)
 	end
 end
 
-local function Show(ply, accepted, colour, useColor2)
+-- Puts one item ON somebody without storing anything.
+--
+-- ITEM:OnEquip was being used for this and it is the wrong function, twice over.
+--
+-- It PERSISTS. The playermodel base wraps ApplyModelSettings in applyAndPersist, which calls
+-- PS_SetCustomization; the accessory base calls it directly. So applying a loadout was
+-- overwriting the saved customization of every item in it -- the one thing this file exists
+-- to not do, and its header claimed it did not.
+--
+-- And it IGNORES what it is given. applyAndPersist reads
+--
+--     local mods = (PS_GetCustomization and PS_GetCustomization(ply, itemID)) or modifications
+--
+-- stored first, passed second -- so a loadout's own skin, bodygroups and colour were discarded
+-- and the player's saved ones applied in their place. The loadout was never being shown.
+--
+-- So: the visual half only, called directly. ApplyModelSettings is that half for a playermodel;
+-- for an accessory it is the clientside model plus telling other clients which modifiers to
+-- draw it with, which is what the customization broadcast does -- minus the store write that
+-- normally rides along with it.
+function Wear(ply, id, mods)
+	local ITEM = PS.Items[id]
+	if not ITEM then return end
+
+	if PS.IsPlayermodelItem(ITEM) and ITEM.ApplyModelSettings then
+		ITEM:ApplyModelSettings(ply, mods)
+		return
+	end
+
+	-- Other clients resolve an accessory's modifiers through PS_GetCustomization when they
+	-- draw it, and their copy holds what this player has SAVED. Without this they would draw
+	-- the loadout's models at the wearer's own offsets, angles and colours.
+	if mods then
+		net.Start("PS_AccessoryCustomization_Update")
+			net.WriteEntity(ply)
+			net.WriteString(id)
+			net.WriteTable(mods)
+		net.Broadcast()
+	end
+
+	ply:PS_AddClientsideModel(id)
+end
+
+local function Show(ply, accepted)
 	-- Captured BEFORE Unshow, and only when nothing is currently overlaid -- otherwise
 	-- applying a second loadout would record the first one's colour as the one to go back to,
 	-- and clearing would return to an outfit rather than to what the player owns.
@@ -187,21 +261,15 @@ local function Show(ply, accepted, colour, useColor2)
 	end
 
 	for _, entry in ipairs(accepted) do
-		local ITEM = PS.Items[entry.id]
-		if ITEM then
-			ITEM:OnEquip(ply, entry.mods)
-			ply:PS_AddClientsideModel(entry.id)
-		end
+		Wear(ply, entry.id, entry.mods)
 	end
 
-	if colour then
-		PS:ApplyColorToPlayer(ply, colour, useColor2)
-	end
-
+	-- No colour step. There is no such thing as "the loadout's colour": a playermodel carries
+	-- its own in mods.playercolor and each accessory carries its own in mods.color, each
+	-- through its own item's channel. ApplyModelSettings and the clientside model apply them
+	-- item by item, which is the only place that knows which item it is talking about.
 	worn[ply] = {
 		items = accepted,
-		colour = colour,
-		useColor2 = useColor2,
 		priorPlayerColor = priorPlayerColor,
 		priorRenderColor = priorRenderColor,
 	}
@@ -222,10 +290,11 @@ net.Receive("PS_Loadout_Apply", function(length, ply)
 	-- Bounded before anything is looked up. A set larger than this is not an outfit.
 	if #requested > MAX_ITEMS then return end
 
-	local colour, useColor2 = net.ReadColor(), net.ReadBool()
-
 	local accepted, refused = Filter(ply, requested)
-	Show(ply, accepted, colour, useColor2)
+
+	-- Items and their modifiers, and nothing else. Colour is not sent and not derived here:
+	-- it is inside each item's own modifiers, and each item applies its own.
+	Show(ply, accepted)
 
 	-- Told what was dropped, so the panel can say which entries this server will not wear
 	-- rather than leaving the player to notice a missing hat.
@@ -273,7 +342,7 @@ hook.Add("OnPlayerChangedTeam", "PS_LoadoutRevalidate", function(ply, before, af
 		local accepted, refused = Filter(ply, current.items)
 		if #refused == 0 then return end
 
-		Show(ply, accepted, current.colour, current.useColor2)
+		Show(ply, accepted)
 
 		net.Start("PS_Loadout_Result")
 			net.WriteTable(refused)
@@ -290,7 +359,7 @@ hook.Add("PlayerSpawn", "PS_LoadoutReshow", function(ply)
 
 	timer.Simple(1, function()
 		if IsValid(ply) and worn[ply] == current then
-			Show(ply, current.items, current.colour, current.useColor2)
+			Show(ply, current.items)
 		end
 	end)
 end)

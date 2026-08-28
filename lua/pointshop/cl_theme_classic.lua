@@ -147,6 +147,10 @@ T.RegisterPreset("classic", {
 		TextDim  = INK_SOFT,
 		MenuRowText = INK_MID,
 
+		-- Category buttons are light with dark writing here, so their text follows the body
+		-- rather than the shipped white. Without this the strip's labels are white on grey.
+		CategoryText = INK,
+
 		-- The three tab weights, :136-138. With no fill on the active tab these carry the
 		-- selection as much as the underline does.
 		TabIdle   = INK_SOFT,
@@ -239,9 +243,13 @@ T.RegisterPreset("classic", {
 		DangerFill         = { 175,  60,  60, 255 },
 		DangerFillHover    = { 200,  70,  70, 255 },
 		DangerBorder       = { 145,  50,  50, 255 },
-		NeutralFill        = { 225, 225, 225, 255 },
-		NeutralFillHover   = { 235, 235, 235, 255 },
-		NeutralBorder      = OUTLINE,
+		-- Mid slate rather than PS1's near-white, because dismiss buttons carry ButtonText
+		-- now and ButtonText is white here -- it also writes on the green, orange and red
+		-- fills below, where white is the only thing that reads. A light grey dismiss button
+		-- was invisible; darkening the button is the side of that trade that costs nothing.
+		NeutralFill        = SLATE_MID,
+		NeutralFillHover   = SLATE_HI,
+		NeutralBorder      = OUTLINE_HI,
 
 		-- Prices sit on the light card, so the dark-theme neons go to readable versions.
 		PriceAfford = {  40, 130,  55, 255 },

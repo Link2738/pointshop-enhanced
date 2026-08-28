@@ -157,7 +157,7 @@ function PANEL:Init()
 			surface.DrawRect(ox + ((i - 1) % 2) * (sw + pad),
 				oy + math.floor((i - 1) / 2) * (sw + pad), sw, sw)
 		end
-	end, "Neutral", function() vgui.Create("DPointShopTheme") end)
+	end, "Neutral", function() PS.UI.Open("DPointShopTheme") end)
 
 	-- Loadouts. Slides out from behind this window, so it is opened from this window.
 	--
@@ -176,7 +176,7 @@ function PANEL:Init()
 
 	if isAdmin then
 		self.adminBtn = HeaderButton(GlyphIcon("bolt"), "Accent", function()
-			vgui.Create("DPointShopAdmin")
+			PS.UI.Open("DPointShopAdmin")
 		end)
 	end
 

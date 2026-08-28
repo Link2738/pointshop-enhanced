@@ -331,6 +331,24 @@ function PS:ReadColorRGB(color)
 	return ReadRGB(color)
 end
 
+-- Is this item the thing the player's body BECOMES, as opposed to something worn on it?
+--
+-- Four places asked "no Attachment and no Bone?" and one of them wrote "must be a playermodel?"
+-- with a question mark, which was the honest version. A powerup answers yes to that question:
+-- it carries a Model as its shop icon and hangs off no bone, because it is not worn at all. A
+-- loadout holding one took the powerup's icon -- a glass bottle -- as the player's body, and a
+-- bottle has no attachment points, so every accessory in the loadout had nowhere to go and the
+-- player colour was applied to a bottle.
+--
+-- TYPE is believed when an item declares one. The rest is the old guess, minus the two cases
+-- it got wrong: a weapon is not a body, and neither is something flagged NoPreview.
+function PS.IsPlayermodelItem(ITEM)
+	if not istable(ITEM) or not ITEM.Model then return false end
+	if ITEM.TYPE then return ITEM.TYPE == "playermodel" end
+
+	return not (ITEM.Attachment or ITEM.Bone or ITEM.WeaponClass or ITEM.NoPreview)
+end
+
 function PS:ApplyColorToPlayer(ply, color, useColor2)
 	if not IsValid(ply) or not ply.SetColor then return end
 

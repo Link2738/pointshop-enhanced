@@ -55,6 +55,11 @@ function PANEL:Init()
 	self.SlotList = vgui.Create("DScrollPanel", self)
 	self.SlotList.Paint = function(_, pw, ph) T.PaintListBox(pw, ph) end
 
+	-- Re-read from disk on open. The slots are files now, so someone can drop one in and
+	-- rename it into place while the game is running -- and it should be there when they open
+	-- the panel rather than after a restart.
+	PS.Loadouts.Load()
+
 	self:BuildSlots()
 	self:Select(PS.Loadouts.Active)
 
@@ -172,19 +177,42 @@ function PANEL:Select(index)
 	-- The playermodel comes from whichever item in the set is one. An outfit without a
 	-- playermodel previews on the body the player already has, which is what wearing it would
 	-- actually look like.
-	local model
+	local model, mods, item
 	for _, entry in ipairs(slot.items or {}) do
 		local ITEM = PS.Items[entry.id]
-		if ITEM and ITEM.Model and not ITEM.Attachment and not ITEM.Bone and not ITEM.WeaponClass then
+
+		if ITEM and PS.IsPlayermodelItem(ITEM) then
 			model = ITEM.Model
+			item  = ITEM
+
+			-- Its modifiers come with it. Skin and bodygroups live on the playermodel item,
+			-- so without this the preview showed the model bare rather than as the player
+			-- actually wears it.
+			--
+			-- Falling back to what the item declares, because an item that has never been
+			-- customized has nothing stored -- and its DefaultModifications are what it looks
+			-- like, not an absence. acerola_player declares skin 0, four bodygroups and a
+			-- white playercolor; with no fallback the preview showed none of them.
+			mods = entry.mods or ITEM.DefaultModifications
 		end
+	end
+
+	-- Colour and its channel from the playermodel item, the same source the capture and the
+	-- server both use. Absent when the model carries none, which is how an item that is not
+	-- meant to be tinted stays untinted -- the preview used to colour it anyway.
+	local colour, useColor2
+
+	if item and mods and mods.playercolor then
+		local r, g, b = PS:ReadColorRGB(mods.playercolor)
+		colour    = Color(r, g, b)
+		useColor2 = item.UseColor2Proxy or false
 	end
 
 	self.Preview:SetOutfit({
 		model     = model,
-		colour    = slot.colour and Color(slot.colour[1] or 255, slot.colour[2] or 255,
-			slot.colour[3] or 255) or nil,
-		useColor2 = slot.useColor2,
+		mods      = mods,
+		colour    = colour,
+		useColor2 = useColor2,
 		items     = slot.items,
 	})
 end

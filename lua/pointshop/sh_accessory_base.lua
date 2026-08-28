@@ -61,7 +61,7 @@ if CLIENT then
 
     function BASE:Modify(ply, modifications)
         if CLIENT then
-            local panel = vgui.Create("PSItemCustomizationPanel")
+            local panel = PS.UI.Open("PSItemCustomizationPanel")
             panel:SetItem(self)  -- Pass entire item so panel can detect TYPE and load saved data
             if PS and PS.ToggleMenu then PS:ToggleMenu() end
         end

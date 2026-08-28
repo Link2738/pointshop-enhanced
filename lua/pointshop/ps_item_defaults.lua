@@ -251,7 +251,7 @@ if SERVER then
             if PS_SanitizeCustomizationData then
                 local ITEM = PS and PS.Items and PS.Items[itemID]
                 local itemType = ITEM and ITEM.TYPE or "accessory"
-                mods = PS_SanitizeCustomizationData(mods, itemType)
+                mods = PS_SanitizeCustomizationData(mods, itemType, ITEM)
             end
             PS_ItemDefaultOverrides[itemID] = mods
         end

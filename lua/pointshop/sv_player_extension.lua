@@ -376,7 +376,7 @@ function Player:PS_BuyItem(item_id, initial_mods)
 		-- PS_GetCustomization, which must find the SQL row so the item applies
 		-- and broadcasts with the pre-purchase customization on first equip.
 		if initial_mods and PS_SetCustomization and PS_SanitizeCustomizationData then
-			local safe = PS_SanitizeCustomizationData(initial_mods, ITEM.TYPE or "accessory")
+			local safe = PS_SanitizeCustomizationData(initial_mods, ITEM.TYPE or "accessory", ITEM)
 			if next(safe) ~= nil then
 				PS_SetCustomization(self, item_id, safe)
 			end
