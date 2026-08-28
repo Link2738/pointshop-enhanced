@@ -26,6 +26,11 @@ include "sv_theme.lua"
 -- the PS.RateLimit assignment above that it guards itself with.
 include "sv_loadout.lua"
 
+-- Owner-tunable jump / step / air / gravity. Lived in the Hide and Seek gamemode, which meant
+-- Bear Hunt had no way to touch any of it -- and movement that feels the same across both is
+-- worth more than either gamemode owning its own copy.
+include "sv_movement.lua"
+
 -- net hooks
 
 -- Per-player action rate limiter. Prevents spam that could cause race conditions or server load.

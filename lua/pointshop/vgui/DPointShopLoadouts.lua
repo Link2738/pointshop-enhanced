@@ -108,7 +108,7 @@ function PANEL:BuildSlots()
 			-- so, rather than looking identical to one that will.
 			local col = T.Text
 			if slot and self:SlotRefused(slot) then col = T.WarningBorder end
-			if not slot then col = T.TextDim end
+			if not slot then col = T.ButtonText end
 
 			draw.SimpleText(label, "PS_Default", M.Gap, ph / 2, col,
 				TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)

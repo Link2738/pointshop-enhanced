@@ -332,7 +332,9 @@ T.NeutralFillHover  = Color(80, 80, 80, 255)
 T.NeutralGloss      = Color(80, 80, 80, 80)
 T.NeutralGlossHover = Color(95, 95, 95, 80)
 T.NeutralBorder     = Color(120, 120, 120, 200)
-T.NeutralText       = Color(220, 220, 220, 255)
+-- NeutralText lived here. Dismiss buttons take ButtonText like every other action button --
+-- Window size is one of them, and it sat a shade off the Save beside it for no reason anyone
+-- chose. Gold and Danger keep their own text, because those genuinely disagree with white.
 
 -- ============================================================================
 -- DERIVED VARIANTS
@@ -418,7 +420,7 @@ local function RestoreShippedOffsets()
 	end
 end
 
--- NOT derived, deliberately: GoldText, GoldLabel, DangerText, NeutralText.
+-- NOT derived, deliberately: GoldText, GoldLabel, DangerText.
 --
 -- They are label colours, and a label has to stay readable against its fill. Offsetting text
 -- from the fill means darkening a button darkens its text with it, and the two meet in the
@@ -430,6 +432,58 @@ end
 -- In place matters for the same reason it does everywhere else here: the widget style tables
 -- hold references to these exact Color tables, so replacing one would leave the styles
 -- pointing at the old value.
+-- ============================================================================
+-- HUE, ACROSS A GROUP
+--
+-- One control that moves a family of colours together, rather than a swatch each.
+--
+-- Hue only: every colour keeps its own saturation, value and alpha, so the relationships
+-- inside the group survive the move. The options box stays darker than the body, the body
+-- stays darker than the bar, and a shop that was red at three depths becomes a shop that is
+-- green at the same three depths -- rather than three greens picked one at a time and hoped
+-- to sit right together.
+--
+-- Greys come out unchanged and that is correct, not an oversight: hue has no meaning at zero
+-- saturation, so the right-click menu's neutral stays neutral while the reds around it move.
+-- ============================================================================
+
+-- In place, like everything else that touches these tables -- panels hold references to them.
+function T.SetGroupHue(keys, hue)
+	for _, k in ipairs(keys) do
+		local c = T[k]
+		if istable(c) and c.r then
+			local _, s, v = ColorToHSV(c)
+			local n = HSVToColor(hue % 360, s, v)
+			c.r, c.g, c.b = n.r, n.g, n.b
+		end
+	end
+
+	-- Variants moved with their bases, so the offsets recorded for them are now wrong: they
+	-- were measured in the old hue and describe distances along channels that have since
+	-- swapped roles. Re-measure, rather than resync -- resyncing recomputes each variant from
+	-- its base plus that stale offset, which drags the whole family back toward the hue it
+	-- just left. This is the same reason a hand-edited variant re-measures.
+	for _, k in ipairs(keys) do
+		if T.Derived[k] then T.RemeasureDerived(k) end
+	end
+end
+
+-- The group's hue, taken from the first member that has one.
+--
+-- Skips unsaturated members rather than reporting their hue, which is arbitrary: a grey
+-- would answer 0 and drag the slider to red every time the panel opened.
+function T.GetGroupHue(keys)
+	for _, k in ipairs(keys) do
+		local c = T[k]
+		if istable(c) and c.r then
+			local h, s = ColorToHSV(c)
+			if s > 0 then return h end
+		end
+	end
+
+	return 0
+end
+
 function T.SyncDerived()
 	for key, d in pairs(DERIVED) do
 		local b, v = T[d.base], T[key]
@@ -526,6 +580,14 @@ T.HeaderText = Color(255, 255, 255, 255)
 T.ButtonText = Color(255, 255, 255, 255)   -- on Positive / Warning / Accent / Modify fills
 T.CardText   = Color(255, 255, 255, 255)   -- item name strip and the price badge
 
+-- Category and tab button labels.
+--
+-- These fell through to Text, which is also the labels in the appearance panel's own option
+-- rows. One knob for both, and they sit on different surfaces: a category button label is on
+-- CategoryFill, an option row label is on the window body. Recolour the buttons and the rows
+-- went with them.
+T.CategoryText = Color(255, 255, 255, 255)
+
 -- Category tab text, one per state.
 --
 -- All three ship as plain white, which is what UI.Tab drew before it could distinguish the
@@ -593,8 +655,9 @@ T.Selectable = {
 		gloss = T.ControlGloss, glossHover = T.ControlGlossHover,
 		border = T.ControlBorder, borderHover = T.ControlBorderHover,
 	},
-	-- Category strip in the shop menu.
+	-- Category strip in the shop menu, and the tab strips in the appearance panel.
 	Category = {
+		text = T.CategoryText,
 		radius = "RadiusMd", lerp = 8,
 		activeFill = T.CategoryFill, activeGloss = T.CategoryGloss,
 		activeGlow = T.CategoryGlow, glowBase = 100, glowRange = 50,
@@ -635,7 +698,7 @@ T.Action = {
 		radius = "RadiusSm", lerp = 10, font = "PS_Default",
 		fill = T.NeutralFill, fillHover = T.NeutralFillHover,
 		gloss = T.NeutralGloss, glossHover = T.NeutralGlossHover,
-		border = T.NeutralBorder, text = T.NeutralText, shadow = T.Shadow,
+		border = T.NeutralBorder, text = T.ButtonText, shadow = T.Shadow,
 	},
 	-- Neutral-but-important: the admin button in the shop header. Blue rather than grey
 	-- because it opens another tool rather than dismissing something.
@@ -703,6 +766,24 @@ end
 -- be a palette entry -- and it is how a tab strip marks its selection when the strip is the
 -- same surface as the body behind it, with no fill available to distinguish anything.
 function T.PaintSelectable(panel, w, h, isActive, style)
+	-- Text colour from the style, resolved here rather than by each caller.
+	--
+	-- Four call sites set it once at build time from the global Text, which was wrong twice
+	-- over: Text is also the appearance panel's own option row labels, so recolouring the
+	-- category buttons dragged the rows with them; and set-once cannot follow a live edit,
+	-- which is the whole point of a panel that previews instantly.
+	--
+	-- Falls back to Text for a style naming none, which is every style but Category, so
+	-- nothing else moves.
+	if panel.SetTextColor then
+		panel:SetTextColor(
+			(isActive and style.textActive)
+			or (panel.Hovered and style.textHover)
+			or style.text
+			or T.Text
+		)
+	end
+
 	local hover = HoverAlpha(panel, style.lerp)
 	local r = StyleRadius(style)
 
@@ -827,13 +908,22 @@ local function PaintBarFill(w, h)
 	PS_DrawScrimFade(0, 0, w, h, T.StatusBar, 150, 150 - (h * 1.5))
 end
 
--- Header bar: gradient background, left-aligned title.
-function T.PaintHeader(w, h, title)
+-- Header bar: gradient background and a title.
+--
+-- Centred unless told otherwise. The shop is the exception and asks for left, because its
+-- header also carries the points readout and a row of icon buttons on the right -- a centred
+-- title there would sit off-centre against the only free space it has.
+function T.PaintHeader(w, h, title, left)
 	PaintBarFill(w, h)
 
-	if title then
+	if not title then return end
+
+	if left then
 		draw.SimpleText(title, "PS_LargeTitle", T.Metrics.Margin, h / 2, T.HeaderText,
 			TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+	else
+		draw.SimpleText(title, "PS_LargeTitle", w / 2, h / 2, T.HeaderText,
+			TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 	end
 end
 
@@ -945,7 +1035,10 @@ function T.PaintItemCard(panel, w, h, state, label)
 	if label then
 		PS_DrawScrimFade(1, h - labelH, w - 2, labelH, T.CardLabelBG, 230)
 		draw.SimpleText(label, "PS_ItemText", w / 2 + 1, h - labelH / 2 + 1, T.Shadow, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-		draw.SimpleText(label, "PS_ItemText", w / 2, h - labelH / 2, T.Text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		-- CardText, which is what it was for. This drew with the global Text, so the token
+		-- existed, was labelled in the editor, and painted nothing -- while the item names it
+		-- was meant to control followed body text instead.
+		draw.SimpleText(label, "PS_ItemText", w / 2, h - labelH / 2, T.CardText, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 	end
 end
 

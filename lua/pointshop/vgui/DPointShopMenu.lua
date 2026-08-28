@@ -76,7 +76,10 @@ function PANEL:Init()
 		self:MouseCapture(false)
 	end
 	self.Header.Paint = function(s, w, h)
-		PS.Theme.PaintHeader(w, h, "PointShop")
+		-- Left, not centred like every other window's. This header also carries the points
+		-- readout and five icon buttons on the right, and a centred title would sit against
+		-- them rather than in the space it has.
+		PS.Theme.PaintHeader(w, h, "PointShop", true)
 
 		-- Show loading state if initial data hasn't arrived yet
 		local pointsText

@@ -97,7 +97,7 @@ local LABELS = {
 	WarningFillHover = "Reset, hovered", WarningGloss = "Reset sheen",
 	WarningGlossHover = "Reset sheen, hovered", WarningBorder = "Reset border",
 
-	NeutralFill = "Dismiss", NeutralText = "Dismiss text",
+	NeutralFill = "Dismiss",
 	NeutralFillHover = "Dismiss, hovered", NeutralGloss = "Dismiss sheen",
 	NeutralGlossHover = "Dismiss sheen, hovered", NeutralBorder = "Dismiss border",
 
@@ -109,7 +109,8 @@ local LABELS = {
 	CardLabelBG = "Item name strip",
 CardMenuBG = "Right-click menu",
 
-	Text = "Button text", TextDim = "Labels and status",
+	Text = "Body text", TextDim = "Labels and status",
+	CategoryText = "Category button text",
 	Shadow = "Text shadow", ShadowStrong = "Text shadow, strong",
 }
 
@@ -118,7 +119,29 @@ local function AssignSection(name, ...)
 	for _, k in ipairs({ ... }) do SECTION_OF[k] = name end
 end
 
-AssignSection("Surfaces", "StatusBar", "CardMenuBG", "FrameBG", "PanelBG", "ListBG", "ListBorder")
+AssignSection("Surfaces", "CardMenuBG", "StatusBar", "FrameBG", "PanelBG", "ListBG", "ListBorder")
+
+-- What the hue control under the preset moves: the window surfaces and the category strip.
+--
+-- Not the same set as the Surfaces section, and deliberately not built from it. Two things
+-- are out of the group that sit in that section, and one family is in that does not:
+--
+--   CardMenuBG   a right-click menu is a SUB-PANEL, its own tier, so it does not follow the
+--                windows when their hue swings
+--   CategoryText the strip's colours move, the writing on them does not -- text has to stay
+--                readable against whatever the fill becomes, which is a separate decision
+--
+-- The category variants are listed alongside their bases rather than left to derive, because
+-- the recorded offsets were measured in the old hue and would drag the variants back toward
+-- it. SetGroupHue re-measures them after the swing.
+local HUE_GROUP = {
+	"StatusBar", "FrameBG", "PanelBG", "ListBG", "ListBorder",
+
+	"CategoryFill", "CategoryGloss", "CategoryGlow", "CategoryBorder",
+	"CategoryIdleFill", "CategoryIdleFillHover",
+	"CategoryIdleGloss", "CategoryIdleGlossHover",
+	"CategoryIdleBorder", "CategoryIdleBorderHover",
+}
 AssignSection("Lists", "RowBG", "RowAlt", "RowHover",
 	"ScrollTrack", "ScrollGrip", "ScrollGripHover")
 AssignSection("Accent", "Accent",
@@ -135,10 +158,10 @@ AssignSection("Buttons",
 	"PositiveGlow", "PositiveBorder",
 	"WarningFill", "WarningFillHover", "WarningGloss", "WarningGlossHover", "WarningBorder",
 	"NeutralFill", "NeutralFillHover", "NeutralGloss", "NeutralGlossHover",
-	"NeutralBorder", "NeutralText")
+	"NeutralBorder")
 AssignSection("Items", "BadgeGloss", "IconAdmin", "IconGroup", "CardBG", "CardBorder", "CardHover", "CardEquipped", "CardOwned",
 	"CardQueued", "CardCanBuy", "CardCantBuy", "CardLabelBG")
-AssignSection("Text", "Text", "HeaderText", "ButtonText", "CardText", "TextDim", "MenuRowText", "PointsText", "PriceAfford", "PriceCant", "Shadow", "ShadowStrong")
+AssignSection("Text", "Text", "HeaderText", "ButtonText", "CategoryText", "CardText", "TextDim", "MenuRowText", "PointsText", "PriceAfford", "PriceCant", "Shadow", "ShadowStrong")
 
 -- Any name used by AssignSection must appear here: BuildShopSections indexes buckets by
 -- section name, so one that is missing is a nil table indexed on the first row assigned to it.
@@ -188,6 +211,24 @@ local function PresetSection()
 				options = options,
 				get     = function() return T.GetPreset() or "" end,
 				set     = function(id) T.SetPreset(id ~= "" and id or nil) end,
+			},
+
+			-- One control for the whole family, sat between the preset that sets everything
+			-- and the swatches that set one each. That is the order of the decisions: pick a
+			-- look, swing its hue, then correct anything individually.
+			--
+			-- Hue only. Every member keeps its own saturation and value, so the relationships
+			-- survive the swing -- the options box stays darker than the body, the idle
+			-- category button stays a shade off the body it sits on. Picking a dozen greens by
+			-- hand and hoping they sit together is the thing this exists to avoid.
+			{
+				label    = "Base hue",
+				type     = "slider",
+				min      = 0,
+				max      = 359,
+				decimals = 0,
+				get      = function() return T.GetGroupHue(HUE_GROUP) end,
+				set      = function(h) T.SetGroupHue(HUE_GROUP, h) end,
 			},
 		},
 	}
@@ -375,7 +416,10 @@ local function BuildShopMock(parent, w, h)
 	root:SetSize(w, h)
 	root.Paint = function(_, pw, ph)
 		PS.Theme.PaintPanelBody(pw, ph)
-		PS.Theme.PaintStatusStrip(pw, 28, "Shop")
+		-- The header, not a status strip. This mock stands in for the shop window, and the
+		-- shop window has a header bar -- previewing it with the strip meant the bar an owner
+		-- was actually recolouring was the one surface the preview did not show.
+		PS.Theme.PaintHeader(pw, 28, "Shop")
 	end
 
 	-- One active, two idle, so both halves of the selectable archetype are on screen at
@@ -386,7 +430,6 @@ local function BuildShopMock(parent, w, h)
 		local btn = vgui.Create("DButton", root)
 		btn:SetText(names[i])
 		btn:SetFont("PS_CategoryButton")
-		btn:SetTextColor(PS.Theme.Text)
 		btn:SetSize(bw, 30)
 		btn:SetPos(10 + (i - 1) * (bw + 5), 38)
 		btn.DoClick = function() root._activeCat = i end
@@ -448,7 +491,6 @@ local function BuildCustomizationMock(parent, w, h)
 	for i = 0, 3 do
 		local btn = vgui.Create("DButton", root)
 		btn:SetText(tostring(i))
-		btn:SetTextColor(PS.Theme.Text)
 		btn:SetSize(bw, 26)
 		btn:SetPos(10 + i * (bw + 5), 40)
 		btn.DoClick = function() root._value = i end
@@ -560,7 +602,7 @@ function PANEL:Init()
 	-- edge with nothing around it and looked wedged in. A gap above and below is the whole
 	-- difference, and taking the height from the button means it stays a gap at every scale
 	-- instead of closing up as the button grows.
-	self.StripH = PS.UI.HeaderH("strip")
+	self.StripH = PS.UI.HeaderH()
 
 	-- The panel itself scales, not just what is in it.
 	--
@@ -586,7 +628,7 @@ function PANEL:Init()
 	-- painted itself in the colour meant for a box sitting ON a window. It is a window, so it
 	-- gets the window body like every other one.
 	PS.UI.SetupFrame(self, {
-		title    = "Appearance - changes preview instantly",
+		title    = "Appearance",
 		w        = w,
 		h        = h,
 		remember = "theme",
@@ -703,7 +745,6 @@ function PANEL:BuildMasterTabs(w, tabH, gap)
 		local btn = vgui.Create("DButton", self)
 		btn:SetText(provider.name)
 		btn:SetFont("PS_CategoryButton")
-		btn:SetTextColor(PS.Theme.Text)
 		btn:SetSize(tabW, tabH)
 		btn:SetPos(10 + (i - 1) * (tabW + gap), self.MasterY)
 		btn.DoClick = function() self:SelectProvider(i) end
@@ -780,7 +821,6 @@ function PANEL:BuildSubTabs(provider)
 		local btn = vgui.Create("DButton", self.Preview)
 		btn:SetText(b.label)
 		btn:SetFont("PS_CategoryButton")
-		btn:SetTextColor(PS.Theme.Text)
 		btn:SetSize(tabW, tabH)
 		btn:SetPos((i - 1) * (tabW + gap), 0)
 		btn.DoClick = function()
@@ -1000,7 +1040,7 @@ function PANEL:OpenMixer(row)
 	PS.UI.SetupFrame(frame, {
 		title = row.label,
 		w     = 260,
-		h     = 220 + PS.UI.HeaderH("strip"),
+		h     = 220 + PS.UI.HeaderH(),
 	})
 
 	local mixer = vgui.Create("DColorMixer", frame)
@@ -1099,7 +1139,7 @@ function PANEL:BuildFooter(w, h)
 		local T = PS.Theme
 		if T.CustomWasSeeded and T.CustomWasSeeded() and T.CustomExists and T.CustomExists() then
 			PS.UI.Confirm({
-				title = "Overwrite Custom",
+				title = "Overwrite",
 				text  = "This replaces your saved Custom appearance.",
 				yes   = "Overwrite",
 				onYes = DoSave,
@@ -1168,7 +1208,7 @@ function PANEL:BuildFooter(w, h)
 		local publish = PS.UI.Button(self, "Save for everyone", "Gold", function()
 			if not T.EditingLook then
 				PS.UI.Confirm({
-					title = "Not editing the look",
+					title = "Blocked",
 					text  = "Tick 'Edit this look for everyone' first.",
 					yes   = "OK",
 				})
@@ -1176,7 +1216,7 @@ function PANEL:BuildFooter(w, h)
 			end
 
 			PS.UI.Confirm({
-				title = "Publish look",
+				title = "Publish",
 				text  = "Save this look's colours for every player?",
 				yes   = "Publish",
 				onYes = function()
@@ -1192,12 +1232,8 @@ function PANEL:BuildFooter(w, h)
 		self.OwnerControls = { edit, publish }
 	end
 
-	-- Close sits on the right rather than continuing the run, because it is the one that
-	-- ends the panel rather than acting on it.
-	local close = Btn(100, "Neutral", "Close", function()
-		self:Close()
-	end)
-	close:SetPos(w - close:GetWide() - self.Edge, y)
+	-- A Close button sat on the right here. The X in the header does the same thing, and every
+	-- other window in the addon closes that way and only that way.
 end
 
 vgui.Register("DPointShopTheme", PANEL, "DFrame")

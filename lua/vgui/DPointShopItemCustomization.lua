@@ -1669,7 +1669,7 @@ function PANEL:CreateTrailControls()
     local label = self:Add("DLabel")
     label:SetText("Trail Color")
     label:SetFont("PS_DefaultBold")
-    label:SetTextColor(PS.Theme.TextDim)
+    label:SetTextColor(PS.Theme.ButtonText)
     label:SetPos(baseX, y)
     label:SizeToContents()
     y = y + 24

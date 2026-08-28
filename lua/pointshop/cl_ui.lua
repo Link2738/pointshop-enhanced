@@ -428,12 +428,14 @@ end
 
 -- The bar across the top of a window, in its two forms.
 --
--- "bar" is the shop's alone: tall, left-aligned title, with room for the points readout and a
--- row of icon buttons inside it. "strip" is every other window's: thin, centred title. Both
--- paint StatusBar on the same fade, so only the shape differs.
+-- "bar" is what a window gets: a proper header with its title in it. "strip" is the thinner
+-- status line, for a panel that wants to say something live under its header rather than
+-- instead of one -- Movement's "saved to the server", Customization's "preview enabled".
+--
+-- Both paint StatusBar on the same fade, so a window reads as a window either way.
 function UI.HeaderH(mode)
-	if mode == "bar" then return M().HeaderH end
-	return M().IconBtn + M().Gap * 2
+	if mode == "strip" then return M().IconBtn + M().Gap * 2 end
+	return M().HeaderH
 end
 
 -- Applies the standard window chrome to a frame that already exists.
@@ -450,7 +452,7 @@ end
 function UI.SetupFrame(frame, opts)
 	opts = opts or {}
 
-	local mode = opts.header or "strip"
+	local mode = opts.header or "bar"
 
 	frame:SetSize(opts.w or 600, opts.h or 400)
 	frame:SetTitle("")
@@ -497,8 +499,13 @@ function UI.SetupFrame(frame, opts)
 		s:SetSize(frame:GetWide(), frame:BarH())
 	end
 
+	-- Centred, because the shop is the only window whose header carries anything else. Its
+	-- title goes left to clear the points readout and the icon buttons, and it asks for that
+	-- itself rather than every other window inheriting the exception.
 	if mode == "bar" then
-		header.Paint = function(_, w, h) PS.Theme.PaintHeader(w, h, opts.title) end
+		header.Paint = function(_, w, h)
+			PS.Theme.PaintHeader(w, h, opts.title, opts.titleLeft)
+		end
 	else
 		header.Paint = function() end
 	end

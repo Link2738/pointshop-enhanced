@@ -77,7 +77,7 @@ function PANEL:Init()
 	-- glyph every other window's close button uses, and its 35x35 and (w - 50, 8) were
 	-- written down rather than measured, so it sat wrong at any scale but one.
 	PS.UI.SetupFrame(self, {
-		title    = "PointShop Admin",
+		title    = "Admin",
 		w        = 1200,
 		h        = 600,
 		sizable  = true,
@@ -219,7 +219,7 @@ function PANEL:AddPlayerRow(ply)
 		local itemCount = summary and summary.items or "?"
 
 		draw.SimpleText(points, "PS_Default", w - 550, h / 2, PS.Theme.PointsText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-		draw.SimpleText(itemCount, "PS_Default", w - 450, h / 2, PS.Theme.TextDim, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText(itemCount, "PS_Default", w - 450, h / 2, PS.Theme.ButtonText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 	end
 	
 	-- Laid out right to left by slot rather than from four written-down offsets. Removing the
@@ -286,7 +286,7 @@ function PANEL:_BuildItemsWindow(ply, owned)
 	if not IsValid(ply) then return end
 
 	local frame = PS.UI.Frame({
-		title = ply:Nick() .. "'s Items",
+		title = "Items",
 		w     = 900,
 		h     = 600,
 	})
@@ -379,7 +379,7 @@ function PANEL:_BuildItemsWindow(ply, owned)
 			local shown = FitText(s, displayName, "PS_Default", w - 420)
 			draw.SimpleText(shown, "PS_Default", 15, h/2, nameCol, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 
-			draw.SimpleText(category, "PS_Default", w - 400, h/2, PS.Theme.TextDim,
+			draw.SimpleText(category, "PS_Default", w - 400, h/2, PS.Theme.ButtonText,
 				TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 
 			-- Owned, and equipped as a qualifier on it. Equipped without owned cannot happen,
@@ -448,13 +448,16 @@ function PANEL:PromptGivePoints(ply)
 	local pointsName = (PS and PS.Config and PS.Config.PointsName) or "Points"
 	
 	local frame = PS.UI.Frame({
-		title = "Give " .. pointsName .. " to " .. ply:Nick(),
+		title = "Give",
 		w     = 300,
-		h     = 120 + PS.UI.HeaderH("strip"),
+		h     = 120 + PS.UI.HeaderH(),
 	})
 	
 	local label = vgui.Create("DLabel", frame)
-	label:SetText("Amount:")
+	-- Names the target and the unit, because the title no longer can. This dialog writes a
+	-- player's balance and the only other thing in it is a number box; without this there is
+	-- nothing on screen saying whose balance is about to change.
+	label:SetText(pointsName .. " for " .. ply:Nick() .. ":")
 	label:Dock(TOP)
 	label:DockMargin(5, 10, 5, 5)
 	
@@ -495,13 +498,16 @@ function PANEL:PromptSetPoints(ply)
 	local pointsName = (PS and PS.Config and PS.Config.PointsName) or "Points"
 	
 	local frame = PS.UI.Frame({
-		title = "Set " .. pointsName .. " for " .. ply:Nick(),
+		title = "Set",
 		w     = 300,
-		h     = 120 + PS.UI.HeaderH("strip"),
+		h     = 120 + PS.UI.HeaderH(),
 	})
 	
 	local label = vgui.Create("DLabel", frame)
-	label:SetText("Amount:")
+	-- Names the target and the unit, because the title no longer can. This dialog writes a
+	-- player's balance and the only other thing in it is a number box; without this there is
+	-- nothing on screen saying whose balance is about to change.
+	label:SetText(pointsName .. " for " .. ply:Nick() .. ":")
 	label:Dock(TOP)
 	label:DockMargin(5, 10, 5, 5)
 	

@@ -330,7 +330,7 @@ function PANEL:CreateCustomizationSliders(itemData)
 	self.CustomizeHeading:SetPos(10, y)
 	self.CustomizeHeading:SetSize(280, 18)
 	self.CustomizeHeading:SetFont("PS_DefaultBold")
-	self.CustomizeHeading:SetTextColor(PS.Theme.TextDim)
+	self.CustomizeHeading:SetTextColor(PS.Theme.ButtonText)
 	self.CustomizeHeading:SetText("Customize (applies when you buy)")
 	y = y + 22
 

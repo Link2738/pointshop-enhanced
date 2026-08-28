@@ -7,9 +7,9 @@ function PANEL:Init()
 	-- The 144 was the whole window before it had a bar across the top. Adding the bar to it
 	-- rather than into it keeps the content area exactly the size it was.
 	UI.SetupFrame(self, {
-		title    = "Give " .. PS.Config.PointsName,
+		title    = "Give",
 		w        = 300,
-		h        = 144 + UI.HeaderH("strip"),
+		h        = 144 + UI.HeaderH(),
 		remember = "givepoints",
 	})
 

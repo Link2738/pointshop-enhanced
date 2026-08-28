@@ -136,7 +136,10 @@ function PANEL:DoClick()
 				LocalPlayer():PS_HolsterItem(self.Data.ID)
 			end)
 		else
-			AddMenuButton("Equip", PS.Theme.CategoryFill, function()
+			-- Positive, not CategoryFill. Equipping is a confirming action and belongs with
+			-- Buy; borrowing the category strip's colour tied it to a surface it has nothing
+			-- to do with, so it turned red the moment the categories did.
+			AddMenuButton("Equip", PS.Theme.PositiveFill, function()
 				LocalPlayer():PS_EquipItem(self.Data.ID)
 			end)
 		end
@@ -170,7 +173,7 @@ function PANEL:DoClick()
 				-- Was a raw DFrame with default Derma buttons — the one dialog in the shop
 				-- that had never been themed at all, and it showed.
 				PS.UI.Confirm({
-					title = "Mark for Removal",
+					title = "Removal",
 					text  = "Mark \"" .. self.Data.Name .. "\" for removal?",
 					yes   = "Yes, mark it",
 					no    = "Cancel",

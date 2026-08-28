@@ -242,7 +242,6 @@ T.RegisterPreset("classic", {
 		NeutralFill        = { 225, 225, 225, 255 },
 		NeutralFillHover   = { 235, 235, 235, 255 },
 		NeutralBorder      = OUTLINE,
-		NeutralText        = INK,
 
 		-- Prices sit on the light card, so the dark-theme neons go to readable versions.
 		PriceAfford = {  40, 130,  55, 255 },

@@ -211,11 +211,9 @@ local function Open()
 
 	local f = UI.Frame({
 		remember = "shoplayout",
-		title = "Shop layout",
+		title = "Layout",
 		w     = math.Round(560 * T.Scale()),
-		-- The frame's own bar, not HeaderH: this window uses a strip as its header, and
-		-- budgeting for the tall bar left it taller than its contents by the difference.
-		h     = UI.HeaderH("strip") + STRIP + M.Margin * 2 + contentH
+		h     = UI.HeaderH() + STRIP + M.Margin * 2 + contentH
 		        + M.Gap + M.ButtonH + M.Margin * 2,
 	})
 	panel = f
