@@ -182,10 +182,25 @@ function L.Capture(name)
 		local ITEM = PS.Items[id]
 
 		if data.Equipped and ITEM then
-			items[#items + 1] = {
-				id   = id,
-				mods = PS.IsPlayermodelItem(ITEM) and WornModelMods(ply, ITEM) or data.Modifiers,
-			}
+			local mods
+
+			if PS.IsPlayermodelItem(ITEM) then
+				mods = WornModelMods(ply, ITEM)
+			else
+				-- The customization store first, PS_Items second.
+				--
+				-- Customizing an accessory goes panel -> server -> PS_AccessoryCustomization_
+				-- Update broadcast, and that broadcast fills PS_AccessoryCustomizations. It
+				-- does not touch PS_Items[id].Modifiers, which is only written when OnModify
+				-- runs on this client -- which the panel's save path never does.
+				--
+				-- So PS_Items held whatever arrived at join, and a loadout saved right after
+				-- changing an offset recorded the old offset. PS_GetCustomization reads the
+				-- store the broadcast actually fills.
+				mods = (PS_GetCustomization and PS_GetCustomization(ply, id)) or data.Modifiers
+			end
+
+			items[#items + 1] = { id = id, mods = mods }
 		end
 	end
 
@@ -230,7 +245,22 @@ function L.Clear()
 end
 
 net.Receive("PS_Loadout_Result", function()
+	local blocked = net.ReadBool()
 	local refused = net.ReadTable()
+
+	-- Two different things, said differently.
+	--
+	-- Blocked is the whole loadout: nothing in it was wearable, so nothing was applied. A
+	-- partial refusal is the outfit going on with pieces missing, which is worth saying but is
+	-- not a failure -- and the panel greys the entries either way, so this is only here to
+	-- stop the missing hat being something you have to notice for yourself.
+	if blocked then
+		notification.AddLegacy("You cannot use that loadout right now.", NOTIFY_ERROR, 4)
+		surface.PlaySound("buttons/button10.wav")
+
+	elseif istable(refused) and #refused > 0 then
+		notification.AddLegacy("Some items could not be equipped right now.", NOTIFY_HINT, 4)
+	end
 
 	L.Refused = {}
 	if istable(refused) then
@@ -248,14 +278,63 @@ end)
 
 L.Load()
 
--- Re-applies on spawn, which is what makes an outfit outlive a rejoin or a map change while
--- the server stores nothing.
+-- Re-applies when the SERVER asks, which is what makes an outfit outlive a rejoin or a map
+-- change while the server stores nothing.
 --
--- Delayed for the same reason the theme and item-defaults syncs are: the inventory has not
--- arrived on the same tick as the spawn, and an apply against an empty PS_Items would be
--- refused item by item and clear the slot for no reason.
-hook.Add("InitPostEntity", "PS_LoadoutReapply", function()
-	timer.Simple(3, function()
-		if L.Active and L.Slots[L.Active] then L.Apply(L.Active) end
-	end)
+-- This was an InitPostEntity timer that guessed at readiness -- three seconds, then a poll for
+-- alive, team and inventory. All three of those are the server's to know: it decides when the
+-- player has spawned, what team they are on, and when their inventory has finished loading.
+-- Guessing at them from here is how a join ended up applying against an empty inventory from
+-- an unassigned team and being refused item by item.
+--
+-- The server asks at exactly two moments, spawn and team change, and this answers.
+net.Receive("PS_Loadout_Prompt", function()
+	if L.Active and L.Slots[L.Active] then L.Apply(L.Active) end
+end)
+
+-- Overlay framing self-test. Reads a synthetic set written with the real framing and diffs
+-- each entry against the local copy of the same vectors. See ps_loadout_selftest on the server
+-- for what it is proving and why the modifier round trip alone was not enough.
+net.Receive("PS_LoadoutSelfTest", function()
+	local count    = net.ReadUInt(5)
+	local expected = PS_DeltaTestVectors and #PS_DeltaTestVectors or 0
+
+	if count ~= expected then
+		MsgC(Color(255, 80, 80), "[PS loadout] FAIL  ", color_white,
+			string.format("count read back as %d, expected %d\n", count, expected))
+		return
+	end
+
+	local fails = 0
+
+	for i = 1, count do
+		local id   = net.ReadString()
+		local mods = PS_ReadModifiers()
+
+		local vec     = PS_DeltaTestVectors[i]
+		local wantID  = "selftest_" .. i
+
+		if id ~= wantID then
+			-- Reported and then kept reading. A wrong id means the stream is already
+			-- misaligned, so every entry after this one is nonsense too -- but stopping here
+			-- would hide which entry first went wrong when several do.
+			MsgC(Color(255, 80, 80), "  FAIL  ", color_white,
+				string.format("entry %d id read back as %q, expected %q\n", i, id, wantID))
+			fails = fails + 1
+
+		else
+			local ok, err = PS_DeltaCompare(vec.mods, mods)
+			if ok then
+				MsgC(Color(120, 220, 120), "  PASS  ", color_white, vec.name .. "\n")
+			else
+				MsgC(Color(255, 80, 80), "  FAIL  ", color_white, vec.name .. "\n")
+				MsgC(Color(255, 180, 180), "        " .. tostring(err) .. "\n")
+				fails = fails + 1
+			end
+		end
+	end
+
+	if fails == 0 then
+		MsgC(Color(120, 220, 120), string.format("[PS loadout] overlay framing OK across %d entries\n", count))
+	end
 end)

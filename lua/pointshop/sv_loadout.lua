@@ -36,18 +36,160 @@
 	way to wear something you do not own.
 ]]--
 
+-- The overlay currently showing on each player, or nil. Memory only, for the session only.
+--
+-- Declared first because the console commands below read it, and a Lua local is not in scope
+-- above its own declaration -- it was further down, so ps_loadout_dump resolved `worn` to a
+-- nil global and errored on its first use rather than at load.
+local worn = {}
+
 util.AddNetworkString("PS_Loadout_Apply")
 util.AddNetworkString("PS_Loadout_Clear")
 util.AddNetworkString("PS_Loadout_Result")
+
+-- Server asking the client to send its active loadout, if it has one.
+--
+-- The loadout lives on the client and the readiness lives here: whether the player has spawned,
+-- what team they are on, whether their inventory has loaded. The client used to guess at all
+-- three with a three-second timer on join, which is why the console filled with refusals --
+-- it was applying against an empty inventory from an unassigned team while dead.
+--
+-- So the client stops guessing and waits to be asked. There are exactly two moments worth
+-- asking at, and this file already hooks both.
+util.AddNetworkString("PS_Loadout_Prompt")
+
+-- One player's accessory modifiers, for everybody, in one message.
+--
+-- Wear used to send a PS_AccessoryCustomization_Update broadcast PER ACCESSORY, so a six-piece
+-- loadout was six broadcasts to every player and clearing it was six more. Each carried a
+-- net.WriteTable, which is the untyped self-describing shape sh_item_delta exists to avoid.
+--
+-- This is one broadcast for the whole set, with the modifiers bit-packed by PS_WriteModifiers
+-- -- the same encoder the item sync uses. It also arrives atomically, so a client applies an
+-- outfit rather than watching it assemble.
+--
+-- Accessories only. A playermodel's model, skin and bodygroups are entity state and replicate
+-- on their own; nothing has to be told about them.
+util.AddNetworkString("PS_Loadout_Overlay")
+
+util.AddNetworkString("PS_LoadoutSelfTest")
+
+-- Overlay framing self-test, in the same shape as ps_delta_selftest.
+--
+-- That test covers PS_WriteModifiers and PS_ReadModifiers, which is the encoder this message
+-- carries. It does not cover the framing wrapped around it: the 5-bit count, the string id
+-- before each entry, and the fact that entries are positional -- read one field wrong and
+-- every entry after it decodes from the wrong offset, which is silent and looks like a
+-- customization bug three items later rather than a protocol bug here.
+--
+-- Uses PS_DeltaTestVectors as the entries so the modifier payloads are already known-good and
+-- anything that fails is the framing.
+--
+--   ps_loadout_selftest          run against every player
+--   ps_loadout_selftest <name>   run against one player
+--
+-- Results print in the client console of whoever is tested.
+concommand.Add("ps_loadout_selftest", function(ply, cmd, args)
+	if IsValid(ply) and not ply:IsSuperAdmin() then return end
+
+	local targets = {}
+	if args and args[1] then
+		local found = string.lower(args[1])
+		for _, p in ipairs(player.GetAll()) do
+			if string.find(string.lower(p:Nick()), found, 1, true) then table.insert(targets, p) end
+		end
+	else
+		targets = player.GetAll()
+	end
+
+	if #targets == 0 then
+		MsgN("[PS loadout] No matching players.")
+		return
+	end
+
+	for _, p in ipairs(targets) do
+		net.Start("PS_LoadoutSelfTest")
+			net.WriteUInt(#PS_DeltaTestVectors, 5)
+
+			for i, vec in ipairs(PS_DeltaTestVectors) do
+				net.WriteString("selftest_" .. i)
+				PS_WriteModifiers(vec.mods)
+			end
+		net.Send(p)
+
+		MsgN(string.format("[PS loadout] Sent a %d-entry overlay to %s -- results are in their client console.",
+			#PS_DeltaTestVectors, p:Nick()))
+	end
+end)
+
+-- Prints what the server believes is overlaid on a player.
+--
+-- This is the half that needed a second player to check. It does not any more: the overlay
+-- reaches other clients as broadcast -> StoreMods -> ModifyClientsideModel, the first hop is
+-- proven byte for byte by ps_loadout_selftest, and the last is the same code that draws your
+-- own accessories. So if this says the right set, what everyone else sees follows -- and if it
+-- says the wrong set, no amount of looking at another player would have told you why.
+--
+--   ps_loadout_dump          every player wearing one
+--   ps_loadout_dump <name>   one player
+concommand.Add("ps_loadout_dump", function(ply, cmd, args)
+	if IsValid(ply) and not ply:IsSuperAdmin() then return end
+
+	local function Dump(p)
+		local current = worn[p]
+
+		if not current then
+			MsgN(string.format("[PS loadout] %s: nothing overlaid", p:Nick()))
+			return
+		end
+
+		MsgN(string.format("[PS loadout] %s: %d item(s) overlaid", p:Nick(), #current.items))
+
+		for _, entry in ipairs(current.items) do
+			local ITEM = PS.Items[entry.id]
+			MsgN(string.format("    %-24s %s%s",
+				entry.id,
+				ITEM and (PS.IsPlayermodelItem(ITEM) and "[model] " or "[worn]  ") or "[GONE]  ",
+				entry.mods and util.TableToJSON(entry.mods) or "no modifiers"))
+		end
+
+		-- What it will go back to. The overlay is only half the state: a restore that returns
+		-- the wrong colour is a bug in here, not in the loadout.
+		MsgN(string.format("    restores to playercolor=%s rendercolor=%s",
+			tostring(current.priorPlayerColor), tostring(current.priorRenderColor)))
+	end
+
+	if args and args[1] then
+		local found = string.lower(args[1])
+		for _, p in ipairs(player.GetAll()) do
+			if string.find(string.lower(p:Nick()), found, 1, true) then Dump(p) end
+		end
+		return
+	end
+
+	for _, p in ipairs(player.GetAll()) do
+		if worn[p] then Dump(p) end
+	end
+end)
+
+-- Sends `set` as this player's accessory overlay. An empty set means "back to your own".
+local function BroadcastOverlay(ply, set)
+	net.Start("PS_Loadout_Overlay")
+		net.WriteEntity(ply)
+		net.WriteUInt(#set, 5)   -- MAX_ITEMS is 24, so five bits is the ceiling plus room
+
+		for _, entry in ipairs(set) do
+			net.WriteString(entry.id)
+			PS_WriteModifiers(entry.mods)
+		end
+	net.Broadcast()
+end
 
 -- Generous for a set of ids and their customization tables, and the same ceiling the modify
 -- handler uses for one item's worth of the same data. Checked before any net.Read, because
 -- ReadTable walks attacker-controlled data and allocates as it goes.
 local MAX_BITS = 32768   -- ~4 KB
 local MAX_ITEMS = 24
-
--- The overlay currently showing on each player, or nil. Memory only, for the session only.
-local worn = {}
 
 -- ============================================================================
 -- VALIDATION
@@ -180,9 +322,14 @@ local function Unshow(ply)
 	-- customization back over itself, and taking a loadout OFF is not a moment anything should
 	-- be written. It also re-broadcasts the real modifiers, which is what puts other clients
 	-- back to the wearer's own offsets and colours after the overlay borrowed them.
+	local restored = {}
 	for id, mods in pairs(real) do
 		Wear(ply, id, mods)
+		restored[#restored + 1] = { id = id, mods = mods }
 	end
+
+	-- And everyone is told the real set, once, so they stop drawing the overlay's modifiers.
+	BroadcastOverlay(ply, restored)
 end
 
 -- Puts one item ON somebody without storing anything.
@@ -214,17 +361,8 @@ function Wear(ply, id, mods)
 		return
 	end
 
-	-- Other clients resolve an accessory's modifiers through PS_GetCustomization when they
-	-- draw it, and their copy holds what this player has SAVED. Without this they would draw
-	-- the loadout's models at the wearer's own offsets, angles and colours.
-	if mods then
-		net.Start("PS_AccessoryCustomization_Update")
-			net.WriteEntity(ply)
-			net.WriteString(id)
-			net.WriteTable(mods)
-		net.Broadcast()
-	end
-
+	-- Telling other clients which modifiers to draw it with is NOT done here, one message per
+	-- item. The caller sends the whole set once through BroadcastOverlay.
 	ply:PS_AddClientsideModel(id)
 end
 
@@ -264,6 +402,9 @@ local function Show(ply, accepted)
 		Wear(ply, entry.id, entry.mods)
 	end
 
+	-- Everyone gets the whole overlay in one message, after the models exist.
+	BroadcastOverlay(ply, accepted)
+
 	-- No colour step. There is no such thing as "the loadout's colour": a playermodel carries
 	-- its own in mods.playercolor and each accessory carries its own in mods.color, each
 	-- through its own item's channel. ApplyModelSettings and the clientside model apply them
@@ -292,13 +433,24 @@ net.Receive("PS_Loadout_Apply", function(length, ply)
 
 	local accepted, refused = Filter(ply, requested)
 
-	-- Items and their modifiers, and nothing else. Colour is not sent and not derived here:
-	-- it is inside each item's own modifiers, and each item applies its own.
-	Show(ply, accepted)
+	-- Nothing survived. That is not "some of your hats were refused", it is the loadout not
+	-- being wearable here at all -- wrong team, or nothing in it owned any more -- and putting
+	-- an empty outfit on would strip what the player is actually wearing to show them nothing.
+	--
+	-- So it does not apply, and it says so as one message. A list of six per-item refusals
+	-- describes the same fact six times and buries it.
+	local blocked = #accepted == 0 and #requested > 0
+
+	if not blocked then
+		-- Items and their modifiers, and nothing else. Colour is not sent and not derived
+		-- here: it is inside each item's own modifiers, and each item applies its own.
+		Show(ply, accepted)
+	end
 
 	-- Told what was dropped, so the panel can say which entries this server will not wear
 	-- rather than leaving the player to notice a missing hat.
 	net.Start("PS_Loadout_Result")
+		net.WriteBool(blocked)
 		net.WriteTable(refused)
 	net.Send(ply)
 end)
@@ -316,6 +468,30 @@ hook.Add("PlayerDisconnected", "PS_LoadoutForget", function(ply)
 	worn[ply] = nil
 end)
 
+-- Asks the client for its active loadout, once this player is actually in a state to wear one.
+--
+-- Waits on PS_DataLoaded rather than assuming it: the inventory load is asynchronous and a
+-- spawn can beat it, and an apply that arrives first is refused item by item for items the
+-- server has not read yet. Retries a few times and then stops -- a player whose data never
+-- loads has a bigger problem than their outfit.
+--
+-- Nothing to ask about if an overlay is already on: the two hooks below re-show and re-filter
+-- what is there rather than starting again.
+local function Prompt(ply, tries)
+	if not IsValid(ply) or worn[ply] then return end
+
+	if not ply.PS_DataLoaded then
+		tries = (tries or 0) + 1
+		if tries > 10 then return end
+
+		timer.Simple(1, function() Prompt(ply, tries) end)
+		return
+	end
+
+	net.Start("PS_Loadout_Prompt")
+	net.Send(ply)
+end
+
 -- A team change re-validates whatever is being worn.
 --
 -- On a gamemode that gates by team, the check that refused an item at apply time is a check
@@ -331,7 +507,13 @@ end)
 -- on a rare event and changes nothing.
 hook.Add("OnPlayerChangedTeam", "PS_LoadoutRevalidate", function(ply, before, after)
 	local current = worn[ply]
-	if not current then return end
+
+	-- Nothing on yet. A team the player could not wear their loadout on may have become one
+	-- they can -- moving out of spectator is the ordinary case -- so ask.
+	if not current then
+		timer.Simple(0, function() Prompt(ply) end)
+		return
+	end
 
 	-- After the gamemode has finished moving them: PS_CanEquipItem asks what team they are on,
 	-- and on this tick that is still being decided.
@@ -355,7 +537,13 @@ end)
 -- whole, and the client re-sends on spawn anyway, so this is the belt to that braces.
 hook.Add("PlayerSpawn", "PS_LoadoutReshow", function(ply)
 	local current = worn[ply]
-	if not current then return end
+
+	-- No overlay: this is a join, or a respawn after clearing one. Either way it is the moment
+	-- to ask, and the only other one is the team change above.
+	if not current then
+		timer.Simple(1, function() Prompt(ply) end)
+		return
+	end
 
 	timer.Simple(1, function()
 		if IsValid(ply) and worn[ply] == current then

@@ -1802,11 +1802,16 @@ end
 -- RENDERING
 -- ============================================================================
 
+-- The strip is drawn HERE, not in PaintOver.
+--
+-- PaintOver runs after every child, so the strip was painting over the close button sitting in
+-- it. The button was there and took the click -- it was covered, which reads as a dead corner
+-- of the window rather than a missing button.
+--
+-- Nothing needs it on top: content starts at ContentY, which is the strip's height plus a gap,
+-- so there is nothing under the strip to be drawn over.
 function PANEL:Paint(w, h)
     PS.Theme.PaintPanelBody(w, h)
-end
-
-function PANEL:PaintOver(w, h)
     PS.Theme.PaintStatusStrip(w, self.StripH or 35, "Preview enabled. Use controls to customize.")
 end
 

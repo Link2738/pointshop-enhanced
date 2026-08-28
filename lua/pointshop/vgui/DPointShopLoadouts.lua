@@ -117,6 +117,17 @@ function PANEL:BuildSlots()
 
 			draw.SimpleText(label, "PS_Default", M.Gap, ph / 2, col,
 				TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+
+			-- The one actually being worn, marked on the right.
+			--
+			-- Selected and worn are different things and the row only showed the first: the
+			-- highlight follows what you are previewing, so the outfit you have on looked
+			-- exactly like the seven you do not. Which also made "Take this off" appear out of
+			-- nowhere on one row and not the others.
+			if L.Active == i then
+				draw.SimpleText("worn", "PS_Default", pw - M.Gap, ph / 2, T.PriceAfford,
+					TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+			end
 		end
 
 		row.DoClick = function() self:Select(i) end
@@ -125,7 +136,20 @@ function PANEL:BuildSlots()
 			local menu = DermaMenu()
 
 			if slot then
-				menu:AddOption("Wear this", function() L.Apply(i) self:BuildSlots() end)
+				-- Taking it off, offered only on the one being worn.
+				--
+				-- The mechanism was always here -- L.Clear tells the server to Unshow, which
+				-- puts back what the player actually owns -- but nothing in the panel offered
+				-- it, so the only way out of a loadout was to wear a different one.
+				if L.Active == i then
+					menu:AddOption("Take this off", function()
+						L.Clear()
+						self:BuildSlots()
+					end)
+				else
+					menu:AddOption("Wear this", function() L.Apply(i) self:BuildSlots() end)
+				end
+
 				menu:AddOption("Overwrite with what I am wearing", function()
 					L.Slots[i] = L.Capture(slot.name)
 					L.Save()
