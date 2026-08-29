@@ -116,6 +116,15 @@ end
 function PS_SetCustomization(ply, itemID, mods)
     if not IsValid(ply) or not itemID then return end
     if not mods or (type(mods) == "table" and not next(mods)) then return end
+
+    -- Normalised on the way IN, not just on the way out.
+    --
+    -- util.TableToJSON cannot represent a Vector and writes tostring(Vector) instead, so a
+    -- `playercolor = Vector(1,1,1)` straight out of an item file became the string "[1 1 1]"
+    -- in the database -- which reads back as white and repaints the player. This is the only
+    -- function that writes a row, so normalising here is what makes that unrepresentable.
+    if PS_NormalizeMods then mods = (PS_NormalizeMods(mods)) end
+
     local steamid = ply:SteamID()
     local mods_json = util.TableToJSON(mods)
     sql.Query(

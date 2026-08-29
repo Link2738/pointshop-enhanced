@@ -20,6 +20,10 @@ local Player = FindMetaTable('Player')
 -- ============================================================================
 
 -- Fills in saved customization for an item whose modifiers are empty.
+--
+-- Only for the item hooks that still take a modifiers argument -- weapons, powerups, trails.
+-- Appearance items get theirs from PS:GetItemModifiers, which reads the same store without
+-- writing the row back.
 local function LoadModifiers(ply, item_id, item)
 	if item.Modifiers and next(item.Modifiers) ~= nil then return item.Modifiers end
 	if not PS_GetCustomization then return item.Modifiers end
@@ -35,43 +39,15 @@ local function LoadModifiers(ply, item_id, item)
 	return saved
 end
 
--- The equipped playermodel valid for this player's team right now, or nil.
+-- Kept as a name, because gamemodes and hooks call it. It is now one line.
 --
--- Sorted rather than raw pairs(): a player with two models valid for the same team used to
--- get whichever the hash order surfaced first, which is stable within a session and not
--- across them. Same input, same model.
-local function FindTeamModel(ply)
-	local ids = {}
-	for item_id, item in pairs(ply.PS_Items or {}) do
-		local ITEM = PS.Items[item_id]
-		if ITEM and item.Equipped and ITEM.TYPE == "playermodel" and PS:CanEquipForTeam(ply, ITEM) then
-			ids[#ids + 1] = item_id
-		end
-	end
-
-	if #ids == 0 then return nil end
-
-	table.sort(ids)
-	return PS.Items[ids[1]], ids[1]
-end
-
--- Applies the right playermodel, or hands the decision back to the gamemode.
---
--- The `else` branch is the part that was missing. Clearing the flag matters as much as
--- setting it: it is what the ModelFix timer reads to decide whether a non-team model is
--- legitimate, so a flag left pointing at a model the player is no longer allowed to wear is
--- a hole waiting for its covers to be removed.
+-- FindTeamModel used to live here and pick the model; that choice is part of deciding the
+-- whole appearance, so it moved into PS:AppearanceSet where the rest of the decision is.
+-- Having it here meant the model was chosen by one function and the accessories by another,
+-- and neither knew whether a loadout was on.
 function Player:PS_ResolvePlayerModel()
-	local ITEM, item_id = FindTeamModel(self)
-
-	if ITEM then
-		ITEM:OnEquip(self, LoadModifiers(self, item_id, self.PS_Items[item_id]))
-		return true
-	end
-
-	self._PS_ActivePlayerModel = nil
-	hook.Run("PlayerSetModel", self)
-	return false
+	PS:ApplyAppearance(self)
+	return self._PS_ShownModel ~= nil
 end
 
 function Player:PS_PlayerSpawn()
@@ -95,15 +71,21 @@ function Player:PS_PlayerSpawn()
 			-- nil. Without this the next line errors and aborts the WHOLE loop, so one
 			-- stale entry means the player spawns with nothing equipped at all.
 			--
-			-- Playermodels are skipped here and resolved once below: which one applies
-			-- depends on the player's team, so it is a choice between items rather than a
-			-- decision each item can make for itself.
-			if ITEM and item.Equipped and ITEM.TYPE ~= "playermodel" then
+			-- Appearance items are skipped: their OnEquip persists and nothing else, and
+			-- what they look like is decided in one pass below. This loop is for the items
+			-- whose equip hook IS their mechanism -- a weapon gives itself, a powerup
+			-- shrinks the player, a trail attaches itself.
+			if ITEM and item.Equipped and not PS.IsLoadoutItem(ITEM) then
 				ITEM:OnEquip(self, LoadModifiers(self, item_id, item))
 			end
 		end
 
-		self:PS_ResolvePlayerModel()
+		-- Not cleared first, deliberately. The respawn reset the CHARACTER, not the clientside
+		-- accessory models, which are separate entities that survive it -- so throwing the
+		-- shown-set away would lose the only record of what still needs removing, and buy
+		-- nothing: everything wanted is re-applied unconditionally anyway, which is what puts
+		-- the model, skin, bodygroups and colour back after the gamemode's reset.
+		PS:ApplyAppearance(self)
 	end)
 end
 
@@ -111,7 +93,13 @@ function Player:PS_PlayerDeath()
 	for item_id, item in pairs(self.PS_Items) do
 		if item.Equipped then
 			local ITEM = PS.Items[item_id]
-			if ITEM then ITEM:OnHolster(self, item.Modifiers) end
+
+			-- Same split as the spawn path: a weapon has to be stripped and a powerup has
+			-- to be undone, but an appearance item has nothing to do on death -- the corpse
+			-- is not wearing anything the shop put there, and the respawn re-applies.
+			if ITEM and not PS.IsLoadoutItem(ITEM) then
+				ITEM:OnHolster(self, item.Modifiers)
+			end
 		end
 	end
 end
@@ -213,20 +201,42 @@ end
 
 -- points
 
+-- A bot has no PointShop account.
+--
+-- Guarded HERE rather than at any of the faucets, because there are a dozen of them: the
+-- points-over-time timer, round wins, infection payouts, survival time, taunts, kills, and the
+-- admin give. Every one of them ends up in these three, and every one of them was paying bots.
+--
+-- What that cost was 90 rows in playerpdata -- one per bot slot the server has ever filled,
+-- each holding a currency balance nothing can ever spend -- growing by one every time a new
+-- slot is used. Cleared from the database once; this is what stops it coming back.
+--
+-- The in-memory PS_Points still moves so nothing downstream has to special-case a bot; only
+-- the write to storage and the pointless net send to a bot are skipped.
+local function NoAccount(ply)
+	return ply:IsBot()
+end
+
 function Player:PS_GivePoints(points)
-	self.PS_Points = self.PS_Points + points
+	self.PS_Points = (self.PS_Points or 0) + points
+	if NoAccount(self) then return end
+
 	PS:GivePlayerPoints(self, points)
 	self:PS_SendPoints()
 end
 
 function Player:PS_TakePoints(points)
 	self.PS_Points = self.PS_Points - points >= 0 and self.PS_Points - points or 0
+	if NoAccount(self) then return end
+
 	PS:SetPlayerPoints(self, self.PS_Points)
 	self:PS_SendPoints()
 end
 
 function Player:PS_SetPoints(points)
 	self.PS_Points = points
+	if NoAccount(self) then return end
+
 	PS:SetPlayerPoints(self, points)
 	self:PS_SendPoints()
 end
@@ -425,6 +435,7 @@ function Player:PS_SellItem(item_id)
 	local ok, err = pcall(function()
 		if self.PS_Items[item_id] and self.PS_Items[item_id].Equipped then
 			ITEM:OnHolster(self)
+			self.PS_Items[item_id].Equipped = false
 		end
 		ITEM:OnSell(self)
 	end)
@@ -443,6 +454,15 @@ function Player:PS_SellItem(item_id)
 	end
 
 	self:PS_GivePoints(points)
+
+	-- The item is gone, so it cannot be in the set any more -- including a borrowed one.
+	--
+	-- An equip leaves a worn loadout alone, but SELLING is different: the overlay names items
+	-- by id and shows them without asking again, so a loadout holding the model you just sold
+	-- would go on showing it. Re-filtering asks PS_CanEquipItem, which is where ownership is
+	-- checked. A loadout is not a way to keep wearing something you no longer own.
+	if PS.RevalidateOverlay then PS:RevalidateOverlay(self) end
+	PS:ApplyAppearance(self)
 
 	hook.Call( "PS_ItemSold", nil, self, item_id )
 
@@ -641,7 +661,23 @@ function Player:PS_EquipItem(item_id)
 
 	self.PS_Items[item_id].Equipped = true
 
+	-- The item's own hook: persistence for an appearance item, the whole mechanism for a
+	-- weapon or a powerup. It does not touch how the player looks.
 	ITEM:OnEquip(self, self.PS_Items[item_id].Modifiers)
+
+	-- An equip changes what you OWN. It does not disturb a loadout you are wearing.
+	--
+	-- The two are different things and stay different: the inventory is yours, the overlay is
+	-- a look borrowed on top of it. So this apply is a no-op while a loadout is on -- the set
+	-- is the overlay either way -- and the moment the loadout comes off, the appearance is
+	-- re-derived from the owned set, which now has the new item in it.
+	--
+	-- That is the whole behaviour, and it needs no code: it is what deriving the appearance
+	-- rather than mutating it already gives. The version that cleared the overlay here was an
+	-- extra rule bolted on top.
+	if PS.IsLoadoutItem(ITEM) then
+		PS:ApplyAppearance(self)
+	end
 
 	self:PS_Notify('Equipped ', ITEM.Name, '.')
 	
@@ -677,6 +713,11 @@ function Player:PS_HolsterItem(item_id)
 	self.PS_Items[item_id].Equipped = false
 
 	ITEM:OnHolster(self)
+
+	-- Same as equipping: it changes what you own, not what you are borrowing. See PS_EquipItem.
+	if PS.IsLoadoutItem(ITEM) then
+		PS:ApplyAppearance(self)
+	end
 
 	self:PS_Notify('Holstered ', ITEM.Name, '.')
 	
@@ -725,6 +766,8 @@ function Player:PS_ModifyItem(item_id, modifications)
 
 	ITEM:OnModify(self, self.PS_Items[item_id].Modifiers)
 
+	if PS.IsLoadoutItem(ITEM) then PS:ApplyAppearance(self) end
+
 	hook.Call( "PS_ItemUpdated", nil, self, item_id, PS_ITEM_MODIFY, modifications )
 
 	PS:SavePlayerItem(self, item_id, self.PS_Items[item_id])
@@ -752,9 +795,19 @@ function Player:PS_AddClientsideModel(item_id)
 	PS.ClientsideModels[self][item_id] = item_id
 end
 
+-- No ownership check, deliberately.
+--
+-- PS_AddClientsideModel refuses an item the player does not own, which is right -- you cannot
+-- be shown wearing something you do not have. Taking one OFF had the same guard, which is
+-- exactly backwards: no longer owning it is the strongest possible reason to remove it.
+--
+-- It did not matter while the accessory base removed the model in its own OnHolster, which ran
+-- before PS_TakeItem. Now that removal is PS:ApplyAppearance's, and that runs AFTER the item is
+-- gone from PS_Items, so the guard fired every time and a sold hat stayed on your head until
+-- you rejoined. Same for an admin taking one.
+--
+-- The table check below is the real guard: nothing to remove, nothing to do.
 function Player:PS_RemoveClientsideModel(item_id)
-	if not PS.Items[item_id] then return false end
-	if not self:PS_HasItem(item_id) then return false end
 	if not PS.ClientsideModels[self] or not PS.ClientsideModels[self][item_id] then return false end
 
 	net.Start('PS_RemoveClientsideModel')
@@ -875,20 +928,27 @@ net.Receive('PS_RequestData', function(len, ply)
 	ply:PS_SendItems()
 end)
 
--- Team change: re-resolve which playermodel applies.
+-- Team change: re-decide the whole appearance.
 --
--- This used to search for a model valid for the new team and apply it, and do nothing at all
--- when it found none — leaving the previous team's model on and its flag set. The resolver
--- covers both outcomes, so the "none" case now clears the flag and asks the gamemode for its
--- own default instead of leaving the decision to whatever ran next.
+-- This is the ONE handler for the event now. There used to be two -- this one re-resolving
+-- the playermodel at 0.1s, and another in sv_loadout re-filtering the overlay at 0s -- both
+-- changing how the same player looked, on the same event, on different timers. Which one won
+-- was a matter of scheduling.
+--
+-- The loadout half is still here, as a re-filter before the apply rather than as a second
+-- system: an item that was legal for the old team may not be legal for the new one, and a
+-- loadout applied as a victim must not go on being worn as a bear just by outlasting the
+-- check that let it on.
 --
 -- Still delayed a tick: SetTeam fires this before the rest of the team change has settled,
 -- and CanEquipForTeam reads ply:Team().
-hook.Add("OnPlayerChangedTeam", "PS_ReapplyTeamModel", function(ply, oldTeam, newTeam)
+hook.Add("OnPlayerChangedTeam", "PS_AppearanceTeamChange", function(ply, oldTeam, newTeam)
 	if not IsValid(ply) or not ply.PS_Items or not ply:Alive() then return end
 
 	timer.Simple(0.1, function()
 		if not IsValid(ply) or not ply:Alive() then return end
+
+		if PS.RevalidateOverlay then PS:RevalidateOverlay(ply) end
 
 		local applied = ply:PS_ResolvePlayerModel()
 

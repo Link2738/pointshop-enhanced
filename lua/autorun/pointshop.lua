@@ -4,7 +4,6 @@ if SERVER then
 	AddCSLuaFile("autorun/ps_client_accessory.lua")
 	AddCSLuaFile("autorun/ps_backend_unified.lua")
 	AddCSLuaFile("autorun/client/ps_customization_panels.lua")
-	AddCSLuaFile("vgui/DPointShopCustomPanels.lua")
 	AddCSLuaFile("vgui/DPointShopItemCustomization.lua")
 	
 	-- Load server files

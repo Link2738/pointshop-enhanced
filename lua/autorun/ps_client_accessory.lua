@@ -54,9 +54,12 @@ if CLIENT then
     -- net.WriteTable -- a six-piece loadout was six untyped tables to every player, and
     -- clearing it was six more. The modifiers come through PS_ReadModifiers, the same decoder
     -- the item sync uses.
-    net.Receive("PS_Loadout_Overlay", function()
+    net.Receive("PS_Appearance_Sync", function()
         local ply   = net.ReadEntity()
-        local count = net.ReadUInt(5)
+
+        -- 8 bits, matching the writer in sv_appearance.lua. This carries the owned set as well
+        -- as a loadout, and nothing caps the owned set at 24.
+        local count = net.ReadUInt(8)
 
         for _ = 1, count do
             local itemID = net.ReadString()

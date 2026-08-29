@@ -244,25 +244,16 @@ function PS:RemoveHoverItem()
 	self.HoverModelClientsideModel = nil
 end
 
--- modification stuff
-
-function PS:ShowColorChooser(item, modifications)
-	-- TODO: Do this
-	local chooser = vgui.Create('DPointShopColorChooser')
-	chooser:SetColor(modifications.color)
-	
-	chooser.OnChoose = function(color)
-		modifications.color = color
-		self:SendModifications(item.ID, modifications)
-	end
-end
-
-function PS:SendModifications(item_id, modifications)
-	net.Start('PS_ModifyItem')
-		net.WriteString(item_id)
-		net.WriteTable(modifications)
-	net.SendToServer()
-end
+-- REMOVED: PS:ShowColorChooser and PS:SendModifications, along with the two panels they drove
+-- (DPointShopColorChooser and DPointShopBodygroupSelector, in vgui/DPointShopCustomPanels.lua).
+--
+-- PointShop 1's modification UI, superseded by DPointShopItemCustomization. ShowColorChooser
+-- still carried its original "-- TODO: Do this" and had no callers; SendModifications had no
+-- caller but ShowColorChooser; the bodygroup selector had no creator anywhere in the install.
+--
+-- The PS_ModifyItem net receiver in sv_init.lua is what SendModifications talked to. It is now
+-- unreachable from any client path, but it is left registered and validated -- deleting a
+-- server endpoint is a protocol change, not a panel cleanup.
 
 -- net hooks
 

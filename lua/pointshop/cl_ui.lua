@@ -25,6 +25,11 @@ local UI = PS.UI
 local function T() return PS.Theme end
 local function M() return PS.Theme.Metrics end
 
+-- Scratch for the one derived colour this file paints. Owned here rather than shared with
+-- cl_theme's pool for the reason given on T.Shade: two panels painting in the same frame
+-- would otherwise hand the same table to two draw calls.
+local sSectionRule = Color(255, 255, 255, 255)
+
 -- ============================================================================
 -- BUTTONS
 -- ============================================================================
@@ -214,8 +219,13 @@ end
 -- put them in, and the contents cannot be built before that window exists. So the same
 -- calls run twice: once with no parent to get a height, once for real. `width` supplies
 -- the intended content width to the measuring pass, since there is no panel to ask.
-function UI.Rows(parent, width)
-	local r = { parent = parent, y = 0 }
+-- `startY` starts the cursor below something the rows do not own -- a header strip painted by
+-- the panel itself. Height() then includes it, which is what the caller wants when sizing.
+--
+-- Named startY rather than top because every row builder below already has a `local top` for
+-- its own position, and a parameter of that name would sit shadowed behind all of them.
+function UI.Rows(parent, width, startY)
+	local r = { parent = parent, y = startY or 0 }
 
 	function r:LabelH() return math.Round(16 * PS.Theme.Scale()) end
 	function r:CtrlH()  return M().ButtonH end
@@ -244,6 +254,43 @@ function UI.Rows(parent, width)
 
 		self.y = self.y + self:LabelH()
 		return l
+	end
+
+	-- A section header: the name of a group of rows, with a rule under it.
+	--
+	-- Distinct from Label, which is a caption for one control. A panel with three groups in a
+	-- column and nothing but bold captions between them reads as one long list -- the rule is
+	-- what says where a group ends.
+	--
+	-- The rule is Accent, the same token every other divider, outline and strip edge in the
+	-- addon pulls from. A section header is a shared role, so it gets the shared colour rather
+	-- than a per-panel one -- which is how HeaderBG and StatusBar became two names for the
+	-- same bar.
+	function r:Header(text)
+		local h = self:LabelH() + math.Round(6 * PS.Theme.Scale())
+
+		if not parent then
+			self.y = self.y + h + self:Gap()
+			return
+		end
+
+		local p = vgui.Create("DPanel", parent)
+		p.Paint = function(s, w, ph)
+			draw.SimpleText(text or "", "PS_DefaultBold", 0, 0,
+				PS.Theme.Text, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
+
+			surface.SetDrawColor(PS.Theme.Alpha(sSectionRule, PS.Theme.Accent, 130))
+			surface.DrawRect(0, ph - 1, w, 1)
+		end
+
+		local top = self.y
+		p.PerformLayout = function(s)
+			s:SetPos(M().Margin, top)
+			s:SetSize(r:Width(), h)
+		end
+
+		self.y = self.y + h + self:Gap()
+		return p
 	end
 
 	-- DComboBox draws no label of its own, so it gets one above it.
@@ -313,11 +360,109 @@ function UI.Rows(parent, width)
 
 		sl.OnValueChanged = function(s, v)
 			if s._seeding then return end
-			if opts.set then opts.set(math.Round(v)) end
+			if not opts.set then return end
+
+			-- Rounded only when the slider has no decimals.
+			--
+			-- It used to round unconditionally, which was right for every caller at the time --
+			-- window sizes and metrics are whole pixels. It is wrong the moment a slider asks
+			-- for decimals: a 0.1-to-2 scale with two of them would arrive as 0, 1 or 2.
+			opts.set((opts.decimals or 0) == 0 and math.Round(v) or v)
 		end
 
 		self.y = self.y + self:CtrlH() + self:Gap()
 		return sl
+	end
+
+	-- A block of prose: an item's description, a note under a control.
+	--
+	-- Wrapped and self-sizing, so its height depends on the text and the width it is given.
+	-- That makes it the one row whose height is not known until it has been laid out, which is
+	-- why the cursor advances by a measured height rather than a fixed one.
+	function r:Text(text, opts)
+		opts = opts or {}
+
+		local font  = opts.font or "PS_Default"
+		local lines = opts.lines or 3
+
+		-- Measured from the FONT, not from the generic label height.
+		--
+		-- This used LabelH(), which is 16 scaled pixels -- right for body text and far too
+		-- short for anything else. A PS_LargeTitle line got a body-text box and had its top
+		-- and bottom sliced off, which is what the item name and the price looked like.
+		--
+		-- GetTextSize rather than a table of per-font heights: the fonts are rebuilt whenever
+		-- the scale changes, so asking is the only answer that cannot go stale.
+		surface.SetFont(font)
+		local _, lineH = surface.GetTextSize("Wg")
+
+		local height = math.Round(lineH * lines)
+
+		if not parent then
+			self.y = self.y + height + self:Gap()
+			return
+		end
+
+		local l = vgui.Create("DLabel", parent)
+		l:SetText(text or "")
+		l:SetFont(font)
+		l:SetTextColor(opts.colour or PS.Theme.MenuRowText)
+		l:SetWrap(true)
+
+		-- Top-aligned either way, because wrapped text centres itself vertically inside its box
+		-- and a two-line description would then sit lower than a one-line one.
+		l:SetContentAlignment(opts.align == "center" and 8 or 7)
+
+		local top = self.y
+		l.PerformLayout = function(s)
+			s:SetPos(M().Margin, top)
+			s:SetSize(r:Width(), height)
+		end
+
+		self.y = self.y + height + self:Gap()
+		return l
+	end
+
+	-- An action button, in one of the Action styles.
+	function r:Button(label, style, onClick)
+		if not parent then
+			self.y = self.y + self:CtrlH() + self:Gap()
+			return
+		end
+
+		local b = UI.Button(parent, label, style, onClick)
+
+		local top = self.y
+		b.PerformLayout = function(s)
+			s:SetPos(M().Margin, top)
+			s:SetSize(r:Width(), r:CtrlH())
+		end
+
+		self.y = self.y + self:CtrlH() + self:Gap()
+		return b
+	end
+
+	-- Anything this builder does not know about: a colour mixer, a model panel, a grid.
+	--
+	-- The caller creates it and says how tall it is; the row places it and moves the cursor
+	-- past it. That is the whole contract -- a builder that tried to own every control would
+	-- either be enormous or refuse the interesting ones.
+	function r:Custom(panel, height)
+		height = math.Round(height * PS.Theme.Scale())
+
+		if not parent or not IsValid(panel) then
+			self.y = self.y + height + self:Gap()
+			return panel
+		end
+
+		local top = self.y
+		panel.PerformLayout = function(s)
+			s:SetPos(M().Margin, top)
+			s:SetSize(r:Width(), height)
+		end
+
+		self.y = self.y + height + self:Gap()
+		return panel
 	end
 
 	-- Blank vertical space, for separating groups.
@@ -424,6 +569,149 @@ function UI.List(parent)
 	end
 
 	return list
+end
+
+-- ============================================================================
+-- ORBIT CAMERA
+--
+-- One camera, for the inspector, the customization panel and the owner-defaults tool.
+--
+-- All three had their own: the same spherical orbit around the player from the same four
+-- numbers -- a rotation in degrees, a height offset, a radius and a vertical angle -- with the
+-- same CalcView hook computing the same view. Three copies of one idea, and they had already
+-- drifted: only the inspector could be driven by the mouse, because it happens to be fullscreen
+-- and so catches drags over the world; only the inspector could tilt, the other two pinning phi
+-- at the horizon; and only two of the three reused their tables rather than allocating a view
+-- and three Vectors every frame.
+--
+-- The orbit OWNS the four numbers. That is what makes one system rather than three: the sliders
+-- and the mouse are two ways of writing the same state, instead of the camera reading whatever
+-- the sliders happen to say and the mouse writing into the sliders behind its back.
+-- ============================================================================
+
+local ORBIT_MIN_PHI = math.rad(10)
+local ORBIT_MAX_PHI = math.rad(170)
+
+function UI.Orbit(name, opts)
+	opts = opts or {}
+
+	local o = {
+		rot    = opts.rot or 180,
+		height = opts.height or 0,
+		radius = opts.radius or 80,
+		phi    = math.pi / 2,
+
+		minRadius = opts.minRadius or 30,
+		maxRadius = opts.maxRadius or 200,
+
+		hookName = "PS_Orbit_" .. name,
+
+		-- Reused every frame. CalcView runs per frame per player, so a fresh table and three
+		-- Vectors here is garbage forever.
+		_view   = {},
+		_origin = Vector(),
+		_delta  = Vector(),
+	}
+
+	-- Called after the mouse changes anything, so a panel can push the new values into its
+	-- sliders. Without it the sliders and the camera disagree the moment you drag.
+	o.OnChange = opts.OnChange
+
+	local function changed()
+		if o.OnChange then o.OnChange(o) end
+	end
+
+	-- The view, from the four numbers. `active` decides whether it applies at all.
+	function o:Start(active)
+		hook.Add("CalcView", self.hookName, function(ply, pos, angles, fov)
+			if ply ~= LocalPlayer() or not IsValid(ply) then return end
+			if active and not active() then return end
+
+			local theta  = math.rad(self.rot)
+			local sinPhi = math.sin(self.phi)
+
+			local p = ply:GetPos()
+			local tx, ty, tz = p.x, p.y, p.z + 64 + self.height
+
+			local dx = self.radius * sinPhi * math.cos(theta)
+			local dy = self.radius * sinPhi * math.sin(theta)
+			local dz = self.radius * math.cos(self.phi)
+
+			local origin = self._origin
+			origin.x, origin.y, origin.z = tx + dx, ty + dy, tz + dz
+
+			-- target - origin, i.e. the direction from the camera back to the player.
+			local delta = self._delta
+			delta.x, delta.y, delta.z = -dx, -dy, -dz
+
+			local view = self._view
+			view.origin     = origin
+			view.angles     = delta:Angle()
+			view.fov        = fov
+			view.drawviewer = true
+
+			return view
+		end)
+	end
+
+	function o:Stop()
+		hook.Remove("CalcView", self.hookName)
+	end
+
+	-- Drag to orbit, wheel to raise, shift-wheel to change distance.
+	--
+	-- `blocked` is for a panel that has UI over its own input surface: the inspector's control
+	-- panel sits inside its fullscreen catcher, and without this, pressing a slider started a
+	-- drag underneath it.
+	function o:Attach(panel, blocked)
+		panel:SetMouseInputEnabled(true)
+
+		panel.OnMousePressed = function(s, code)
+			if code ~= MOUSE_LEFT then return end
+			if blocked and blocked() then return end
+
+			s._orbiting = true
+			s._orbitX, s._orbitY = gui.MousePos()
+		end
+
+		panel.OnMouseReleased = function(s, code)
+			if code == MOUSE_LEFT then s._orbiting = false end
+		end
+
+		-- The bare wheel raises and lowers; shift changes the distance.
+		--
+		-- Round that way to match Blender, so a player who already orbits a viewport for a
+		-- living does not have to learn a second set of habits to look at a hat.
+		panel.OnMouseWheeled = function(s, delta)
+			if input.IsKeyDown(KEY_LSHIFT) or input.IsKeyDown(KEY_RSHIFT) then
+				o.radius = math.Clamp(o.radius - delta * 5, o.minRadius, o.maxRadius)
+			else
+				o.height = math.Clamp(o.height + delta * 5, -100, 100)
+			end
+
+			changed()
+			return true
+		end
+
+		-- Polled in Think because VGUI has no drag event: the delta is the difference in
+		-- cursor position since the last frame.
+		panel.OrbitThink = function(s)
+			if not s._orbiting then return end
+
+			local mx, my = gui.MousePos()
+			local dx, dy = mx - (s._orbitX or mx), my - (s._orbitY or my)
+
+			o.rot = (o.rot + dx * 0.5) % 360
+			o.phi = math.Clamp(o.phi + math.rad(dy * 0.5), ORBIT_MIN_PHI, ORBIT_MAX_PHI)
+
+			s._orbitX, s._orbitY = mx, my
+			changed()
+		end
+
+		return panel
+	end
+
+	return o
 end
 
 -- ============================================================================

@@ -12,6 +12,11 @@ include "sh_gamemodes.lua"
 -- what a given theme hashes to.
 include "sh_theme_sync.lua"
 include "sv_player_extension.lua"
+
+-- What a player looks like. Below sv_player_extension, which defines the clientside-model
+-- helpers it drives, and above sv_loadout, which is now just one input to it.
+include "sv_appearance.lua"
+
 include "sv_manifest.lua"
 
 -- Owner-settable default UI palette.
@@ -38,8 +43,7 @@ include "sv_movement.lua"
 -- `loadout` is one message that stands in for a whole outfit's worth of equips, so it is
 -- limited harder than a single equip: there is no reason to change your entire appearance
 -- twice a second, and the handler it guards does more work than any of the others.
-local PS_COOLDOWNS = { buy = 0.5, sell = 0.5, equip = 0.3, holster = 0.3, modify = 1.0,
-	loadout = 1.0 }
+local PS_COOLDOWNS = { buy = 0.5, sell = 0.5, equip = 0.3, holster = 0.3, loadout = 1.0 }
 
 local function PS_RateLimit(ply, action)
 	if not IsValid(ply) then return false end
@@ -61,9 +65,8 @@ PS.RateLimit = PS_RateLimit
 -- avoid, which is exactly what these handlers used to do. `length` is available on entry,
 -- so the guard belongs first.
 --
--- A legit modify is a small text/colour/offset table; anything larger is an attempt to
--- make the server do work. 2 KB is generous for real items.
-local PS_MAX_MODIFY_BITS = 16384   -- ~2 KB
+-- PS_MAX_MODIFY_BITS went with the PS_ModifyItem receiver it guarded. The equivalent ceiling
+-- for the customization path that replaced it is the 65536-byte check in ps_backend_unified.
 local PS_MAX_BUY_BITS    = 16384   -- buy carries optional try-before-you-buy mods
 local PS_MAX_PLAIN_BITS  = 2048    -- handlers that only carry an item id string
 
@@ -93,13 +96,14 @@ net.Receive('PS_HolsterItem', function(length, ply)
 	ply:PS_HolsterItem(net.ReadString())
 end)
 
-net.Receive('PS_ModifyItem', function(length, ply)
-	if length > PS_MAX_MODIFY_BITS then return end
-	if not PS_RateLimit(ply, 'modify') then return end
-	local item_id = net.ReadString()
-	local mods = net.ReadTable()
-	ply:PS_ModifyItem(item_id, mods)
-end)
+-- REMOVED: the PS_ModifyItem net receiver.
+--
+-- PointShop 1's modify endpoint. Its only sender was PS:SendModifications, which existed only
+-- to serve the colour chooser -- all three are gone, and customization goes through
+-- PS_ItemCustomization_Update in ps_backend_unified.lua instead.
+--
+-- The METHOD Player:PS_ModifyItem stays: ps_backend_unified calls it for trails. Only the way
+-- in from the network is gone, so a client can no longer reach it directly at all.
 
 -- player to player
 
@@ -222,6 +226,15 @@ net.Receive('PS_TakeItem', function(length, ply)
 	end
 
 	other:PS_TakeItem(item_id)
+
+	-- The item is gone, so it cannot be in the appearance set any more. Equipped was cleared
+	-- above, but nothing re-derived what the player should look like -- so an admin taking a
+	-- hat off somebody left the hat on them until their next spawn.
+	--
+	-- Re-filtered first for the same reason PS_SellItem is: a worn loadout names items by id
+	-- and would go on showing one the player no longer owns.
+	if PS.RevalidateOverlay then PS:RevalidateOverlay(other) end
+	PS:ApplyAppearance(other)
 end)
 
 -- hooks
@@ -260,7 +273,6 @@ util.AddNetworkString('PS_BuyItem')
 util.AddNetworkString('PS_SellItem')
 util.AddNetworkString('PS_EquipItem')
 util.AddNetworkString('PS_HolsterItem')
-util.AddNetworkString('PS_ModifyItem')
 util.AddNetworkString('PS_SendPoints')
 util.AddNetworkString('PS_GivePoints')
 util.AddNetworkString('PS_TakePoints')

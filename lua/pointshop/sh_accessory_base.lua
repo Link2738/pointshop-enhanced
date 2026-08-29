@@ -68,39 +68,39 @@ if CLIENT then
     end
 end
 
+-- OnEquip and OnHolster PERSIST. They no longer create or remove the clientside model.
+--
+-- See the matching note on the playermodel base: welding "apply" to "persist" is what made
+-- the loadout system need a second copy of the apply half. The model is put on and taken off
+-- by PS:ApplyAppearance, which is the only thing that knows the whole set.
+
 function BASE:OnEquip(ply, modifications)
-    if SERVER then
-        local mods = nil
-        -- Treat an empty table the same as nil so we fall through to stored/default data.
-        -- PointShop passes modifications = {} for brand-new items that have never been
-        -- customised, which would otherwise skip PS_GetCustomization entirely.
-        if modifications ~= nil and type(modifications) == "table" and next(modifications) ~= nil then
-            mods = modifications
-        elseif PS_GetCustomization then
-            mods = PS_GetCustomization(ply, self.ID)
-        end
-        -- Only persist/broadcast when we actually have customization data to avoid
-        -- overwriting stored data with an empty table.
-        if mods then
-            self:ApplyAccessorySettings(ply, mods)
-            if PS_SetCustomization then
-                PS_SetCustomization(ply, self.ID, mods)
-            end
-            -- Broadcast with itemID as key so clients update their lookup table correctly
-            net.Start("PS_AccessoryCustomization_Update")
-                net.WriteEntity(ply)
-                net.WriteString(self.ID)
-                net.WriteTable(mods)
-            net.Broadcast()
-        end
+    if not SERVER then return end
+
+    local mods = nil
+
+    -- Treat an empty table the same as nil so we fall through to stored/default data.
+    -- PointShop passes modifications = {} for brand-new items that have never been
+    -- customised, which would otherwise skip PS_GetCustomization entirely.
+    if modifications ~= nil and type(modifications) == "table" and next(modifications) ~= nil then
+        mods = modifications
+    elseif PS_GetCustomization then
+        mods = PS_GetCustomization(ply, self.ID)
     end
 
-    -- Runs on both realms: server broadcasts net message, client creates the model locally
-    ply:PS_AddClientsideModel(self.ID)
+    -- Only persist when there is actually something to persist, or an item equipped before it
+    -- was ever customised would write an empty table over stored data.
+    if mods then
+        self:ApplyAccessorySettings(ply, mods)
+        if PS_SetCustomization then PS_SetCustomization(ply, self.ID, mods) end
+    end
+
+    -- The PS_AccessoryCustomization_Update broadcast that was here is gone. PS:ApplyAppearance
+    -- sends the whole visible set in one bit-packed message instead of one untyped table per
+    -- item per equip.
 end
 
 function BASE:OnHolster(ply)
-    ply:PS_RemoveClientsideModel(self.ID)
 end
 
 function BASE:ModifyClientsideModel(ply, model, pos, ang, modifications)
@@ -172,11 +172,10 @@ function BASE:OnModify(ply, modifications)
         if modsToSave then
             self:ApplyAccessorySettings(ply, modsToSave)
             if PS_SetCustomization then PS_SetCustomization(ply, self.ID, modsToSave) end
-            net.Start("PS_AccessoryCustomization_Update")
-                net.WriteEntity(ply)
-                net.WriteString(self.ID)
-                net.WriteTable(modsToSave)
-            net.Broadcast()
+
+            -- No apply and no broadcast here. PS_ModifyItem is this function's only caller and
+            -- it applies once afterwards, which re-derives from the store this just wrote and
+            -- tells everyone the whole set in one message. Applying here as well made it twice.
         end
     end
     if CLIENT then

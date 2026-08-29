@@ -59,15 +59,24 @@ local function ReadStored()
 	return (ok and istable(tbl)) and tbl or {}
 end
 
--- Same read-modify-write shape as the theme's file, and for the same reason: a save names
--- only what it changes, so writing the active slot cannot destroy the definitions.
-local function WriteStored(changes)
+-- Written outright, NOT merged into what is already there.
+--
+-- This was a read-modify-write like the theme's file, copied along with its reasoning: a save
+-- names only what it changes, so writing the active slot cannot destroy the definitions. That
+-- reasoning stopped being true when the definitions moved into a file per slot -- this file
+-- holds one key now, and there is nothing here for a merge to protect.
+--
+-- It was also unable to express the one thing that matters most. `{ active = nil }` IS the
+-- empty table, so `for k, v in pairs(changes)` iterated zero times and the merge kept whatever
+-- was on disk. Taking a loadout off could therefore never be saved: L.Clear set L.Active to
+-- nil, the write silently preserved the old slot number, and reopening the panel read it back
+-- and marked a loadout you were not wearing as worn, with "Take this off" on it.
+local function WriteActive(active)
 	if not file.IsDir("pointshop", "DATA") then file.CreateDir("pointshop") end
 
-	local stored = ReadStored()
-	for k, v in pairs(changes) do stored[k] = v end
-
-	file.Write(DATA_PATH, util.TableToJSON(stored, true))
+	-- `false` rather than an absent key, so "nothing is worn" is a value the file states
+	-- rather than one the reader has to infer from a gap.
+	file.Write(DATA_PATH, util.TableToJSON({ active = active or false }, true))
 end
 
 -- A slot per file: written when it holds something, deleted when it does not.
@@ -90,7 +99,7 @@ function L.Save()
 		end
 	end
 
-	WriteStored({ active = L.Active })
+	WriteActive(L.Active)
 end
 
 -- Re-read from disk. Called on load and whenever the panel opens, so a file dropped into the
@@ -181,7 +190,11 @@ function L.Capture(name)
 	for id, data in pairs(ply.PS_Items or {}) do
 		local ITEM = PS.Items[id]
 
-		if data.Equipped and ITEM then
+		-- Models and accessories only. The server refuses the rest anyway, but capturing them
+		-- would put items in the file that every apply reports as refused -- so the player
+		-- would be told their loadout was partly refused every single time, for wearing a
+		-- powerup they never asked to include.
+		if data.Equipped and ITEM and PS.IsLoadoutItem(ITEM) then
 			local mods
 
 			if PS.IsPlayermodelItem(ITEM) then
@@ -254,9 +267,11 @@ net.Receive("PS_Loadout_Result", function()
 	-- partial refusal is the outfit going on with pieces missing, which is worth saying but is
 	-- not a failure -- and the panel greys the entries either way, so this is only here to
 	-- stop the missing hat being something you have to notice for yourself.
+	-- No sound. This can fire on a round change or a forced team swap -- things the player did
+	-- not do -- and a noise for something they did not ask for is the kind of thing that is
+	-- charming once and grating by the tenth round.
 	if blocked then
 		notification.AddLegacy("You cannot use that loadout right now.", NOTIFY_ERROR, 4)
-		surface.PlaySound("buttons/button10.wav")
 
 	elseif istable(refused) and #refused > 0 then
 		notification.AddLegacy("Some items could not be equipped right now.", NOTIFY_HINT, 4)

@@ -3,7 +3,17 @@ if SERVER then AddCSLuaFile() end
 local BASE = {}
 
 function BASE:ApplyModelSettings(ply, modifications)
-    ply:SetModel(self.Model)
+    -- Only when it actually differs.
+    --
+    -- SetModel resets skin and bodygroups, and this is now the apply half of
+    -- PS:ApplyAppearance, which runs on every appearance change rather than once per equip.
+    -- Calling it unconditionally meant every hat equipped re-set the body underneath it --
+    -- and a powerup that has shrunk the player (ply:SetModelScale in its own OnEquip) is
+    -- exactly the kind of state that a needless SetModel puts back.
+    if ply:GetModel() ~= self.Model then
+        ply:SetModel(self.Model)
+    end
+
     if modifications and modifications.skin then
         ply:SetSkin(modifications.skin)
     end
@@ -22,117 +32,71 @@ function BASE:ApplyModelSettings(ply, modifications)
         -- now, including the normalised Vector shape item files write.
         PS:ApplyColorToPlayer(ply, modifications.playercolor, self.UseColor2Proxy)
 
-        local r, g, b = PS:ReadColorRGB(modifications.playercolor)
-
-        -- Store and broadcast color
         if SERVER then
+            local r, g, b = PS:ReadColorRGB(modifications.playercolor)
             ply.PS_PlayerColor = Color(r, g, b, 255)
             ply.PS_UseColor2Proxy = self.UseColor2Proxy or false
-            
-            -- Broadcast color to all clients
-            net.Start("PS_PlayerModelColor_Broadcast")
-                net.WriteEntity(ply)
-                net.WriteUInt(r, 8)
-                net.WriteUInt(g, 8)
-                net.WriteUInt(b, 8)
-                net.WriteBool(self.UseColor2Proxy or false)
-            net.Broadcast()
         end
+
+        -- The PS_PlayerModelColor_Broadcast that used to be here is gone. It had three
+        -- senders and no receiver anywhere in the addon — the colour reaches clients as
+        -- entity state, because SetColor and SetPlayerColor are both networked.
+        --
+        -- Harmless when it ran on an equip. Not harmless now: this function is the apply
+        -- half of PS:ApplyAppearance, which runs on every appearance change, so a dead
+        -- broadcast to every player would have been the cost of the whole refactor.
     end
 end
 
-local function applyAndPersist(base, ply, itemID, modifications)
-    local mods = (PS_GetCustomization and PS_GetCustomization(ply, itemID)) or modifications or {}
-    if PS_SetCustomization then PS_SetCustomization(ply, itemID, mods) end
-    base:ApplyModelSettings(ply, mods)
-end
+-- OnEquip and OnHolster PERSIST. They no longer touch the character.
+--
+-- They used to do both, and that is what forced the loadout system to grow its own copy of
+-- the apply half (Wear) -- there was no way to show an item without also saving it. Two apply
+-- paths that did not know about each other is how equipping a hat half-replaced a loadout.
+--
+-- The character is PS:ApplyAppearance's, and only its. The equip path calls it once after the
+-- item's own hooks have run.
 
 function BASE:OnEquip(ply, modifications)
+    if not SERVER then return end
+
     if not ply._OldModel then
         ply._OldModel = ply:GetModel()
     end
-    ply._PS_ActivePlayerModel = self.Model
+
     local itemID = self.ID or self.Model
-    if SERVER then
-        if PS and PS.Config and PS.Config.Debug then
-            print(string.format("[PS Playermodel] OnEquip for %s - itemID: %s, model: %s", ply:Nick(), itemID, self.Model))
-        end
-        applyAndPersist(self, ply, itemID, modifications)
+
+    -- Stored first, passed second. The stored row is what the player customised; the passed
+    -- table is what the caller happened to have, which for a brand-new item is empty.
+    local mods = (PS_GetCustomization and PS_GetCustomization(ply, itemID)) or modifications or {}
+    if PS_SetCustomization then PS_SetCustomization(ply, itemID, mods) end
+
+    if PS and PS.Config and PS.Config.Debug then
+        print(string.format("[PS Playermodel] OnEquip for %s - itemID: %s, model: %s",
+            ply:Nick(), itemID, self.Model))
     end
 end
 
--- Re-resolves rather than replaying a snapshot.
+-- Nothing.
 --
--- This restored ply._OldModel, captured in OnEquip behind `if not ply._OldModel`, so it was
--- written once and never cleared. Equip A, then B, then holster B, and you got whatever you
--- wore before A. It also survived team changes, so holstering after switching teams handed
--- back a model for the team you used to be on.
+-- Taking a playermodel off is not an event this item can act on: what happens next depends on
+-- whether the player owns another one, whether it is legal for their team, and whether an
+-- overlay is on -- none of which this item knows. PS:ApplyAppearance answers all three, and
+-- resets the character only when the answer is "no model at all".
 --
--- PS_ResolvePlayerModel is the one place that decides: it finds another equipped model valid
--- for this team if there is one, and otherwise clears the flag and runs the standard
--- PlayerSetModel hook. Taking off model B while still owning team-legal model A now puts A
--- on, which replaying a snapshot could never do.
---
--- Falls back to the snapshot only if nothing answered the hook, so a gamemode that does not
--- implement it is no worse off than before.
+-- This used to re-resolve the model, restore a snapshot, reset every bodygroup, reset the
+-- skin, reset both colour channels and broadcast, on every holster of every model, including
+-- the very common case where another model was about to replace it a moment later.
 function BASE:OnHolster(ply)
-    ply._PS_ActivePlayerModel = nil
-
-    if SERVER then
-        local before = ply:GetModel()
-
-        -- Mark it holstered first, or the resolver finds this item and puts it straight back
-        -- on. The caller updates PS_Items after OnHolster returns.
-        local mine = ply.PS_Items and ply.PS_Items[self.ID or self.Model]
-        local wasEquipped = mine and mine.Equipped
-        if mine then mine.Equipped = false end
-
-        -- Guarded: this file is shared and the resolver lives in the server-side player
-        -- extension. If that has not loaded, fall through to the snapshot below rather than
-        -- erroring out of a holster and leaving the player mid-change.
-        if ply.PS_ResolvePlayerModel then
-            ply:PS_ResolvePlayerModel()
-        else
-            hook.Run("PlayerSetModel", ply)
-        end
-
-        if mine then mine.Equipped = wasEquipped end
-
-        if ply:GetModel() == before and ply._OldModel then
-            ply:SetModel(ply._OldModel)
-        end
-    end
-
-    ply._OldModel = nil
-
-    -- Reset all color/bodygroup state so the default model is clean. Neutral through the
-    -- modulation path sets modulation to white and clears the proxy, which is both
-    -- channels — the same "clear what you are not using" rule, used to clear both.
-    PS:ApplyColorToPlayer(ply, Color(255, 255, 255, 255), false)
-    -- Reset all bodygroups to 0
-    for i = 0, ply:GetNumBodyGroups() - 1 do
-        ply:SetBodygroup(i, 0)
-    end
-    ply:SetSkin(0)
-    -- Broadcast the reset to all clients
-    if SERVER then
-        ply.PS_PlayerColor = Color(255, 255, 255, 255)
-        ply.PS_UseColor2Proxy = false
-        net.Start("PS_PlayerModelColor_Broadcast")
-            net.WriteEntity(ply)
-            net.WriteUInt(255, 8)
-            net.WriteUInt(255, 8)
-            net.WriteUInt(255, 8)
-            net.WriteBool(false)
-        net.Broadcast()
-    end
 end
 
 function BASE:OnModify(ply, modifications)
     if not self.Bodygroups then return end
-    if SERVER then
-        applyAndPersist(self, ply, self.ID or self.Model, modifications)
-    end
+    if not SERVER then return end
+
+    local itemID = self.ID or self.Model
+    local mods = (PS_GetCustomization and PS_GetCustomization(ply, itemID)) or modifications or {}
+    if PS_SetCustomization then PS_SetCustomization(ply, itemID, mods) end
 end
 
 if CLIENT then

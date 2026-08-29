@@ -40,168 +40,67 @@ function PANEL:Init()
 		PS.ShopMenu:Hide()
 	end
 	
-	-- Control panel on the left
+	-- The control panel, built by PS.UI.Rows rather than from written-down coordinates.
+	--
+	-- Every position in here used to be a literal -- SetPos(10, 45), (10, 115), (10, 160) --
+	-- and every size was 280 wide against a panel of 300. Correct at one scale and nowhere
+	-- else, and the shop's scale is something the player sets, so at 2x the inspector stayed
+	-- small while the window that opened it grew.
+	--
+	-- The rows also mean the panel's HEIGHT is measured rather than declared. It was 450, which
+	-- had to be re-guessed by hand every time a control was added -- and the customize section
+	-- below adds six sliders and a colour mixer conditionally, so 450 was only ever right for
+	-- one of the two shapes this panel takes.
 	self.ControlPanel = vgui.Create("DPanel", self)
-	self.ControlPanel:SetSize(300, 450)
-	self.ControlPanel:SetPos(20, ScrH() / 2 - 225)
-	self.ControlPanel:SetMouseInputEnabled(true)  -- Panel captures mouse
-	-- Body, border and the accent bar along the top, all from the shared painter. The scrim
-	-- that used to sit between them is gone with every other copy of it.
+	self.ControlPanel:SetMouseInputEnabled(true)
+
+	-- The same status strip every other window in the addon uses as its header. This panel is
+	-- not a DFrame, so it cannot go through UI.SetupFrame -- but the header is the frame's one
+	-- part that is pure paint, and painting it here is what keeps this window a sibling of the
+	-- others rather than the one with a bold label floating where a header should be.
 	self.ControlPanel.Paint = function(s, w, h)
 		PS.Theme.PaintFrame(w, h)
-		draw.RoundedBoxEx(PS.Theme.Metrics.Radius, 0, 0, w, 3, PS.Theme.Accent, true, true, false, false)
+		PS.Theme.PaintStatusStrip(w, PS.UI.HeaderH("strip"), "Inspect")
 	end
-	
-	-- Item Info Section
-	self.ItemName = vgui.Create("DLabel", self.ControlPanel)
-	self.ItemName:SetPos(10, 10)
-	self.ItemName:SetSize(280, 30)
-	self.ItemName:SetFont("PS_LargeTitle")
-	self.ItemName:SetTextColor(PS.Theme.Text)
-	self.ItemName:SetText("")
-	
-	self.ItemDesc = vgui.Create("DLabel", self.ControlPanel)
-	self.ItemDesc:SetPos(10, 45)
-	self.ItemDesc:SetSize(280, 60)
-	self.ItemDesc:SetFont("PS_Default")
-	self.ItemDesc:SetTextColor(PS.Theme.MenuRowText)
-	self.ItemDesc:SetText("")
-	self.ItemDesc:SetWrap(true)
-	self.ItemDesc:SetAutoStretchVertical(true)
-	
-	self.ItemPrice = vgui.Create("DLabel", self.ControlPanel)
-	self.ItemPrice:SetPos(10, 115)
-	self.ItemPrice:SetSize(280, 30)
-	self.ItemPrice:SetFont("PS_LargeTitle")
-	self.ItemPrice:SetTextColor(PS.Theme.PriceAfford)
-	self.ItemPrice:SetText("")
-	
-	-- Camera Controls Section
-	local cameraLabel = vgui.Create("DLabel", self.ControlPanel)
-	cameraLabel:SetPos(10, 160)
-	cameraLabel:SetSize(280, 20)
-	cameraLabel:SetFont("PS_DefaultBold")
-	cameraLabel:SetTextColor(PS.Theme.Text)
-	cameraLabel:SetText("Camera Controls")
-	
-	-- Horizontal Rotation Slider
-	local rotHLabel = vgui.Create("DLabel", self.ControlPanel)
-	rotHLabel:SetPos(10, 185)
-	rotHLabel:SetSize(100, 20)
-	rotHLabel:SetFont("PS_Default")
-	rotHLabel:SetTextColor(PS.Theme.MenuRowText)
-	rotHLabel:SetText("Rotation")
-	
-	self.RotationSlider = vgui.Create("DNumSlider", self.ControlPanel)
-	self.RotationSlider:SetPos(10, 200)
-	self.RotationSlider:SetSize(280, 20)
-	self.RotationSlider:SetMin(0)
-	self.RotationSlider:SetMax(360)
-	self.RotationSlider:SetDecimals(0)
-	self.RotationSlider:SetValue(180)
-	self.RotationSlider.OnMousePressed = nil  -- Don't capture mouse input
-	
-	-- Vertical Pitch Slider
-	local pitchLabel = vgui.Create("DLabel", self.ControlPanel)
-	pitchLabel:SetPos(10, 225)
-	pitchLabel:SetSize(100, 20)
-	pitchLabel:SetFont("PS_Default")
-	pitchLabel:SetTextColor(PS.Theme.MenuRowText)
-	pitchLabel:SetText("Height")
-	
-	self.PitchSlider = vgui.Create("DNumSlider", self.ControlPanel)
-	self.PitchSlider:SetPos(10, 240)
-	self.PitchSlider:SetSize(280, 20)
-	self.PitchSlider:SetMin(-100)
-	self.PitchSlider:SetMax(100)
-	self.PitchSlider:SetDecimals(0)
-	self.PitchSlider:SetValue(0)
-	self.PitchSlider.OnMousePressed = nil  -- Don't capture mouse input
-	
-	-- Zoom/Distance Slider
-	local zoomLabel = vgui.Create("DLabel", self.ControlPanel)
-	zoomLabel:SetPos(10, 265)
-	zoomLabel:SetSize(100, 20)
-	zoomLabel:SetFont("PS_Default")
-	zoomLabel:SetTextColor(PS.Theme.MenuRowText)
-	zoomLabel:SetText("Distance")
-	
-	self.ZoomSlider = vgui.Create("DNumSlider", self.ControlPanel)
-	self.ZoomSlider:SetPos(10, 280)
-	self.ZoomSlider:SetSize(280, 20)
-	self.ZoomSlider:SetMin(30)
-	self.ZoomSlider:SetMax(200)
-	self.ZoomSlider:SetDecimals(0)
-	self.ZoomSlider:SetValue(80)
-	self.ZoomSlider.OnMousePressed = nil  -- Don't capture mouse input
-	
-	-- Buy Button
-	self.BuyButton = vgui.Create("DButton", self.ControlPanel)
-	self.BuyButton:SetPos(10, 310)
-	self.BuyButton:SetSize(280, 40)
-	self.BuyButton:SetText("")
-	self.BuyButton:SetFont("PS_LargeTitle")
-	self.BuyButton.DoClick = function()
-		if self.ItemData then
-			CreateStyledConfirmation('Buy Item',
-				'Are you sure you want to buy ' .. self.ItemData.Name .. '?',
-				function()
-					-- Stage inline customization so PS_BuyItem sends it along
-					if self.StagedMods and self.StagedItemID then
-						PS_PendingCustomizationData = PS_PendingCustomizationData or {}
-						local key = (self.ItemData.TYPE or "accessory") .. "_" .. self.ItemData.ID
-						PS_PendingCustomizationData[key] = self.StagedMods
-						self._purchased = true
-					end
-					LocalPlayer():PS_BuyItem(self.ItemData.ID)
-					self:Close()
-				end,
-				nil
-			)
-		end
-	end
-	self.BuyButton.Paint = function(s, w, h)
-		PS.Theme.PaintAction(s, w, h, PS.Theme.Action.Positive, "Purchase Item")
-	end
-	
-	-- Back Button
-	self.BackButton = vgui.Create("DButton", self.ControlPanel)
-	self.BackButton:SetPos(10, 360)
-	self.BackButton:SetSize(280, 40)
-	self.BackButton:SetText("")
-	self.BackButton:SetFont("PS_LargeTitle")
-	self.BackButton.DoClick = function()
-		self:Close()
-	end
-	self.BackButton.Paint = function(s, w, h)
-		PS.Theme.PaintAction(s, w, h, PS.Theme.Action.Neutral, "Back to Shop")
-	end
-	
-	-- Close button (X)
-	local closeBtn = vgui.Create("DButton", self.ControlPanel)
-	closeBtn:SetPos(270, 5)
-	closeBtn:SetSize(25, 25)
-	closeBtn:SetText("")
-	closeBtn:SetFont("PS_Default")
-	closeBtn.DoClick = function()
-		self:Close()
-	end
-	closeBtn.Paint = function(s, w, h)
-		PS.Theme.PaintAction(s, w, h, PS.Theme.Action.Danger)
-		draw.SimpleText("X", "PS_Default", w/2 + 1, h/2 + 1, PS.Theme.Shadow, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-		draw.SimpleText("X", "PS_Default", w/2, h/2, PS.Theme.HeaderText, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-	end
-	
-	-- Camera control variables
-	self.orbitPhi = math.pi / 2  -- Vertical orbit angle (pi/2 = horizon level)
-	self.IsDragging = false
+
+	-- The shared orbit camera. It owns the rotation, height, distance and tilt; the sliders
+	-- below and the mouse are two ways of writing the same four numbers.
+	self.Camera = PS.UI.Orbit("Inspector", {
+		rot = 180, height = 0, radius = 80,
+		minRadius = 30, maxRadius = 200,
+
+		-- The mouse moved the camera, so the sliders have to catch up or they and the view
+		-- disagree the moment you drag.
+		OnChange = function(cam)
+			if IsValid(self.RotationSlider) then self.RotationSlider:SetValue(cam.rot) end
+			if IsValid(self.PitchSlider)    then self.PitchSlider:SetValue(cam.height) end
+			if IsValid(self.ZoomSlider)     then self.ZoomSlider:SetValue(cam.radius) end
+		end,
+	})
+
 	self.PreviewModel = nil
-	
+
 	-- Setup camera and rendering hooks
+	self:SetupOrbit()
 	self:SetupHooks()
 end
 
 function PANEL:SetupHooks()
+	-- Stand still while being inspected.
+	--
+	-- The panel sets SetKeyboardInputEnabled(false) so it does not eat typing, which means WASD
+	-- reaches the game -- and the inspector previews on the player's own character, so walking
+	-- around carried the model you are looking at out of frame.
+	--
+	-- ClearMovement in CreateMove rather than a movetype change: the command itself goes to the
+	-- server with its movement zeroed, so the player genuinely does not move rather than moving
+	-- server-side and being corrected. Buttons are untouched, and the view angles are left
+	-- alone -- mouse look and the scroll wheel are what drive the orbit.
+	hook.Add("CreateMove", "DPointShopInspector_Freeze", function(cmd)
+		if not IsValid(self) then return end
+		cmd:ClearMovement()
+	end)
+
 	-- Hook to render the preview model in the world
 	hook.Add("PostDrawOpaqueRenderables", "DPointShopInspector_DrawPreview", function()
 		if not IsValid(self) then return end
@@ -223,42 +122,127 @@ function PANEL:SetupHooks()
 		end
 	end)
 	
-	-- Hook into CalcView to render the player model with custom camera
-	hook.Add("CalcView", "DPointShopInspector_Camera", function(ply, pos, angles, fov)
-		if not IsValid(LocalPlayer()) then return end
-		if not IsValid(self) then return end
-		
-		-- Read slider values directly (if they exist)
-		local rotDeg = (self.RotationSlider and self.RotationSlider:GetValue()) or 180
-		local yOffset = (self.PitchSlider and self.PitchSlider:GetValue()) or 0
-		local radius = (self.ZoomSlider and self.ZoomSlider:GetValue()) or 80
-		
-		-- Calculate camera position using spherical coordinates
-		local theta = math.rad(rotDeg)
-		local target = ply:GetPos() + Vector(0, 0, 64 + yOffset)
-		
-		-- Use spherical coordinates to position camera
-		-- orbitPhi controls vertical angle (defaulting to horizon level)
-		local orbitPhi = self.orbitPhi or (math.pi / 2)
-		local x = radius * math.sin(orbitPhi) * math.cos(theta)
-		local y = radius * math.sin(orbitPhi) * math.sin(theta)
-		local z = radius * math.cos(orbitPhi)
-		
-		local view = {}
-		view.origin = target + Vector(x, y, z)
-		view.angles = (target - view.origin):Angle()
-		view.fov = fov
-		view.drawviewer = true
-		
-		return view
+	-- The camera itself is PS.UI.Orbit's, shared with the customization panel.
+	self.Camera:Start(function() return IsValid(self) end)
+end
+
+-- Lays the control panel out, in order, for one item.
+--
+-- Built here rather than in Init because the shape depends on the item: an accessory gets seven
+-- customization sliders and a colour mixer, everything else does not. The old version built the
+-- fixed parts in Init at written-down positions, then added the customization ones starting at
+-- a literal y = 310, then MOVED the buttons down and re-grew the panel to fit -- three places
+-- that each had to agree about a layout none of them owned.
+--
+-- Rebuilt from scratch each time, which matters now that PS.UI.Open reuses one inspector: a
+-- second Inspect on a different item would otherwise keep the first item's sliders.
+function PANEL:BuildControls(itemData)
+	local S = PS.Theme.Scale()
+	local M = PS.Theme.Metrics
+
+	self.ControlPanel:Clear()
+
+	-- Below the strip the panel paints for itself, so the item name does not start underneath
+	-- the close button.
+	local rows = PS.UI.Rows(self.ControlPanel, nil, PS.UI.HeaderH("strip") + M.Margin)
+
+	self.ItemName  = rows:Text("", { font = "PS_LargeTitle", colour = PS.Theme.Text,
+		lines = 1, align = "center" })
+	self.ItemDesc  = rows:Text("", { lines = 3 })
+	self.ItemPrice = rows:Text("", { font = "PS_LargeTitle", colour = PS.Theme.PriceAfford,
+		lines = 1, align = "center" })
+
+	rows:Space(2)
+	rows:Header("Camera")
+
+	local cam = self.Camera
+
+	self.RotationSlider = rows:Slider({ label = "Rotation", min = 0, max = 360,
+		get = function() return cam.rot end,
+		set = function(v) cam.rot = v end })
+
+	self.PitchSlider = rows:Slider({ label = "Height", min = -100, max = 100,
+		get = function() return cam.height end,
+		set = function(v) cam.height = v end })
+
+	self.ZoomSlider = rows:Slider({ label = "Distance", min = cam.minRadius, max = cam.maxRadius,
+		get = function() return cam.radius end,
+		set = function(v) cam.radius = v end })
+
+	-- The panel sits over a live 3D view, and a slider that captures the mouse eats the
+	-- drag-to-orbit that view exists for.
+	for _, sl in ipairs({ self.RotationSlider, self.PitchSlider, self.ZoomSlider }) do
+		sl.OnMousePressed = nil
+	end
+
+	-- Try-before-you-buy, for accessories only.
+	local isAccessory = itemData.TYPE == "accessory" or itemData.Bone or itemData.Attachment
+	if isAccessory then
+		rows:Space(2)
+		self:CustomizationRows(rows, itemData)
+	end
+
+	rows:Space(2)
+
+	self.BuyButton = rows:Button("Purchase Item", "Positive", function()
+		if not self.ItemData then return end
+
+		CreateStyledConfirmation('Buy Item',
+			'Are you sure you want to buy ' .. self.ItemData.Name .. '?',
+			function()
+				-- Stage inline customization so PS_BuyItem sends it along
+				if self.StagedMods and self.StagedItemID then
+					PS_PendingCustomizationData = PS_PendingCustomizationData or {}
+					local key = (self.ItemData.TYPE or "accessory") .. "_" .. self.ItemData.ID
+					PS_PendingCustomizationData[key] = self.StagedMods
+					self._purchased = true
+				end
+				LocalPlayer():PS_BuyItem(self.ItemData.ID)
+				self:Close()
+			end,
+			nil
+		)
 	end)
+
+	-- Repainted from the disabled state rather than the style it was built with. SetText on it
+	-- did nothing -- the label is drawn by the Paint function, not by the button -- so the old
+	-- "Cannot Afford" never appeared and an unaffordable item just refused clicks.
+	self.BuyButton.Paint = function(s, w, h)
+		local off = s:GetDisabled()
+		PS.Theme.PaintAction(s, w, h,
+			off and PS.Theme.Action.Neutral or PS.Theme.Action.Positive,
+			off and "Cannot Afford" or "Purchase Item")
+	end
+
+	rows:Button("Back to Shop", "Neutral", function() self:Close() end)
+
+	-- The X sits in the header strip rather than in the run of rows, and is the same glyph
+	-- button every other window uses instead of an "X" from two SimpleText calls.
+	local close = PS.UI.IconButton(self.ControlPanel, PS.UI.GlyphIcon("close"), "Danger", function()
+		self:Close()
+	end)
+
+	local sizeSelf = close.PerformLayout
+	close.PerformLayout = function(s)
+		if sizeSelf then sizeSelf(s) end
+		s:SetPos(self.ControlPanel:GetWide() - M.IconBtn - M.IconInset,
+			math.floor((PS.UI.HeaderH("strip") - M.IconBtn) / 2))
+	end
+
+	-- Sized from what is in it, then centred. Both numbers were written down before, and the
+	-- height had to be re-guessed by hand every time a control was added.
+	self.ControlPanel:SetSize(math.Round(320 * S), rows:Height() + M.Margin)
+	self.ControlPanel:SetPos(math.Round(20 * S),
+		math.max(M.Margin, (ScrH() - self.ControlPanel:GetTall()) / 2))
 end
 
 function PANEL:SetItem(itemData)
 	self.ItemData = itemData
-	
+
 	if not itemData then return end
-	
+
+	self:BuildControls(itemData)
+
 	-- Update UI
 	self.ItemName:SetText(itemData.Name or "Unknown Item")
 	self.ItemDesc:SetText(itemData.Description or "")
@@ -276,15 +260,6 @@ function PANEL:SetItem(itemData)
 		self.BuyButton:SetText("Cannot Afford")
 	end
 	
-	-- Try-before-you-buy: accessories get inline customization sliders.
-	-- They write directly to PS_AccessoryCustomizations so the inspector's
-	-- live preview accessory picks them up per-frame; on Buy the staged mods
-	-- are sent with the purchase and applied on first equip.
-	local isAccessory = itemData.TYPE == "accessory" or itemData.Bone or itemData.Attachment
-	if isAccessory then
-		self:CreateCustomizationSliders(itemData)
-	end
-
 	-- Debug output
 	ps_dbg("[Inspector] Item:", itemData.Name)
 	ps_dbg("[Inspector] Model:", itemData.Model)
@@ -303,9 +278,7 @@ end
 -- Build inline accessory customization controls (try-before-you-buy).
 -- Values feed PS_AccessoryCustomizations[LocalPlayer()][itemID] so the
 -- per-frame draw loop (ModifyClientsideModel) renders them immediately.
-function PANEL:CreateCustomizationSliders(itemData)
-	if IsValid(self.CustomizeHeading) then return end -- already built
-
+function PANEL:CustomizationRows(rows, itemData)
 	local itemID = itemData.ID or itemData.Model
 	self.StagedItemID = itemID
 
@@ -324,55 +297,42 @@ function PANEL:CreateCustomizationSliders(itemData)
 			dm.color.b or dm.color[3] or 255, dm.color.a or dm.color[4] or 255)
 	end
 
-	local y = 310
+	rows:Header("Customize")
 
-	self.CustomizeHeading = vgui.Create("DLabel", self.ControlPanel)
-	self.CustomizeHeading:SetPos(10, y)
-	self.CustomizeHeading:SetSize(280, 18)
-	self.CustomizeHeading:SetFont("PS_DefaultBold")
-	self.CustomizeHeading:SetTextColor(PS.Theme.ButtonText)
-	self.CustomizeHeading:SetText("Customize (applies when you buy)")
-	y = y + 22
+	-- The qualifier moved out of the header when the headers became one word each. It is not
+	-- decoration -- these sliders change nothing until the item is actually bought.
+	rows:Text("Applies when you buy.", { lines = 1, colour = PS.Theme.TextDim })
 
-	local function MakeSlider(label, min, max, default, decimals)
-		local s = vgui.Create("DNumSlider", self.ControlPanel)
-		s:SetPos(10, y)
-		s:SetSize(280, 22)
-		s:SetText(label)
-		s:SetMin(min)
-		s:SetMax(max)
-		s:SetDecimals(decimals or 1)
-		s:SetValue(default)
-		s.Label:SetTextColor(PS.Theme.MenuRowText)
-		s.OnValueChanged = function() self:UpdateStagedMods() end
-		y = y + 26
-		return s
+	-- Rows guards the seeding itself, which is what these needed: a DNumSlider fires
+	-- OnValueChanged a frame after SetValue, so filling seven sliders in with the item's
+	-- defaults arrived as the player having dragged all seven -- staging modifications they
+	-- never made onto an item they have not bought.
+	local function Slider(label, min, max, default, decimals)
+		return rows:Slider({
+			label = label, min = min, max = max, decimals = decimals,
+			get = function() return default end,
+			set = function() self:UpdateStagedMods() end,
+		})
 	end
 
-	self.CustScale   = MakeSlider("Scale", 0.1, 2, defScale, 2)
-	self.CustOffsetX = MakeSlider("Offset X", -30, 30, defOX, 1)
-	self.CustOffsetY = MakeSlider("Offset Y", -30, 30, defOY, 1)
-	self.CustOffsetZ = MakeSlider("Offset Z", -30, 30, defOZ, 1)
-	self.CustPitch   = MakeSlider("Pitch", -180, 180, defP, 0)
-	self.CustYaw     = MakeSlider("Yaw", -180, 180, defYaw, 0)
-	self.CustRoll    = MakeSlider("Roll", -180, 180, defR, 0)
+	self.CustScale   = Slider("Scale",    0.1,  2,   defScale, 2)
+	self.CustOffsetX = Slider("Offset X", -30,  30,  defOX,    1)
+	self.CustOffsetY = Slider("Offset Y", -30,  30,  defOY,    1)
+	self.CustOffsetZ = Slider("Offset Z", -30,  30,  defOZ,    1)
+	self.CustPitch   = Slider("Pitch",    -180, 180, defP,     0)
+	self.CustYaw     = Slider("Yaw",      -180, 180, defYaw,   0)
+	self.CustRoll    = Slider("Roll",     -180, 180, defR,     0)
 
+	-- The mixer is a control Rows knows nothing about, which is what Custom is for: the caller
+	-- builds it and says how tall, the row places it and moves on.
 	self.CustColor = vgui.Create("DColorMixer", self.ControlPanel)
-	self.CustColor:SetPos(10, y)
-	self.CustColor:SetSize(280, 110)
 	self.CustColor:SetPalette(false)
 	self.CustColor:SetAlphaBar(false)
 	self.CustColor:SetWangs(true)
 	self.CustColor:SetColor(defColor)
 	self.CustColor.ValueChanged = function() self:UpdateStagedMods() end
-	y = y + 120
 
-	-- Move Buy/Back below the new controls and grow the panel to fit
-	self.BuyButton:SetPos(10, y)
-	self.BackButton:SetPos(10, y + 50)
-	local tall = y + 100
-	self.ControlPanel:SetTall(tall)
-	self.ControlPanel:SetPos(20, math.max(10, (ScrH() - tall) / 2))
+	rows:Custom(self.CustColor, 110)
 
 	-- Stage the defaults immediately so the preview matches the sliders
 	self:UpdateStagedMods()
@@ -581,7 +541,8 @@ function PANEL:Close()
 	-- Remove hooks when closing
 	hook.Remove("PostDrawOpaqueRenderables", "DPointShopInspector_DrawPreview")
 	hook.Remove("PrePlayerDraw", "DPointShopInspector_HidePlayer")
-	hook.Remove("CalcView", "DPointShopInspector_Camera")
+	if self.Camera then self.Camera:Stop() end
+	hook.Remove("CreateMove", "DPointShopInspector_Freeze")
 	
 	-- Reopen shop menu
 	if PS and PS.ShopMenu and IsValid(PS.ShopMenu) then
@@ -601,60 +562,27 @@ function PANEL:OnRemove()
 	
 	hook.Remove("PostDrawOpaqueRenderables", "DPointShopInspector_DrawPreview")
 	hook.Remove("PrePlayerDraw", "DPointShopInspector_HidePlayer")
-	hook.Remove("CalcView", "DPointShopInspector_Camera")
+	if self.Camera then self.Camera:Stop() end
+	hook.Remove("CreateMove", "DPointShopInspector_Freeze")
 end
 
-function PANEL:OnMousePressed(mouseCode)
-	if mouseCode == MOUSE_LEFT then
-		-- Don't start dragging if clicking on control panel
+-- Drag, wheel and shift-wheel. The panel is fullscreen, so it is the input surface for the
+-- whole 3D view -- everything except its own control panel.
+function PANEL:SetupOrbit()
+	self.Camera:Attach(self, function()
+		if not IsValid(self.ControlPanel) then return false end
+
 		local mx, my = gui.MousePos()
-		if IsValid(self.ControlPanel) then
-			local px, py = self.ControlPanel:GetPos()
-			local pw, ph = self.ControlPanel:GetSize()
-			if mx >= px and mx <= px + pw and my >= py and my <= py + ph then
-				return  -- Clicking on control panel, don't drag
-			end
-		end
-		
-		self.IsDragging = true
-		self.DragStartX, self.DragStartY = gui.MousePos()
-	end
-end
+		local px, py = self.ControlPanel:GetPos()
+		local pw, ph = self.ControlPanel:GetSize()
 
-function PANEL:OnMouseReleased(mouseCode)
-	if mouseCode == MOUSE_LEFT then
-		self.IsDragging = false
-	end
-end
-
-function PANEL:OnMouseWheeled(scrollDelta)
-	-- Update zoom slider value
-	if IsValid(self.ZoomSlider) then
-		local currentZoom = self.ZoomSlider:GetValue()
-		local newZoom = math.Clamp(currentZoom - (scrollDelta * 5), 30, 200)
-		self.ZoomSlider:SetValue(newZoom)
-	end
+		return mx >= px and mx <= px + pw and my >= py and my <= py + ph
+	end)
 end
 
 function PANEL:Think()
-	if self.IsDragging then
-		local mx, my = gui.MousePos()
-		local deltaX = mx - (self.DragStartX or mx)
-		local deltaY = my - (self.DragStartY or my)
-		
-		-- Update rotation slider (horizontal drag)
-		if IsValid(self.RotationSlider) then
-			local currentRot = self.RotationSlider:GetValue()
-			local newRot = (currentRot + deltaX * 0.5) % 360
-			self.RotationSlider:SetValue(newRot)
-		end
-		
-		-- Update vertical orbit angle (vertical drag affects phi)
-		self.orbitPhi = math.Clamp(self.orbitPhi + math.rad(deltaY * 0.5), math.rad(10), math.rad(170))
-		
-		self.DragStartX, self.DragStartY = mx, my
-	end
-	
+	self:OrbitThink()
+
 	-- Update preview model position to match player
 	if IsValid(self.PreviewModel) then
 		local ply = LocalPlayer()

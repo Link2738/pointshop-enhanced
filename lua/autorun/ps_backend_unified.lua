@@ -335,7 +335,21 @@ if SERVER then
             return
         end
 
-        if itemType == "accessory" then
+        -- Save, then re-derive. Both appearance types take the same two steps now.
+        --
+        -- The playermodel branch used to be a second hand-rolled copy of ApplyModelSettings --
+        -- its own SetModel, its own skin and bodygroup loop, and its own three-shape colour
+        -- parsing that PS:ReadColorRGB already exists to do. The item base had the original,
+        -- this had a transcription of it, and they did not agree.
+        --
+        -- The preview handler below is a third partial copy -- skin, bodygroup and colour with
+        -- no model. It is left alone deliberately: it is transient, it writes nothing, and the
+        -- next PS:ApplyAppearance overwrites whatever it did.
+        --
+        -- Both stores are still written. They are separate systems -- PS_Items lives in the
+        -- PData blob, customization lives in the ps_customization SQL table -- and letting them
+        -- drift is what made a stale row the loadout's problem.
+        if itemType == "accessory" or itemType == "playermodel" then
             PS_SetCustomization(ply, itemID, mods)
 
             if ply.PS_Items and ply.PS_Items[itemID] then
@@ -345,71 +359,13 @@ if SERVER then
                 end
             end
 
-            -- Broadcast with itemID as key (client table is now keyed by itemID)
-            net.Start("PS_AccessoryCustomization_Update")
-                net.WriteEntity(ply)
-                net.WriteString(itemID)
-                net.WriteTable(mods)
-            net.Broadcast()
+            PS:ApplyAppearance(ply)
 
-            if PS and PS.Notify then PS:Notify(ply, "Accessory customization saved and applied.") end
-
-        elseif itemType == "playermodel" then
-            PS_SetCustomization(ply, itemID, mods)
-
-            -- The item's own record, updated the same way the accessory branch above does it.
-            --
-            -- This branch used to write the customization store and the entity and stop, so
-            -- PS_Items[itemID].Modifiers kept whatever it held when the player joined. Two
-            -- stores that are meant to say the same thing, and only one of them moving:
-            -- anything reading the cached modifiers got the colour, skin and bodygroups the
-            -- player had at load rather than the ones they are wearing. The loadout capture
-            -- reads exactly that, which is how a loadout ended up saving a colour its owner
-            -- had changed away from.
-            if ply.PS_Items and ply.PS_Items[itemID] then
-                ply.PS_Items[itemID].Modifiers = mods
-                if PS and PS.SavePlayerItem then
-                    pcall(function() PS:SavePlayerItem(ply, itemID, ply.PS_Items[itemID]) end)
-                end
+            if PS and PS.Notify then
+                PS:Notify(ply, itemType == "accessory"
+                    and "Accessory customization saved and applied."
+                    or "Player model customization saved.")
             end
-
-            ply:SetModel(ply:GetModel())
-            if mods.skin then ply:SetSkin(mods.skin) end
-            if mods.bodygroups then
-                for k, v in pairs(mods.bodygroups) do
-                    ply:SetBodygroup(tonumber(k) or k, tonumber(v) or v)
-                end
-            end
-
-            if mods.playercolor then
-                local pc = mods.playercolor
-                local r, g, b
-                if type(pc) == "Vector" or (type(pc) == "table" and pc.x) then
-                    r = math.floor((pc.x or 1) * 255)
-                    g = math.floor((pc.y or 1) * 255)
-                    b = math.floor((pc.z or 1) * 255)
-                else
-                    r = pc[1] or pc.r or 255
-                    g = pc[2] or pc.g or 255
-                    b = pc[3] or pc.b or 255
-                end
-
-                local useColor2 = PS.Items and PS.Items[itemID] and PS.Items[itemID].UseColor2Proxy or false
-                -- Both channels written in one place. See PS:ApplyColorToPlayer.
-                PS:ApplyColorToPlayer(ply, Color(r, g, b, 255), useColor2)
-                ply.PS_PlayerColor   = Color(r, g, b, 255)
-                ply.PS_UseColor2Proxy = useColor2
-
-                net.Start("PS_PlayerModelColor_Broadcast")
-                    net.WriteEntity(ply)
-                    net.WriteUInt(r, 8)
-                    net.WriteUInt(g, 8)
-                    net.WriteUInt(b, 8)
-                    net.WriteBool(useColor2)
-                net.Broadcast()
-            end
-
-            if PS and PS.Notify then PS:Notify(ply, "Player model customization saved.") end
 
         elseif itemType == "trail" then
             -- PS_ModifyItem calls OnModify and persists via the provider

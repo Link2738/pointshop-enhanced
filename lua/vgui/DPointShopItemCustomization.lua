@@ -213,11 +213,43 @@ function PANEL:Init()
     end
 
     self.orbitRadius = 60
-    self.orbitPhi = math.pi / 2
     self.previewEnabled = false
+
+    -- The shared orbit camera, the same one the inspector runs. It owns the rotation, height,
+    -- distance and tilt; the sliders further down and the mouse both write into it.
+    self.Camera = PS.UI.Orbit("Customization", {
+        rot = 0, height = 0, radius = self.orbitRadius,
+        minRadius = 20, maxRadius = 300,
+
+        OnChange = function(cam)
+            if IsValid(self.cameraRotationSlider) then self.cameraRotationSlider:SetValue(cam.rot) end
+            if IsValid(self.cameraYSlider)        then self.cameraYSlider:SetValue(cam.height) end
+            if IsValid(self.cameraZoomSlider)     then self.cameraZoomSlider:SetValue(cam.radius) end
+        end,
+    })
+
+    -- Somewhere for a drag to land.
+    --
+    -- The camera here is the same orbit the inspector uses and was driveable only by its
+    -- sliders, because this is a window: the world behind it receives no mouse input at all.
+    -- A fullscreen catcher gives the drag and the wheel somewhere to go.
+    --
+    -- NOT a popup, which is what puts it underneath this window rather than over it -- the same
+    -- layering the loadout panel uses. Clicks on the panel reach the panel; clicks on the world
+    -- reach this.
+    self.Orbit = vgui.Create("DPanel")
+    self.Orbit:SetSize(ScrW(), ScrH())
+    self.Orbit:SetPos(0, 0)
+    self.Orbit.Paint = function() end
+
+    self.Camera:Attach(self.Orbit)
 
     -- Type-specific controls will be created in SetItem()
     self:SetupHooks()
+end
+
+function PANEL:Think()
+    if IsValid(self.Orbit) then self.Orbit:OrbitThink() end
 end
 
 
@@ -245,55 +277,48 @@ end
 -- per-frame work is needed here later it has to call self.BaseClass.Think(self) first.
 
 function PANEL:SetupHooks()
-    local panelRef = self
-
     -- Third-person camera hook
     hook.Add("ShouldDrawLocalPlayer", "PSItemCustomizationPanel_ShouldDrawLocalPlayer", function()
         return IsValid(self) and self:IsVisible()
     end)
 
-    hook.Add("CalcView", "PSItemCustomizationPanel_CalcView", function(ply, pos, angles, fov)
-        if not (IsValid(self) and self:IsVisible()) then return end
-        if ply ~= LocalPlayer() or not ply:Alive() then return end
-        
-        local rotDeg = (self.cameraRotationSlider and self.cameraRotationSlider:GetValue()) or 0
-        local yOffset = (self.cameraYSlider and self.cameraYSlider:GetValue()) or 0
-        local radius = (self.cameraZoomSlider and self.cameraZoomSlider:GetValue()) or self.orbitRadius
-        
-        -- CalcView runs every frame while the panel is open. The original built two
-        -- Vectors, a third from the addition, an Angle and a fresh `view` table on each
-        -- one. The table and the origin Vector are reused here and the intermediate
-        -- Vectors dropped in favour of plain components; the Angle stays as a `:Angle()`
-        -- call rather than hand-rolled trig, since getting Source's pitch convention
-        -- subtly wrong would break the camera for a single allocation.
-        self._viewTbl = self._viewTbl or {}
-        self._viewOrigin = self._viewOrigin or Vector()
-        self._viewDelta = self._viewDelta or Vector()
-
-        local theta = math.rad(rotDeg)
-        local sinPhi = math.sin(self.orbitPhi)
-
-        local p = ply:GetPos()
-        local tx, ty, tz = p.x, p.y, p.z + 64 + yOffset
-
-        local dx = radius * sinPhi * math.cos(theta)
-        local dy = radius * sinPhi * math.sin(theta)
-        local dz = radius * math.cos(self.orbitPhi)
-
-        local origin = self._viewOrigin
-        origin.x, origin.y, origin.z = tx + dx, ty + dy, tz + dz
-
-        -- target - origin, i.e. the direction from the camera back to the player.
-        local delta = self._viewDelta
-        delta.x, delta.y, delta.z = -dx, -dy, -dz
-
-        local view = self._viewTbl
-        view.origin = origin
-        view.angles = delta:Angle()
-        view.fov = fov
-        view.drawviewer = true
-        return view
+    -- Only while the window is up and the player is alive to orbit around.
+    self.Camera:Start(function()
+        local ply = LocalPlayer()
+        return IsValid(self) and self:IsVisible() and IsValid(ply) and ply:Alive()
     end)
+end
+
+-- Points the three camera sliders at the shared orbit.
+--
+-- Both builders below make their own trio -- the accessory path through CreateSliderPair, the
+-- playermodel path by hand -- so this is called from each rather than duplicated in both. The
+-- sliders no longer hold the camera's state; they write into it and are written back by a
+-- drag, which is what makes the mouse and the sliders one control instead of two.
+--
+-- OnValueChanged is WRAPPED, not replaced: CreateSliderPair puts the slider/box sync in there,
+-- and the playermodel path leaves it empty.
+function PANEL:BindCameraSliders()
+    local cam = self.Camera
+    if not cam then return end
+
+    local function bind(slider, field)
+        if not IsValid(slider) then return end
+
+        local inner = slider.OnValueChanged
+        slider.OnValueChanged = function(s, val, ...)
+            if inner then inner(s, val, ...) end
+            cam[field] = tonumber(val) or cam[field]
+        end
+
+        -- Seeded from the camera rather than from a literal, so rebuilding the controls for a
+        -- second item does not snap a camera the player has already moved back to its default.
+        slider:SetValue(cam[field])
+    end
+
+    bind(self.cameraRotationSlider, "rot")
+    bind(self.cameraYSlider, "height")
+    bind(self.cameraZoomSlider, "radius")
 end
 
 -- ============================================================================
@@ -476,9 +501,11 @@ function PANEL:CreateAccessorySliders()
         end
     end
     
+    self:BindCameraSliders()
+
     -- Store Y position for buttons
     self._controlsEndY = y + 32
-    
+
     -- Disable all controls initially (waiting for server data)
     self:SetControlsEnabled(false)
 end
@@ -619,10 +646,12 @@ function PANEL:CreatePlayermodelControls()
     self.cameraZoomSlider:SetDecimals(0)
     self.cameraZoomSlider:SetValue(self.orbitRadius)
     y = y + 35
-    
+
+    self:BindCameraSliders()
+
     -- Store Y position for buttons
     self._controlsEndY = y
-    
+
     -- Disable all controls initially (waiting for server data)
     self:SetControlsEnabled(false)
 end
@@ -1769,7 +1798,12 @@ end
 
 function PANEL:OnRemove()
     gui.EnableScreenClicker(false)
-    
+
+    -- The catcher is not a child of this panel -- it has to be, to sit underneath it -- so
+    -- nothing removes it automatically. Left behind it would go on swallowing clicks over the
+    -- whole screen for the rest of the session.
+    if IsValid(self.Orbit) then self.Orbit:Remove() end
+
     -- Remove from global panel list
     if PS_ActiveCustomizationPanels then
         for i, panel in ipairs(PS_ActiveCustomizationPanels) do
@@ -1782,7 +1816,7 @@ function PANEL:OnRemove()
     
     -- Remove hooks
     hook.Remove("ShouldDrawLocalPlayer", "PSItemCustomizationPanel_ShouldDrawLocalPlayer")
-    hook.Remove("CalcView", "PSItemCustomizationPanel_CalcView")
+    if self.Camera then self.Camera:Stop() end
     
     -- Cleanup preview
     self:DisablePreview(true)

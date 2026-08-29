@@ -170,6 +170,43 @@ function PS_NormalizeMods(mods)
 		changed = true
 	end
 
+	-- playercolor as a Vector, or as the STRING a Vector turns into on the way through JSON.
+	--
+	-- Item files write `playercolor = Vector(1, 1, 1)`, and the equip path persists an item's
+	-- DefaultModifications verbatim the first time it is read -- so util.TableToJSON gets a
+	-- Vector, which it cannot represent, and writes tostring(Vector) instead. Rows in the wild
+	-- read `"playercolor":"[1 1 1]"`.
+	--
+	-- Reading that back is silent and wrong. ReadRGB tests `color.x ~= nil`, and indexing a
+	-- STRING with .x goes to the string metatable and returns nil rather than erroring, so it
+	-- falls through to `color.r or color[1]` -- also nil -- and defaults to 255,255,255. Every
+	-- such row therefore reads as WHITE, and because the key is present rather than absent,
+	-- ApplyModelSettings actively paints the player white instead of leaving their colour
+	-- alone. For Vector(1,1,1) that is accidentally right; for any item shipping a coloured
+	-- default it silently throws the colour away.
+	--
+	-- Both forms are normalised 0-1, so they scale up to the 0-255 array everything else uses.
+	if mods.playercolor ~= nil then
+		local pc = mods.playercolor
+		local x, y, z
+
+		if type(pc) == "Vector" then
+			x, y, z = pc.x, pc.y, pc.z
+		elseif isstring(pc) then
+			local a, b, c = string.match(pc, "^%s*%[?%s*(-?[%d%.]+)%s+(-?[%d%.]+)%s+(-?[%d%.]+)%s*%]?%s*$")
+			x, y, z = tonumber(a), tonumber(b), tonumber(c)
+		end
+
+		if x and y and z then
+			mods.playercolor = {
+				math.Clamp(math.Round(x * 255), 0, 255),
+				math.Clamp(math.Round(y * 255), 0, 255),
+				math.Clamp(math.Round(z * 255), 0, 255),
+			}
+			changed = true
+		end
+	end
+
 	return mods, changed
 end
 
@@ -347,6 +384,28 @@ function PS.IsPlayermodelItem(ITEM)
 	if ITEM.TYPE then return ITEM.TYPE == "playermodel" end
 
 	return not (ITEM.Attachment or ITEM.Bone or ITEM.WeaponClass or ITEM.NoPreview)
+end
+
+-- Does this item belong in a loadout?
+--
+-- A loadout is an APPEARANCE: a playermodel and the things hung on it. Everything else in the
+-- shop is equipped for its own reasons and on its own schedule --
+--
+--   weapons    usually gags, handed out and taken away by their own rules
+--   powerups   always on, not something an outfit turns off
+--   trails     wanted deliberately, not as a side effect of changing clothes
+--
+-- Identified by base rather than by category name, because the base is what the item actually
+-- is: ApplyModelSettings means the playermodel base, ApplyAccessorySettings means the accessory
+-- base, and those two are exactly the ones a loadout knows how to show without persisting.
+--
+-- This is also what keeps a loadout from breaking things it never asked about. Taking one off
+-- restores the owned set, and the restore path cannot run OnEquip -- so an owned powerup pulled
+-- into that path came back as a clientside model and nothing else, leaving the player un-shrunk
+-- by an outfit change. Out of scope entirely, and the problem does not arise.
+function PS.IsLoadoutItem(ITEM)
+	if not istable(ITEM) then return false end
+	return (ITEM.ApplyModelSettings or ITEM.ApplyAccessorySettings) and true or false
 end
 
 function PS:ApplyColorToPlayer(ply, color, useColor2)

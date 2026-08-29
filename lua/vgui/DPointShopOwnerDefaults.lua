@@ -1,6 +1,21 @@
 -- Owner-only panel for editing per-item server defaults.
 -- Opened from the item dropdown ("Edit Default..."), visible to ULX "owner" group only.
 -- Has live accessory preview and camera orbit controls.
+--
+-- NOT THEMED, DELIBERATELY. ps-check: unthemed-by-design
+--
+-- Every other panel in the addon draws through PS.Theme, so a look -- a shipped preset, a
+-- player's own palette, or one somebody was handed and dropped in -- decides what it looks
+-- like. This one does not. Its colours and sizes are written here and stay here.
+--
+-- The reason is what this panel IS. It edits the defaults every player inherits, and it is the
+-- tool you reach for when something is already wrong. A theme that made text invisible, or a
+-- hue swing that put white on white, would take the fixing tool down with the thing it fixes.
+-- An owner tool that cannot be restyled cannot be made unusable by a restyle.
+--
+-- So the Color() literals in the paint functions below are not an oversight and the static
+-- checker is told to leave them alone. Anyone tidying this into PS.Theme is removing the
+-- property it was built for.
 
 local PANEL = {}
 
@@ -17,6 +32,14 @@ function PANEL:Init()
     self._sliders  = {}
     self.orbitRadius = 60
 
+    -- The shared orbit camera, same as the inspector and the customization panel. This tool
+    -- had a third copy of the identical CalcView. It stays slider-driven -- no drag, no wheel
+    -- -- because that is what it had; sharing the camera is not a reason to change the tool.
+    self.Camera = PS.UI.Orbit("OwnerDefaults", {
+        rot = 0, height = 0, radius = self.orbitRadius,
+        minRadius = 20, maxRadius = 300,
+    })
+
     self:SetupHooks()
 end
 
@@ -29,46 +52,9 @@ function PANEL:SetupHooks()
         return IsValid(self) and self:IsVisible()
     end)
 
-    hook.Add("CalcView", "PSOwnerDefaults_CalcView", function(ply, pos, angles, fov)
-        if not (IsValid(self) and self:IsVisible()) then return end
-        if ply ~= LocalPlayer() or not ply:Alive() then return end
-
-        local sl = self._sliders
-        local rotDeg = sl.camRot   and sl.camRot:GetValue()   or 0
-        local yOff   = sl.camY     and sl.camY:GetValue()     or 0
-        local radius = sl.camZoom  and sl.camZoom:GetValue()  or self.orbitRadius
-
-        -- Reused across frames rather than rebuilt. See the matching comment in
-        -- DPointShopItemCustomization's CalcView: this runs every frame while the panel is
-        -- open and was allocating three Vectors, an Angle and a table each time.
-        self._viewTbl = self._viewTbl or {}
-        self._viewOrigin = self._viewOrigin or Vector()
-        self._viewDelta = self._viewDelta or Vector()
-
-        local theta  = math.rad(rotDeg)
-        local phi    = math.pi / 2
-        local sinPhi = math.sin(phi)
-
-        local p = ply:GetPos()
-        local tx, ty, tz = p.x, p.y, p.z + 64 + yOff
-
-        local dx = radius * sinPhi * math.cos(theta)
-        local dy = radius * sinPhi * math.sin(theta)
-        local dz = radius * math.cos(phi)
-
-        local origin = self._viewOrigin
-        origin.x, origin.y, origin.z = tx + dx, ty + dy, tz + dz
-
-        -- target - origin, i.e. the direction from the camera back to the player.
-        local delta = self._viewDelta
-        delta.x, delta.y, delta.z = -dx, -dy, -dz
-
-        local view = self._viewTbl
-        view.origin   = origin
-        view.angles   = delta:Angle()
-        view.fov      = fov
-        view.drawviewer = true
-        return view
+    self.Camera:Start(function()
+        local ply = LocalPlayer()
+        return IsValid(self) and self:IsVisible() and IsValid(ply) and ply:Alive()
     end)
 end
 
@@ -245,9 +231,12 @@ function PANEL:SetItem(item)
 
     Spacer(8)
     SectionTitle("Camera")
-    Slider("Rotation", "camRot",  0,   360, 1)
-    Slider("Height",   "camY",   -100, 100, 1)
-    Slider("Zoom",     "camZoom", 20,  300, 0):SetValue(self.orbitRadius)
+    -- These three write into the shared orbit rather than being read out of by a CalcView of
+    -- this panel's own. Seeded from the camera so a rebuild does not reset it.
+    local cam = self.Camera
+    Slider("Rotation", "camRot",  0,   360, 1, function(v) cam.rot    = v end):SetValue(cam.rot)
+    Slider("Height",   "camY",   -100, 100, 1, function(v) cam.height = v end):SetValue(cam.height)
+    Slider("Zoom",     "camZoom", 20,  300, 0, function(v) cam.radius = v end):SetValue(cam.radius)
 
     Spacer(10)
 
@@ -365,7 +354,7 @@ end
 
 function PANEL:OnClose()
     hook.Remove("ShouldDrawLocalPlayer", "PSOwnerDefaults_DrawSelf")
-    hook.Remove("CalcView", "PSOwnerDefaults_CalcView")
+    if self.Camera then self.Camera:Stop() end
     self:RestoreOriginal()
     -- Remove preview model if we added it and the player doesn't own/equip the item
     if self._addedPreviewModel and not self._ownedBeforeOpen then

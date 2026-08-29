@@ -101,6 +101,23 @@ def line_of(text, offset):
     return text[:offset].count("\n") + 1
 
 
+# A file can opt out of the two STYLE checks by carrying this marker in a comment.
+#
+# Only paint allocation and seeding, and only because there is one honest reason to want it:
+# the owner defaults panel is deliberately not themed, so a bad look cannot take down the tool
+# you fix a bad look with. Thirteen permanent findings against a decision that was made on
+# purpose is how a count stops being read.
+#
+# The marker lives in the FILE rather than in a list here, so the reason sits next to the code
+# and travels with it. A list in this file would be a set of paths nobody can explain a year
+# from now.
+OPT_OUT = "ps-check: unthemed-by-design"
+
+
+def unthemed(path):
+    return OPT_OUT in read(path)
+
+
 # ---------------------------------------------------------------------------
 # CHECKS
 # ---------------------------------------------------------------------------
@@ -189,6 +206,9 @@ def check_paint_allocation(files):
     """
     problems = []
     for path in files:
+        if unthemed(path):
+            continue
+
         lines = read(path).split("\n")
         in_paint, depth, started = False, 0, 0
 
@@ -218,9 +238,24 @@ def check_seeding(files):
     has been wired up. So filling a panel in with its current values arrives at the caller as
     the user having changed every one of them. That is what made opening the layout panel
     count as editing the theme.
+
+    A guard does not have to be named _seeding, and insisting on the name reported five false
+    alarms in the customization panel - which is worse than not checking, because a count that
+    is mostly noise stops being read. Three shapes are accepted, because all three make a
+    spurious callback harmless:
+
+      _seeding        the flag this codebase uses, cleared on the next frame
+      _syncing        the same idea under another name, used by the slider/box pairs
+      an equality test  `if abs(current - val) > 1e-6` - a redundant fire writes the value
+                        that is already there, so the guard is the comparison itself
     """
+    GUARDS = ("_seeding", "_syncing", "_resetting")
+
     problems = []
     for path in files:
+        if unthemed(path):
+            continue
+
         lines = read(path).split("\n")
         for i, raw in enumerate(lines):
             if raw.strip().startswith("--"):
@@ -232,11 +267,22 @@ def check_seeding(files):
             if not re.search(r"OnValueChanged|OnSelect|OnChange", window):
                 continue
 
-            around = "\n".join(lines[max(0, i - 4):i + 16])
-            if "_seeding" not in around:
-                problems.append(
-                    f"{path}:{i + 1}: control seeded next to a change callback with no "
-                    f"_seeding guard")
+            # Reaches into the callback BODY, not just its signature. The guard is the first
+            # line of the callback by convention, but the callback itself can start a dozen
+            # lines after the SetValue that seeds it - at +16 this stopped two lines short of
+            # a real guard and reported it as missing.
+            around = "\n".join(lines[max(0, i - 4):i + 26])
+
+            if any(g in around for g in GUARDS):
+                continue
+
+            # An equality or epsilon test on the value being written. A callback that only
+            # assigns when the value actually differs cannot loop on its own seed.
+            if re.search(r"math\.abs\(.*\)\s*>|~=\s*val\b|val\s*~=", around):
+                continue
+
+            problems.append(
+                f"{path}:{i + 1}: control seeded next to a change callback with no guard")
     return problems
 
 
