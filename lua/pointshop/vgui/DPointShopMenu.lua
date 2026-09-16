@@ -61,7 +61,7 @@ function PANEL:Init()
 			self:MouseCapture(true)
 		end
 	end
-	sizer.OnMouseReleased = function(s, code)
+	self.OnMouseReleased = function(s, code)
 		self.Sizing = nil
 		self:MouseCapture(false)
 	end

@@ -188,10 +188,9 @@ function Player:PS_AddClientsideModel(item_id)
 	local modifications = self.PS_Items and self.PS_Items[item_id] and self.PS_Items[item_id].Modifiers or nil
 	-- Fallback: if the player's PS_Items doesn't contain modifiers yet (race condition),
 	-- try the temporary PS_AccessoryCustomizations cache populated from server broadcasts.
-	if not modifications and PS_AccessoryCustomizations and PS_AccessoryCustomizations[self] and ITEM and ITEM.Model then
-		local key = tostring(ITEM.Model)
-		if PS_AccessoryCustomizations[self][key] then
-			modifications = PS_AccessoryCustomizations[self][key]
+	if not modifications and PS_AccessoryCustomizations and PS_AccessoryCustomizations[self] and ITEM then
+		if PS_AccessoryCustomizations[self][item_id] then
+			modifications = PS_AccessoryCustomizations[self][item_id]
 		end
 	end
 	local mdl = ClientsideModel(ITEM.Model, RENDERGROUP_OPAQUE)

@@ -249,7 +249,7 @@ function PANEL:Init()
 end
 
 function PANEL:Think()
-    if IsValid(self.Orbit) then self.Orbit:OrbitThink() end
+    if IsValid(self.Orbit) and self.Orbit.OrbitThink then self.Orbit:OrbitThink() end
 end
 
 

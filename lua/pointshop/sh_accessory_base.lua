@@ -122,7 +122,7 @@ function BASE:ModifyClientsideModel(ply, model, pos, ang, modifications)
                 ox = off[1] or 0
                 oy = off[2] or 0
                 oz = off[3] or 0
-            elseif type(off) == "Vector" or tostring(type(off)) == "Vector" then
+            elseif isvector(off) then
                 ox, oy, oz = off.x or 0, off.y or 0, off.z or 0
             end
         end
@@ -136,7 +136,7 @@ function BASE:ModifyClientsideModel(ply, model, pos, ang, modifications)
                 ap = aang[1] or 0
                 ay = aang[2] or 0
                 ar = aang[3] or 0
-            elseif type(aang) == "Angle" or tostring(type(aang)) == "Angle" then
+            elseif isangle(aang) then
                 ap, ay, ar = aang.p or 0, aang.y or 0, aang.r or 0
             end
         end

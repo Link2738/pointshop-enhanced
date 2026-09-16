@@ -203,6 +203,7 @@ function PS:ToggleMenu(forceOpen)
 	elseif PS.ShopMenu:IsVisible() then
 		PS.ShopMenu:Hide()
 		gui.EnableScreenClicker(false)
+		if IsValid(PS._ItemPopupMenu) then PS._ItemPopupMenu:Remove() end
 	else
 		PS.ShopMenu:Show()
 		gui.EnableScreenClicker(true)
