@@ -169,7 +169,7 @@ T.Metrics = {
 	CardW    = 208,
 	CardPad  = 8,
 	CardMin  = 150,
-	CardMax  = 230,
+	CardMax  = 550,
 	CardMinCols = 2,
 	CardMaxCols = 8,
 
@@ -717,6 +717,10 @@ T.Selectable = {
 		gloss = T.CategoryIdleGloss, glossHover = T.CategoryIdleGlossHover,
 		border = T.CategoryIdleBorder, borderHover = T.CategoryIdleBorderHover,
 	},
+	-- General window frame settings
+	Frame = {
+		ghostClose = true,
+	},
 }
 
 -- `gloss` and `glow` are optional - a style without them simply skips those layers, which
@@ -766,6 +770,11 @@ T.Action = {
 		gloss = T.AccentGloss, glossHover = T.AccentGlossHover,
 		glow = T.AccentGlow, glowLayers = { 100 },
 		border = T.AccentBorder, text = T.ButtonText, shadow = T.Shadow,
+	},
+	Clear = {
+		radius = "RadiusSm", lerp = 10, font = "PS_Default",
+		fill = Color(0, 0, 0, 0), fillHover = Color(255, 255, 255, 10),
+		border = Color(0, 0, 0, 0), text = T.ButtonText, shadow = T.Shadow,
 	},
 }
 
@@ -1005,6 +1014,12 @@ end
 function T.PaintScrollGrip(panel, w, h)
 	local col = panel:IsHovered() and T.ScrollGripHover or T.ScrollGrip
 	draw.RoundedBox(T.Metrics.RadiusSm, 2, 0, w - 4, h, col)
+	
+	surface.SetDrawColor(0, 0, 0, 100)
+	local cy = math.floor(h / 2)
+	surface.DrawRect(6, cy - 4, w - 12, 1)
+	surface.DrawRect(6, cy, w - 12, 1)
+	surface.DrawRect(6, cy + 4, w - 12, 1)
 end
 
 -- List row. `index` drives the alternating stripe; nil for a list that does not alternate.
@@ -1230,26 +1245,14 @@ local UNSCALED = {
 --
 -- Reads the BASE, so nothing here depends on the scaled output.
 function T.Scale()
-	local ref = METRIC_BASE.RefW
-	if not ref or ref <= 0 then return 1 end
-
-	local w = math.Clamp(
-		ScrW() * METRIC_BASE.FrameWScale + METRIC_BASE.FrameWOffset,
-		METRIC_BASE.FrameWMin, METRIC_BASE.FrameWMax)
-
-	local s = math.Clamp(math.min(w, ScrW()) / ref,
+	-- The original logic scaled the entire UI based on the frame's width (w / RefW),
+	-- which meant resizing the layout acted like a magnifying glass rather than a flex container.
+	-- We now scale by screen resolution against a standard 1080p baseline (1920px wide).
+	
+	local s = math.Clamp(ScrW() / 1920,
 		METRIC_BASE.ScaleMin or 0.5, METRIC_BASE.ScaleMax or 3)
 
 	-- Quantised to 5% steps.
-	--
-	-- The scale used to move only when the monitor did, which is rare. It now moves whenever
-	-- the window width does -- so dragging a size slider would produce a different scale on
-	-- every tick, and every one of those rebuilds eleven fonts. That is the per-frame
-	-- surface.CreateFont problem arriving through a new door.
-	--
-	-- Steps make it a staircase instead: a drag crosses a handful of values rather than
-	-- hundreds, fonts rebuild a handful of times, and the sizes in between were sub-pixel
-	-- differences nobody could see anyway.
 	return math.Round(s * 20) / 20
 end
 
@@ -1299,6 +1302,7 @@ local activePreset = nil
 -- file here, a gamemode, an addon -- loads after that. Without this the saved choice would
 -- be dropped on every join and the player would silently get the shipped look back.
 local pendingPreset = nil
+local pendingPresetSizing = nil
 
 function T.RegisterPreset(id, def)
 	if not isstring(id) or not istable(def) then return end
@@ -1306,7 +1310,8 @@ function T.RegisterPreset(id, def)
 
 	if pendingPreset == id then
 		pendingPreset = nil
-		T.SetPreset(id)
+		T.SetPreset(id, pendingPresetSizing)
+		pendingPresetSizing = nil
 	end
 end
 
@@ -1338,12 +1343,12 @@ local ApplyServerLayer
 -- the two changed the colours and left the geometry where it was.
 --
 -- A house size is what you get before choosing; choosing is more specific, so it wins.
-local function ApplyMetrics(preset)
+local function ApplyMetrics(preset, ignoreSizing)
 	for k, v in pairs(METRIC_DEFAULTS) do METRIC_BASE[k] = v end
 
 	if ApplyServerLayer then ApplyServerLayer() end
 
-	if preset and istable(preset.metrics) then
+	if preset and istable(preset.metrics) and not ignoreSizing then
 		for k, v in pairs(preset.metrics) do
 			if METRIC_DEFAULTS[k] ~= nil and isnumber(v) then METRIC_BASE[k] = v end
 		end
@@ -1419,8 +1424,8 @@ end
 local METRIC_BOUNDS = {
 	FrameWScale = { 0, 1 },   FrameHScale  = { 0, 1 },
 	FrameWOffset = { -4000, 4000 }, FrameHOffset = { -4000, 4000 },
-	FrameWMin = { 320, 4000 }, FrameWMax = { 320, 4000 },
-	FrameHMin = { 240, 4000 }, FrameHMax = { 240, 4000 },
+	FrameWMin = { 550, 4000 }, FrameWMax = { 550, 4000 },
+	FrameHMin = { 420, 4000 }, FrameHMax = { 420, 4000 },
 }
 
 -- The house size for the look currently selected.
@@ -1709,7 +1714,7 @@ end
 -- name; arriving at another unpacks whatever was filed under that one, or nothing if it has
 -- never been touched -- which is what makes a freshly chosen look actually look like itself.
 -- Going back returns the edits you left there.
-function T.SetPreset(id)
+function T.SetPreset(id, ignoreSizing)
 	-- CUSTOM is a slot rather than a registered preset, so it is not in T.Presets.
 	if id and id ~= CUSTOM and not T.Presets[id] then return false end
 
@@ -1736,7 +1741,7 @@ function T.SetPreset(id)
 	-- while it happens to be selected.
 	local presetMetrics = id ~= CUSTOM and id and T.Presets[id] and T.Presets[id].metrics
 
-	if istable(presetMetrics) then
+	if istable(presetMetrics) and not ignoreSizing then
 		customFrame = table.Copy(presetMetrics)
 	end
 
@@ -1744,7 +1749,7 @@ function T.SetPreset(id)
 
 	local preset = id ~= CUSTOM and id and T.Presets[id] or nil
 
-	ApplyMetrics(preset)
+	ApplyMetrics(preset, ignoreSizing)
 
 	-- Custom applies the styles it was seeded with. Everything else applies its own, and a
 	-- look with none gets the defaults back -- which is what ApplyStyles does with nil.
@@ -2162,12 +2167,15 @@ function T.Load()
 	-- slot if that is what was selected, and leaves the read-only looks untouched by it.
 	if isstring(tbl.preset) then
 		if tbl.preset == CUSTOM or T.Presets[tbl.preset] then
-			T.SetPreset(tbl.preset)
+			-- If the user has explicitly saved custom sizing, do not let the preset overwrite it on load
+			local hasCustomSizing = istable(tbl.metrics) and next(tbl.metrics) ~= nil
+			T.SetPreset(tbl.preset, hasCustomSizing)
 		else
 			-- Not registered yet, or gone. Held for RegisterPreset to pick up; if nothing
 			-- ever claims it the player just gets the shipped look, which is the right
 			-- outcome for a preset whose addon was removed.
 			pendingPreset = tbl.preset
+			pendingPresetSizing = istable(tbl.metrics) and next(tbl.metrics) ~= nil
 		end
 	end
 

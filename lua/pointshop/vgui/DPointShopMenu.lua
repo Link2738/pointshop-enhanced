@@ -26,20 +26,70 @@ local function FrameSize()
 	-- Clamped to the screen last, after the look's own min and max. A window larger than
 	-- the monitor is never right, whatever a look or an owner asked for, and PointShop 1
 	-- did the same -- its 1024x768 was written as Clamp(1024, 0, ScrW()).
-	return math.floor(math.min(math.Clamp(ScrW() * M.FrameWScale + M.FrameWOffset, M.FrameWMin, M.FrameWMax), ScrW())),
-	       math.floor(math.min(math.Clamp(ScrH() * M.FrameHScale + M.FrameHOffset, M.FrameHMin, M.FrameHMax), ScrH()))
+	return math.floor(math.max(550, math.min(math.Clamp(ScrW() * M.FrameWScale + M.FrameWOffset, M.FrameWMin, M.FrameWMax), ScrW()))),
+	       math.floor(math.max(420, math.min(math.Clamp(ScrH() * M.FrameHScale + M.FrameHOffset, M.FrameHMin, M.FrameHMax), ScrH())))
 end
 
 function PANEL:Init()
 	self:SetSize(FrameSize())
 
+	self:SetTitle("")
+	self:SetDraggable(true)
+	
+	local M = PS.Theme.Metrics
+	self:SetSizable(true)
+	self:SetMinWidth(math.max(550, M.FrameWMin or 550))
+	self:SetMinHeight(math.max(420, M.FrameHMin or 420))
+	self:ShowCloseButton(false)
+
+	-- Create a dedicated Sizer panel so the scroll panels don't swallow the drag clicks
+	local sizer = vgui.Create("DPanel", self)
+	sizer:SetSize(20, 20)
+	sizer:SetZPos(32767) -- Ensure it is always on top of ItemScroll
+	sizer.Paint = function(s, w, h)
+		surface.SetDrawColor(255, 255, 255, 100)
+		local x, y = w - 2, h - 2
+		surface.DrawLine(x - 4, y, x, y - 4)
+		surface.DrawLine(x - 8, y, x, y - 8)
+		surface.DrawLine(x - 12, y, x, y - 12)
+	end
+	sizer.OnCursorEntered = function() self:SetCursor("sizenwse") end
+	sizer.OnCursorExited = function() self:SetCursor("arrow") end
+	sizer.OnMousePressed = function(s, code)
+		if code == MOUSE_LEFT then
+			self.Sizing = { gui.MouseX() - self:GetWide(), gui.MouseY() - self:GetTall() }
+			self:MouseCapture(true)
+		end
+	end
+	sizer.OnMouseReleased = function(s, code)
+		self.Sizing = nil
+		self:MouseCapture(false)
+	end
+
 	-- Centred, then wherever it was last dragged. The old SetPos(20, ...) pinned it to the
 	-- left edge, which on an ultrawide put the shop in a corner with the map beside it.
 	PS.UI.RememberPosition(self, "menu")
-	self:SetTitle("")
-	self:SetDraggable(true)
-	self:SetSizable(false)
-	self:ShowCloseButton(false)
+
+	local oldLayout = self.PerformLayout
+	self.PerformLayout = function(s, w, h)
+		if oldLayout then oldLayout(s, w, h) end
+		
+		if IsValid(sizer) then
+			sizer:SetPos(w - 20, h - 20)
+		end
+		
+		-- Dynamically reflow items on resize
+		if IsValid(s.ItemGrid) and IsValid(s.ItemScroll) then
+			local gridW = math.max(s.ItemScroll:GetWide() - M.ScrollW, 200)
+			local perRow = math.Clamp(math.floor(gridW / M.CardW), M.CardMinCols, M.CardMaxCols)
+			local cardSize = math.Clamp(math.floor(gridW / perRow) - M.CardPad, M.CardMin, math.max(550, M.CardMax or 550))
+			
+			for _, btn in ipairs(s.ItemGrid:GetChildren()) do
+				btn:SetSize(cardSize, cardSize)
+			end
+			s.ItemGrid:InvalidateLayout()
+		end
+	end
 
 	-- Flush to the top. DFrame reserves room at the top of its dock area for the title bar it
 	-- is no longer drawing, so the header docked below it and left a band of bare frame above
@@ -115,38 +165,31 @@ function PANEL:Init()
 
 	local function HeaderButton(icon, style, onClick)
 		local btn = PS.UI.IconButton(self.Header, icon, style, onClick)
-		slot = slot + 1
+		btn:Dock(RIGHT)
 
-		-- Placed by Header.PerformLayout below; it must not place itself.
-		btn.PerformLayout = nil
+		btn.Paint = function(s, w, h)
+			local isGhost = PS.Theme.GetStyle and PS.Theme.GetStyle("Frame", "ghostClose")
+			local finalStyle = isGhost and "Clear" or style
+			PS.Theme.PaintAction(s, w, h, PS.Theme.Action[finalStyle] or PS.Theme.Action.Neutral)
+			if type(icon) == "function" then icon(w, h) end
+		end
+
+		local Mm = PS.Theme.Metrics
+		local topMargin = PS.UI.IconBtnY(Mm.HeaderH)
+		local rightMargin = (#self.HeaderButtons == 0) and Mm.IconInset or 0
+		btn:DockMargin(Mm.IconGap, topMargin, rightMargin, topMargin)
+
+		slot = slot + 1
 		table.insert(self.HeaderButtons, btn)
 		return btn
 	end
 
-	self.Header.PerformLayout = function(_, hw)
-		local Mm = PS.Theme.Metrics
-
-		for i, b in ipairs(self.HeaderButtons) do
-			if IsValid(b) then
-				local n = i - 1
-				b:SetSize(Mm.IconBtn, Mm.IconBtn)
-				b:SetPos(hw - Mm.Margin - (n + 1) * Mm.IconBtn - n * Mm.IconGap,
-					PS.UI.IconBtnY())
-			end
-		end
-	end
-
-	-- Icons come from PS.UI.GlyphIcon so the nudge table has one home. This file used to
-	-- carry its own copy of the same six lines, alongside an identical copy in UI.Frame's
-	-- close button -- three places to fix a centring problem.
 	local GlyphIcon = PS.UI.GlyphIcon
 
+	-- Close Button
 	HeaderButton(GlyphIcon("close"), "Danger", function() PS:ToggleMenu() end)
 
-	-- Appearance button. Everyone gets this one — it only changes what they see.
-	--
-	-- Its icon is a 2x2 of live palette swatches rather than a glyph, so the button shows the
-	-- current theme. That is also why IconButton takes a draw function and not a string.
+	-- Theme Button
 	self.themeBtn = HeaderButton(function(w, h)
 		local sw, pad = 7, 2
 		local ox, oy = w / 2 - sw - pad / 2, h / 2 - sw - pad / 2
@@ -154,10 +197,9 @@ function PANEL:Init()
 		local swatches = { T.Accent, T.PositiveFill, T.WarningFill, T.DangerFill }
 		for i = 1, 4 do
 			surface.SetDrawColor(swatches[i])
-			surface.DrawRect(ox + ((i - 1) % 2) * (sw + pad),
-				oy + math.floor((i - 1) / 2) * (sw + pad), sw, sw)
+			surface.DrawRect(ox + ((i - 1) % 2) * (sw + pad), oy + math.floor((i - 1) / 2) * (sw + pad), sw, sw)
 		end
-	end, "Neutral", function() PS.UI.Open("DPointShopTheme") end)
+	end, "Neutral", function() PS.UI.Toggle("DPointShopTheme") end)
 
 	-- Loadouts. Slides out from behind this window, so it is opened from this window.
 	--
@@ -500,7 +542,7 @@ function PANEL:PopulateItems()
 	-- Frame width again, for the same reason, less the margins and the scrollbar.
 	local gridW = math.max(self:GetWide() - M.Margin * 2 - M.ScrollW, 200)
 	local perRow = math.Clamp(math.floor(gridW / M.CardW), M.CardMinCols, M.CardMaxCols)
-	local cardSize = math.Clamp(math.floor(gridW / perRow) - M.CardPad, M.CardMin, M.CardMax)
+	local cardSize = math.Clamp(math.floor(gridW / perRow) - M.CardPad, M.CardMin, math.max(550, M.CardMax or 550))
 
 	for _, item in ipairs(items) do
 		local itemPanel = vgui.Create("DPointShopItem")
@@ -534,6 +576,14 @@ end
 -- are siblings, so they are one colour rather than two that drift.
 function PANEL:Paint(w, h)
 	PS.Theme.PaintFrame(w, h)
+end
+
+function PANEL:Think()
+	self.BaseClass.Think(self)
+	
+	if IsValid(self.LoadoutPanel) and self.LoadoutPanel.SyncToShop then
+		self.LoadoutPanel:SyncToShop()
+	end
 end
 
 vgui.Register('DPointShopMenu', PANEL, 'DFrame')

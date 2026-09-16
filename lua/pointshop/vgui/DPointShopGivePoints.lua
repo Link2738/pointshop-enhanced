@@ -4,12 +4,10 @@ function PANEL:Init()
 	local UI = PS.UI
 	local M  = PS.Theme.Metrics
 
-	-- The 144 was the whole window before it had a bar across the top. Adding the bar to it
-	-- rather than into it keeps the content area exactly the size it was.
 	UI.SetupFrame(self, {
 		title    = "Give",
 		w        = 300,
-		h        = 144 + UI.HeaderH(),
+		h        = 180 + UI.HeaderH(), -- Slightly taller to accommodate form margins comfortably
 		remember = "givepoints",
 	})
 
@@ -17,122 +15,82 @@ function PANEL:Init()
 	self:SetBackgroundBlur(true)
 	self:SetDrawOnTop(true)
 
-	local function Label(text)
-		local l = vgui.Create("DLabel", self)
-		l:SetText(text)
-		l:SetTextColor(PS.Theme.Text)
-		l:Dock(TOP)
-		l:DockMargin(M.Gap, 0, M.Gap, M.Gap)
-		l:SizeToContents()
-		return l
+	-- 1. Initialize Reactive State
+	self.State = Framework.UI.State({
+		uid = nil,
+		points = 0
+	})
+
+	local r = PS.UI.Rows(self)
+	
+	r:Header("Recipient")
+	local plyselector = r:Choice({
+		placeholder = "Select a player...",
+		options     = {},
+		get         = function() return self.State.uid end,
+		set         = function(val) self.State.uid = val end
+	})
+	for _, ply in ipairs(player.GetAll()) do
+		if ply ~= LocalPlayer() then
+			plyselector:AddChoice(ply:GetName(), ply:UniqueID())
+		end
 	end
 
-	Label("Player:")
-
-	local pselect = vgui.Create("DComboBox", self)
-	pselect:SetValue("Select A Player")
-	pselect:SetTall(M.ButtonH)
-	pselect:Dock(TOP)
-	pselect:DockMargin(M.Gap, 0, M.Gap, 0)
-	self.playerselect = pselect
-
-	self:FillPlayers()
-
-	Label(PS.Config.PointsName .. ":")
-
-	local pointsselector = vgui.Create("DNumberWang", self)
-	pointsselector:SetTextColor(Color(0, 0, 0, 255))
-	pointsselector:SetTall(M.ButtonH)
-	pointsselector:Dock(TOP)
-	pointsselector:DockMargin(M.Gap, 0, M.Gap, 0)
-	self.pselector = pointsselector
-
-	local btnlist = vgui.Create("DPanel", self)
-	btnlist:SetPaintBackground(false)
-	btnlist:SetTall(M.ButtonH)
-	btnlist:DockMargin(M.Gap, M.Gap, M.Gap, M.Gap)
-	btnlist:Dock(BOTTOM)
-
-	-- Widths set explicitly: UI.Button only sets a height, and a panel docked RIGHT keeps
-	-- whatever width it already had -- which for a bare DButton is its default, not anything
-	-- anyone chose. Derived from ButtonH so it scales with the rest.
-	local btnW = M.ButtonH * 3
-
-	local cancel = UI.Button(btnlist, "Cancel", "Neutral", function()
-		self:Close()
+	r:Header("Amount")
+	local pointsselector = r:Slider({
+		label = "Points to Give",
+		min   = 0,
+		max   = LocalPlayer():PS_GetPoints(),
+		get   = function() return self.State.points end,
+		set   = function(val) self.State.points = val end
+	})
+	
+	-- Binding: Red text if invalid amount
+	self.State:Subscribe("points", function(_, st)
+		if st.points < 1 or st.points > LocalPlayer():PS_GetPoints() then
+			pointsselector.TextArea:SetTextColor(Color(180, 0, 0, 255))
+		else
+			pointsselector.TextArea:SetTextColor(PS.Theme.Text)
+		end
 	end)
-	cancel:Dock(RIGHT)
-	cancel:SetWide(btnW)
-	cancel:DockMargin(M.Gap, 0, 0, 0)
-	self.cancel = cancel
 
-	local done = UI.Button(btnlist, "Send", "Positive", function()
-		self:Submit()
-		self:Close()
-	end)
-	done:Dock(RIGHT)
-	done:SetWide(btnW)
-	done:SetDisabled(true)
-	self.submit = done
+	r:Space(1)
 
-	-- Repainted from the disabled state rather than the style it was built with, so a Send
-	-- that cannot be pressed does not sit there looking pressable. SetDisabled alone blocks
-	-- the click and says nothing.
-	done.Paint = function(s, w, h)
-		local style = s:GetDisabled() and PS.Theme.Action.Neutral or PS.Theme.Action.Positive
-		PS.Theme.PaintAction(s, w, h, style, "Send")
+	-- Button Row
+	local btnRow = Framework.UI.HBox(self)
+	r:Custom(btnRow, M.ButtonH)
+	
+	local cancel = PS.UI.Button(nil, "Cancel", "Neutral", function() self:Close() end)
+	local done   = PS.UI.Button(nil, "Send", "Positive", function() self:Submit() end)
+	
+	btnRow:AddNode(cancel, 1)
+	btnRow:AddNode(done, 1)
+
+	-- Binding: Disable done button if invalid state
+	local function checkDisabled(_, st)
+		local invalid = (not st.uid) or (st.points < 1) or (st.points > LocalPlayer():PS_GetPoints())
+		done:SetDisabled(invalid)
 	end
-
-	self.selected_uid = nil
-	pselect.OnSelect = function(s, idx, val, data)
-		if data then self.selected_uid = data end
-
-		self:Update()
-	end
-
-	pointsselector.OnValueChanged = function()
-		self:Update()
-	end
-end
-
-function PANEL:FillPlayers()
-	for _, ply in pairs(player.GetAll()) do
-		if ply == LocalPlayer() then continue end
-		
-		self.playerselect:AddChoice(ply:Nick(), ply:UniqueID())
-	end
+	self.State:Subscribe("uid", checkDisabled)
+	self.State:Subscribe("points", checkDisabled)
 end
 
 function PANEL:Submit()
-	local other = false
-	
-	for _, ply in pairs(player.GetAll()) do
-		if tonumber(ply:UniqueID()) == tonumber(self.selected_uid) then
-			other = ply
+	local target
+	for _, ply in ipairs(player.GetAll()) do
+		if tonumber(ply:UniqueID()) == tonumber(self.State.uid) then
+			target = ply
+			break
 		end
 	end
 	
-	if not other then return end -- player could have left
+	if not target then return end -- player could have left
 
 	net.Start('PS_SendPoints')
-		net.WriteEntity(other)
-		net.WriteInt(tonumber(self.pselector:GetValue()), 32)
+		net.WriteEntity(target)
+		net.WriteInt(self.State.points, 32)
 	net.SendToServer()
-end
-
-function PANEL:Update()
-	local disabled = false
-
-	if not self.selected_uid then disabled = true end
-	
-	if (self.pselector:GetValue() < 1) or (self.pselector:GetValue() > LocalPlayer():PS_GetPoints()) then
-		disabled = true
-		self.pselector:SetTextColor(Color(180, 0, 0, 255))
-	else
-		self.pselector:SetTextColor(Color(0, 0, 0, 255))
-	end
-
-	self.submit:SetDisabled(disabled)
+	self:Close()
 end
 
 vgui.Register('DPointShopGivePoints', PANEL, 'DFrame')

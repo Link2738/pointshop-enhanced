@@ -92,21 +92,10 @@ function PANEL:Init()
 	self:SetMinHeight(300)
 
 	-- Player list with scrollbar
-	self.PlayerList = vgui.Create("DScrollPanel", self)
-	self.PlayerList:Dock(FILL)
-	-- Tighter at the sides than at the top and bottom. This is a wide window holding rows of
-	-- columns, and the horizontal room is what the content actually wants.
-	self.PlayerList:DockMargin(M.Gap, M.Gap, M.Gap, M.Gap)
-
-	-- A box on the body, like the shop's item grid and the appearance panel's columns. The
-	-- rows were painted straight onto the window.
-	self.PlayerList.Paint = function(_, w, h) PS.Theme.PaintPanelBody(w, h) end
+	self.PlayerListWrapper = PS.UI.ContentBox(self)
 	
-	local sbar = self.PlayerList:GetVBar()
-	sbar:SetWide(12)
-	sbar:SetHideButtons(true)
-	sbar.Paint = function(s, w, h) PS.Theme.PaintScrollTrack(w, h) end
-	sbar.btnGrip.Paint = function(s, w, h) PS.Theme.PaintScrollGrip(s, w, h) end
+	self.PlayerList = PS.UI.Scroll(self.PlayerListWrapper)
+	self.PlayerList:Dock(FILL)
 	
 	-- List container, in the scroll panel's CANVAS rather than parented to the scroll panel.
 	-- See the item windows below: parented directly, Dock(FILL) pins it to the viewport and
@@ -166,16 +155,22 @@ function PANEL:PopulatePlayerList()
 	local headerPanel = vgui.Create("DPanel", self.ListContainer)
 	headerPanel:SetTall(40)
 	headerPanel:Dock(TOP)
+	-- The actions column offset is derived from the button constants below rather than
+	-- hardcoded, so the header tracks the buttons when the theme's gap changes.
+	local hdrBtnW = 88
+	local hdrGap  = PS.Theme.Metrics.Gap
+	local actionsX = 3 * (hdrBtnW + hdrGap)
+
 	headerPanel.Paint = function(s, w, h)
 		surface.SetDrawColor(PS.Theme.RowAlt)
 		surface.DrawRect(0, 0, w, h)
 		surface.SetDrawColor(PS.Theme.Accent)
 		surface.DrawRect(0, h - 2, w, 2)
-		
+
 		draw.SimpleText("Player", "PS_DefaultBold", 15, h / 2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-		draw.SimpleText("Points", "PS_DefaultBold", w - 550, h / 2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-		draw.SimpleText("Items", "PS_DefaultBold", w - 450, h / 2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-		draw.SimpleText("Actions", "PS_DefaultBold", w - 410, h / 2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText("Points", "PS_DefaultBold", w - 480, h / 2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText("Items", "PS_DefaultBold", w - 380, h / 2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText("Actions", "PS_DefaultBold", w - actionsX, h / 2, PS.Theme.MenuRowText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 	end
 	
 	-- Player rows
@@ -218,8 +213,8 @@ function PANEL:AddPlayerRow(ply)
 		local points = summary and summary.points or "?"
 		local itemCount = summary and summary.items or "?"
 
-		draw.SimpleText(points, "PS_Default", w - 550, h / 2, PS.Theme.PointsText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
-		draw.SimpleText(itemCount, "PS_Default", w - 450, h / 2, PS.Theme.ButtonText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText(points, "PS_Default", w - 480, h / 2, PS.Theme.PointsText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		draw.SimpleText(itemCount, "PS_Default", w - 380, h / 2, PS.Theme.ButtonText, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 	end
 	
 	-- Laid out right to left by slot rather than from four written-down offsets. Removing the
@@ -300,17 +295,10 @@ function PANEL:_BuildItemsWindow(ply, owned)
 	end
 
 	-- Scrollable item list
-	local scroll = vgui.Create("DScrollPanel", frame)
+	local scrollWrapper = PS.UI.ContentBox(frame)
+	
+	local scroll = PS.UI.Scroll(scrollWrapper)
 	scroll:Dock(FILL)
-	scroll:DockMargin(PS.Theme.Metrics.Gap, PS.Theme.Metrics.Gap,
-		PS.Theme.Metrics.Gap, PS.Theme.Metrics.Gap)
-	scroll.Paint = function(_, w, h) PS.Theme.PaintPanelBody(w, h) end
-
-	local sbar = scroll:GetVBar()
-	sbar:SetWide(12)
-	sbar:SetHideButtons(true)
-	sbar.Paint = function(s, w, h) PS.Theme.PaintScrollTrack(w, h) end
-	sbar.btnGrip.Paint = function(s, w, h) PS.Theme.PaintScrollGrip(s, w, h) end
 
 	-- Added to the scroll panel's CANVAS, not parented to the scroll panel itself. Parented
 	-- directly it is a sibling of the canvas and of the scrollbar, so Dock(FILL) stretched it

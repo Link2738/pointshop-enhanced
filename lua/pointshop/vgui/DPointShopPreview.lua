@@ -233,78 +233,29 @@ function PANEL:DrawOtherModels()
 		return
 	end
 
+	-- The worn accessories, drawn through the same DrawAccessory the outfit path uses.
+	-- This was inline before: the same attachment/bone/position/draw sequence, duplicated
+	-- here and missing both the nil-ITEM guard and the per-accessory color modulation that
+	-- DrawAccessory handles.
 	if PS.ClientsideModels[ply] then
 		for item_id, model in pairs(PS.ClientsideModels[ply]) do
 			local ITEM = PS.Items[item_id]
-			
-			if not ITEM.Attachment and not ITEM.Bone then PS.ClientsideModels[ply][item_id] = nil continue end
-			
-			local pos = Vector()
-			local ang = Angle()
-			
-			if ITEM.Attachment then
-				local attach_id = self.Entity:LookupAttachment(ITEM.Attachment)
-				if not attach_id then continue end
-				
-				local attach = self.Entity:GetAttachment(attach_id)
-				
-				if not attach then continue end
-				
-				pos = attach.Pos
-				ang = attach.Ang
-			else
-				local bone_id = self.Entity:LookupBone(ITEM.Bone)
-				if not bone_id then continue end
-				
-				pos, ang = self.Entity:GetBonePosition(bone_id)
-			end
-			
-			model, pos, ang = ITEM:ModifyClientsideModel(ply, model, pos, ang)
-			
-			model:SetPos(pos)
-			model:SetAngles(ang)
-			
-			model:DrawModel()
+			if not ITEM then PS.ClientsideModels[ply][item_id] = nil continue end
+			self:DrawAccessory(ITEM, model)
 		end
 	end
-	
+
 	if PS.HoverModel then
 		local ITEM = PS.Items[PS.HoverModel]
-		
+		if not ITEM then return end
+
 		if ITEM.NoPreview then return end -- don't show
 		if ITEM.WeaponClass then return end -- hack for weapons
-		
+
 		if not ITEM.Attachment and not ITEM.Bone then -- must be a playermodel?
 			self:SetModel(ITEM.Model)
 		else
-			local model = PS.HoverModelClientsideModel
-			
-			local pos = Vector()
-			local ang = Angle()
-			
-			if ITEM.Attachment then
-				local attach_id = self.Entity:LookupAttachment(ITEM.Attachment)
-				if not attach_id then return end
-				
-				local attach = self.Entity:GetAttachment(attach_id)
-				
-				if not attach then return end
-				
-				pos = attach.Pos
-				ang = attach.Ang
-			else
-				local bone_id = self.Entity:LookupBone(ITEM.Bone)
-				if not bone_id then return end
-				
-				pos, ang = self.Entity:GetBonePosition(bone_id)
-			end
-			
-			model, pos, ang = ITEM:ModifyClientsideModel(ply, model, pos, ang)
-			
-			model:SetPos(pos)
-			model:SetAngles(ang)
-			
-			model:DrawModel()
+			self:DrawAccessory(ITEM, PS.HoverModelClientsideModel)
 		end
 	else
 		local currentModel = LocalPlayer():GetModel()

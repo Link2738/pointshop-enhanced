@@ -39,7 +39,6 @@ include "cl_theme_crimson.lua"
 -- Widget layer. After cl_theme.lua, which it paints through, and before the vgui files that
 -- build with it.
 include "cl_ui.lua"
-include "cl_layout.lua"
 
 -- Loadout storage. Below cl_ui.lua because the panel that reads it is built with that, and
 -- above the vgui includes for the same reason.
@@ -762,3 +761,6 @@ hook.Add('PostPlayerDraw', 'PS_PostPlayerDraw', function(ply)
 		end
 	end
 end)
+
+include "cl_framework.lua"
+include "vgui/DPointShopAuthModule.lua"

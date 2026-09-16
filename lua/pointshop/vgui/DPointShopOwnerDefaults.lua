@@ -17,6 +17,22 @@
 -- checker is told to leave them alone. Anyone tidying this into PS.Theme is removing the
 -- property it was built for.
 
+-- Hoisted so Paint functions do not allocate a fresh Color table every frame.
+-- Still hardcoded, still unthemed — just not per-frame garbage.
+local COL_BODY        = Color(28, 28, 32, 255)
+local COL_BORDER      = Color(180, 140, 30, 120)
+local COL_HEADER_BG   = Color(40, 32, 10, 255)
+local COL_HEADER_RULE = Color(180, 140, 30, 80)
+local COL_HEADER_TEXT = Color(220, 180, 80)
+local COL_SECTION     = Color(180, 140, 30)
+local COL_LABEL       = Color(200, 200, 200)
+local COL_SAVE_BORDER = Color(180, 140, 30, 200)
+local COL_SAVE_TEXT   = Color(255, 230, 150)
+local COL_DISC_BORDER = Color(120, 120, 120, 200)
+local COL_DISC_TEXT   = Color(220, 220, 220)
+local COL_CLR_BORDER  = Color(160, 70, 70, 200)
+local COL_CLR_TEXT    = Color(255, 180, 180)
+
 local PANEL = {}
 
 function PANEL:Init()
@@ -129,7 +145,7 @@ function PANEL:SetItem(item)
         local lbl = self:Add("DLabel")
         lbl:SetPos(baseX, y); lbl:SetSize(w, 18)
         lbl:SetFont("PS_DefaultBold")
-        lbl:SetTextColor(Color(180, 140, 30))
+        lbl:SetTextColor(COL_SECTION)
         lbl:SetText(txt)
         track(lbl); y = y + 20
     end
@@ -142,7 +158,7 @@ function PANEL:SetItem(item)
 
         local lbl = row:Add("DLabel")
         lbl:SetPos(0, 0); lbl:SetSize(90, 22)
-        lbl:SetText(label); lbl:SetTextColor(Color(200, 200, 200))
+        lbl:SetText(label); lbl:SetTextColor(COL_LABEL)
 
         local sl = row:Add("DNumSlider")
         sl:SetPos(88, 0); sl:SetSize(w - 88, 22)
@@ -257,8 +273,8 @@ function PANEL:SetItem(item)
         s._ha = Lerp(FrameTime() * 10, s._ha or 0, s:IsHovered() and 1 or 0)
         local b = 100 + s._ha * 25
         draw.RoundedBox(4, 0, 0, pw, ph, Color(b, b * 0.75, 20, 255))
-        surface.SetDrawColor(180, 140, 30, 200); surface.DrawOutlinedRect(0, 0, pw, ph)
-        draw.SimpleText("Save as Default", "PS_DefaultBold", pw/2, ph/2, Color(255, 230, 150), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        surface.SetDrawColor(COL_SAVE_BORDER); surface.DrawOutlinedRect(0, 0, pw, ph)
+        draw.SimpleText("Save as Default", "PS_DefaultBold", pw/2, ph/2, COL_SAVE_TEXT, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
     end
     track(saveBtn); y = y + 30
 
@@ -267,14 +283,14 @@ function PANEL:SetItem(item)
     discardBtn:SetPos(baseX, y); discardBtn:SetSize(w, 24); discardBtn:SetText("")
     discardBtn.DoClick = function()
         self:RestoreOriginal()
-        self:Remove()
+        self:Close()
     end
     discardBtn.Paint = function(s, pw, ph)
         s._ha = Lerp(FrameTime() * 10, s._ha or 0, s:IsHovered() and 1 or 0)
         local g = 65 + s._ha * 15
         draw.RoundedBox(4, 0, 0, pw, ph, Color(g, g, g, 255))
-        surface.SetDrawColor(120, 120, 120, 200); surface.DrawOutlinedRect(0, 0, pw, ph)
-        draw.SimpleText("Discard", "PS_Default", pw/2, ph/2, Color(220, 220, 220), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        surface.SetDrawColor(COL_DISC_BORDER); surface.DrawOutlinedRect(0, 0, pw, ph)
+        draw.SimpleText("Discard", "PS_Default", pw/2, ph/2, COL_DISC_TEXT, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
     end
     track(discardBtn); y = y + 28
 
@@ -293,8 +309,8 @@ function PANEL:SetItem(item)
         s._ha = Lerp(FrameTime() * 10, s._ha or 0, s:IsHovered() and 1 or 0)
         local r = 100 + s._ha * 25
         draw.RoundedBox(4, 0, 0, pw, ph, Color(r, 35, 35, 255))
-        surface.SetDrawColor(160, 70, 70, 200); surface.DrawOutlinedRect(0, 0, pw, ph)
-        draw.SimpleText("Clear Default", "PS_Default", pw/2, ph/2, Color(255, 180, 180), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        surface.SetDrawColor(COL_CLR_BORDER); surface.DrawOutlinedRect(0, 0, pw, ph)
+        draw.SimpleText("Clear Default", "PS_Default", pw/2, ph/2, COL_CLR_TEXT, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
     end
     track(clearBtn); y = y + 28
 
@@ -370,14 +386,14 @@ end
 -- ============================================================================
 
 function PANEL:Paint(w, h)
-    draw.RoundedBox(6, 0, 0, w, h, Color(28, 28, 32, 255))
-    surface.SetDrawColor(180, 140, 30, 120)
+    draw.RoundedBox(6, 0, 0, w, h, COL_BODY)
+    surface.SetDrawColor(COL_BORDER)
     surface.DrawOutlinedRect(0, 0, w, h)
-    draw.RoundedBoxEx(6, 0, 0, w, 28, Color(40, 32, 10, 255), true, true, false, false)
-    surface.SetDrawColor(180, 140, 30, 80)
+    draw.RoundedBoxEx(6, 0, 0, w, 28, COL_HEADER_BG, true, true, false, false)
+    surface.SetDrawColor(COL_HEADER_RULE)
     surface.DrawRect(0, 28, w, 1)
     draw.SimpleText("Edit Item Default  —  " .. (self.itemID or ""), "PS_DefaultBold",
-        w / 2, 14, Color(220, 180, 80), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        w / 2, 14, COL_HEADER_TEXT, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 end
 
 vgui.Register("PSOwnerDefaultsPanel", PANEL, "DFrame")

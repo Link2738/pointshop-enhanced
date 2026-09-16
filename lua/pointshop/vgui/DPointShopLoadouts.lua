@@ -52,8 +52,13 @@ function PANEL:Init()
 
 	self.Preview = vgui.Create("DPointShopPreview", self)
 
-	self.SlotList = vgui.Create("DScrollPanel", self)
-	self.SlotList.Paint = function(_, pw, ph) T.PaintListBox(pw, ph) end
+	self.SlotListWrapper = PS.UI.ContentBox(self)
+	self.SlotListWrapper:Dock(NODOCK) -- We manually position it
+
+	local scroll
+	scroll, self.SlotList = PS.UI.ControlColumn(self.SlotListWrapper)
+	self.SlotList:SetGap(M.Gap)
+	self.SlotList:DockMargin(M.Gap, M.Gap, M.Gap, M.Gap)
 
 	-- Re-read from disk on open. The slots are files now, so someone can drop one in and
 	-- rename it into place while the game is running -- and it should be there when they open
@@ -77,8 +82,8 @@ function PANEL:PerformLayout(w, h)
 	local M = PS.Theme.Metrics
 	local top = self.StripH + self.Edge
 
-	self.SlotList:SetPos(self.Edge, top)
-	self.SlotList:SetSize(self.SlotW, h - top - self.Edge)
+	self.SlotListWrapper:SetPos(self.Edge, top)
+	self.SlotListWrapper:SetSize(self.SlotW, h - top - self.Edge)
 
 	local px = self.Edge * 2 + self.SlotW
 	self.Preview:SetPos(px, top)
@@ -98,10 +103,8 @@ function PANEL:BuildSlots()
 	for i = 1, L.MAX do
 		local slot = L.Slots[i]
 
-		local row = self.SlotList:Add("DButton")
-		row:Dock(TOP)
-		row:DockMargin(M.Gap, i == 1 and M.Gap or 0, M.Gap, M.Gap)
-		row:SetTall(M.ButtonH)
+		local row = vgui.Create("DButton")
+		self.SlotList:AddNode(row, 0, M.ButtonH)
 		row:SetText("")
 
 		row.Paint = function(s, pw, ph)
@@ -288,8 +291,6 @@ function PANEL:Deploy(shop)
 	self.Hidden = toRight and (sw - w) or 0
 	self.Shown  = toRight and sw or -w
 
-	self:SetTall(math.min(self:GetTall(), sh))
-
 	self.OffsetX = self.Hidden
 	self.TargetX = self.Shown
 
@@ -306,6 +307,30 @@ end
 -- The slide is a lerp here rather than MoveTo because the destination moves. MoveTo animates
 -- towards a fixed point, and the shop can be dragged mid-animation; easing the offset instead
 -- means the panel is always measured from wherever the shop is right now.
+function PANEL:SyncToShop()
+	if not IsValid(self.Shop) then return end
+
+	local sx = self.Shop:GetPos()
+	local sw, sh = self.Shop:GetSize()
+	local w = self:GetWide()
+	
+	local toRight = (ScrW() - (sx + sw)) >= sx
+	local newHidden = toRight and (sw - w) or 0
+	local newShown = toRight and sw or -w
+	
+	local targetNow = self.Retracting and newHidden or newShown
+	local delta = targetNow - (self.TargetX or targetNow)
+	
+	if delta ~= 0 then
+		self.OffsetX = self.OffsetX + delta
+		self.TargetX = targetNow
+		self.Hidden = newHidden
+		self.Shown = newShown
+	end
+	
+	self:Follow()
+end
+
 function PANEL:Think()
 	self.BaseClass.Think(self)
 
@@ -313,6 +338,8 @@ function PANEL:Think()
 		self:Remove()
 		return
 	end
+
+	self:SyncToShop()
 
 	if math.abs(self.OffsetX - self.TargetX) < 1 then
 		self.OffsetX = self.TargetX
@@ -323,7 +350,7 @@ function PANEL:Think()
 	else
 		self.OffsetX = Lerp(FrameTime() * 14, self.OffsetX, self.TargetX)
 	end
-
+	
 	self:Follow()
 end
 

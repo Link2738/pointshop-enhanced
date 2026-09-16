@@ -9,7 +9,6 @@ AddCSLuaFile "cl_theme.lua"
 AddCSLuaFile "cl_theme_classic.lua"
 AddCSLuaFile "cl_theme_crimson.lua"
 AddCSLuaFile "cl_ui.lua"
-AddCSLuaFile "cl_layout.lua"
 AddCSLuaFile "cl_loadout.lua"
 AddCSLuaFile "cl_movement.lua"
 AddCSLuaFile "vgui/DPointShopLoadouts.lua"
@@ -28,18 +27,9 @@ AddCSLuaFile "vgui/DPointShopMenu.lua"
 AddCSLuaFile "vgui/DPointShopPreview.lua"
 AddCSLuaFile "vgui/DPointShopAdmin.lua"
 AddCSLuaFile "vgui/DPointShopTheme.lua"
+AddCSLuaFile "cl_framework.lua"
+AddCSLuaFile "vgui/DPointShopAuthModule.lua"
 
--- Every gamemode profile, not just this server's.
---
--- LoadGamemodeProfile does its own AddCSLuaFile for the active one, which is correct but
--- happens during PS:Initialize -- and the client runs its own PS:Initialize and asks
--- file.Exists for the profile. If the transfer has not landed by then the client silently
--- gets no profile and falls back to "this gamemode gates by team", while the server has
--- the profile and does not. The two realms then disagree about which items are equippable,
--- and the client shows a category the server will refuse.
---
--- Sending all of them from the manifest removes the race: they are a few hundred bytes
--- each, and a profile for a gamemode this server is not running is inert.
 local gmFiles = file.Find("pointshop/gamemodes/*.lua", "LUA")
 for _, name in ipairs(gmFiles) do
 	AddCSLuaFile("pointshop/gamemodes/" .. name)

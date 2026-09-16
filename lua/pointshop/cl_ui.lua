@@ -136,27 +136,34 @@ end
 function UI.RememberPosition(panel, key)
 	if not IsValid(panel) or not key then return end
 
+	local saved = PS.Theme.Panels and PS.Theme.Panels[key]
+	
+	if saved and saved.w and saved.h and panel:GetSizable() then
+		panel:SetSize(math.Clamp(saved.w, panel:GetMinWidth() or 100, ScrW()),
+			math.Clamp(saved.h, panel:GetMinHeight() or 100, ScrH()))
+	end
+
 	local w, h = panel:GetSize()
 	panel:SetPos(ScrW() / 2 - w / 2, ScrH() / 2 - h / 2)
 
-	local saved = PS.Theme.Panels and PS.Theme.Panels[key]
 	if saved and saved.x and saved.y then
 		panel:SetPos(math.Clamp(saved.x, 0, math.max(0, ScrW() - w)),
 			math.Clamp(saved.y, 0, math.max(0, ScrH() - h)))
 	end
 
-	-- Saved when the drag ENDS, not while it happens, or this writes a file every frame the
-	-- panel is moving. DFrame sets Dragging for the duration.
+	-- Saved when the drag/resize ENDS, not while it happens, or this writes a file every frame.
+	-- DFrame sets Dragging and Sizing for the duration.
 	local oldThink = panel.Think
 	panel.Think = function(s, ...)
 		if oldThink then oldThink(s, ...) end
 
-		if s.Dragging then
+		if s.Dragging or s.Sizing or s._CustomSizing then
 			s._posMoved = true
 		elseif s._posMoved then
 			s._posMoved = nil
 			local x, y = s:GetPos()
-			PS.Theme.Panels[key] = { x = math.Round(x), y = math.Round(y) }
+			local cw, ch = s:GetSize()
+			PS.Theme.Panels[key] = { x = math.Round(x), y = math.Round(y), w = cw, h = ch }
 			PS.Theme.SavePanels()
 		end
 	end
@@ -683,6 +690,8 @@ function UI.Orbit(name, opts)
 		-- Round that way to match Blender, so a player who already orbits a viewport for a
 		-- living does not have to learn a second set of habits to look at a hat.
 		panel.OnMouseWheeled = function(s, delta)
+			if blocked and blocked() then return true end
+			
 			if input.IsKeyDown(KEY_LSHIFT) or input.IsKeyDown(KEY_RSHIFT) then
 				o.radius = math.Clamp(o.radius - delta * 5, o.minRadius, o.maxRadius)
 			else
@@ -829,13 +838,21 @@ function UI.SetupFrame(frame, opts)
 	frame:DockPadding(0, frame:BarH(), 0, 0)
 
 	if opts.closable ~= false then
-		local close = UI.IconButton(header, UI.GlyphIcon("close"), "Danger", function()
+		local close = UI.IconButton(header, nil, "Danger", function()
 			-- An onClose that returns true has taken responsibility for the window. The
 			-- loadout panel slides home and removes itself when it arrives; closing it here
 			-- as well would cut that off at the first frame.
 			if opts.onClose and opts.onClose(frame) then return end
 			frame:Close()
 		end)
+
+		local glyph = UI.GlyphIcon("close")
+		close.Paint = function(s, w, h)
+			local isGhost = PS.Theme.GetStyle and PS.Theme.GetStyle("Frame", "ghostClose")
+			local style = isGhost and "Clear" or "Danger"
+			PS.Theme.PaintAction(s, w, h, PS.Theme.Action[style] or PS.Theme.Action.Neutral)
+			glyph(w, h)
+		end
 
 		-- Positioned in PerformLayout, not once at build time. A sizable frame moved the
 		-- header out from under a one-shot SetPos and stranded the button mid-bar, or off
@@ -886,6 +903,17 @@ function UI.Open(class)
 	return panel
 end
 
+function UI.Toggle(class)
+	local open = UI.Windows[class]
+
+	if IsValid(open) then
+		open:Close()
+		return nil
+	end
+
+	return UI.Open(class)
+end
+
 -- A themed window: body, border, header with a title, and a close button.
 --
 -- The thin wrapper for callers that want the frame made for them rather than applying the
@@ -918,11 +946,7 @@ function UI.Confirm(opts)
 			PS.Theme.Text, TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 	end
 
-	local row = vgui.Create("DPanel", frame)
-	row:Dock(BOTTOM)
-	row:SetTall(M().ButtonH + M().Margin * 2)
-	row:DockMargin(M().Margin, 0, M().Margin, 0)
-	row.Paint = function() end
+	local row = UI.ActionBar(frame)
 
 	local function Finish(fn)
 		return function()
@@ -941,4 +965,89 @@ function UI.Confirm(opts)
 	yes:SetWide(120)
 
 	return frame
+end
+
+-- ============================================================================
+-- STATE MANAGEMENT & LAYOUT ENGINE
+-- ============================================================================
+-- COMPOSITION PRIMITIVES
+-- ============================================================================
+
+-- A standard content box used across panels (e.g., categories, item grid, admin lists).
+-- Ensures consistent margins, padding, and paint style.
+function UI.ContentBox(parent)
+	local p = vgui.Create("DPanel", parent)
+	p:Dock(FILL)
+	p:DockMargin(M().Margin, M().Gap, M().Margin, M().Margin)
+	p.Paint = function(s, w, h)
+		PS.Theme.PaintPanelBody(w, h)
+	end
+	return p
+end
+
+-- A standardized vertical layout column inside a scroll panel, used for controls.
+function UI.ControlColumn(parent)
+	local scroll = UI.Scroll(parent)
+	scroll:Dock(FILL)
+	
+	local vbox = Framework.UI.VBox(scroll)
+	scroll:AddItem(vbox)
+	vbox:Dock(TOP)
+	return scroll, vbox
+end
+
+-- A standardized scrolling grid layout.
+-- Automatically applies the provided gap to item spacing and outer borders.
+function UI.ScrollGrid(parent, gap)
+	local scroll = UI.Scroll(parent)
+	scroll:Dock(FILL)
+	
+	local grid = vgui.Create("DIconLayout", scroll:GetCanvas())
+	grid:Dock(TOP)
+	grid:DockMargin(M().ScrollW, 0, 0, 0)
+	grid:SetSpaceX(gap)
+	grid:SetSpaceY(gap)
+	grid:SetBorder(gap)
+	
+	local oldLayout = grid.PerformLayout
+	grid.PerformLayout = function(s, w, h)
+		if s._flex then
+			local children = s:GetChildren()
+			if #children > 0 then
+				-- w is already the usable width of the layout (minus scrollbar and DockMargins)
+				local columns = math.Clamp(math.floor(math.max(w - gap * 2, 1) / s._flex.idealW), s._flex.minCols, s._flex.maxCols)
+				
+				local contentW = w - gap * (columns + 1)
+				local itemW = math.floor(contentW / columns)
+				local spare = contentW - itemW * columns
+				
+				for i, child in ipairs(children) do
+					local col = (i - 1) % columns
+					local extra = col < spare and 1 or 0
+					local finalW = itemW + extra
+					child:SetSize(finalW, s._flex.fixedH or finalW)
+				end
+			end
+		end
+		
+		if oldLayout then oldLayout(s, w, h) end
+	end
+	
+	function grid:EnableFlex(idealW, minCols, maxCols, fixedH)
+		self._flex = { idealW = idealW, minCols = minCols, maxCols = maxCols, fixedH = fixedH }
+		self:InvalidateLayout()
+	end
+	
+	return scroll, grid
+end
+
+-- A bottom-docked action bar for dialogs and panels.
+-- Standardizes the gap, height, and background.
+function UI.ActionBar(parent)
+	local p = vgui.Create("DPanel", parent)
+	p:Dock(BOTTOM)
+	p:SetTall(M().ButtonH + M().Margin * 2)
+	p:DockMargin(M().Margin, 0, M().Margin, 0)
+	p.Paint = function() end
+	return p
 end

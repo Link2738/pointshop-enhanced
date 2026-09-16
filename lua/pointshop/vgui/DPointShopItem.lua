@@ -41,8 +41,6 @@ end
 -- ============================================================================
 
 function PANEL:Init()
-	self.Info = ""
-	self.InfoHeight = LABEL_H
 	self._hoverAlpha = 0
 end
 
@@ -147,7 +145,9 @@ function PANEL:DoClick()
 		if LocalPlayer():PS_HasItemEquipped(self.Data.ID) and self.Data.Modify then
 			AddSpacer()
 			AddMenuButton("Modify...", PS.Theme.ModifyFill, function()
-				PS.Items[self.Data.ID]:Modify(LocalPlayer())
+				if self.Data and self.Data.Modify then
+					self.Data:Modify(LocalPlayer())
+				end
 			end)
 		end
 
@@ -201,7 +201,6 @@ end
 -- SetData kept identical to original to preserve DModelPanel rendering
 function PANEL:SetData(data)
 	self.Data = data
-	self.Info = data.Name
 
 	if data.Model then
 		local DModelPanel = vgui.Create('DModelPanel', self)
@@ -221,8 +220,10 @@ function PANEL:SetData(data)
 				ent:SetAngles(Angle(0, ent:GetAngles().y + 2, 0))
 			end
 
-			local ITEM = PS.Items[data.ID]
-			ITEM:ModifyClientsideModel(LocalPlayer(), ent, Vector(), Angle())
+			local ITEM = data
+			if ITEM and ITEM.ModifyClientsideModel then
+				ITEM:ModifyClientsideModel(LocalPlayer(), ent, Vector(), Angle())
+			end
 		end
 
 		function DModelPanel:DoClick()         self:GetParent():DoClick()         end
@@ -402,15 +403,11 @@ end
 
 function PANEL:OnCursorEntered()
 	self.Hovered = true
-	self.Info = LocalPlayer():PS_HasItem(self.Data.ID)
-		and ('+' .. PS.Config.CalculateSellPrice(LocalPlayer(), self.Data))
-		or  ('-' .. PS.Config.CalculateBuyPrice(LocalPlayer(), self.Data))
 	PS:SetHoverItem(self.Data.ID)
 end
 
 function PANEL:OnCursorExited()
 	self.Hovered = false
-	self.Info = self.Data.Name
 	PS:RemoveHoverItem()
 end
 

@@ -40,7 +40,7 @@ local CAT_IDLE = {  93,   0,   2, 255 }   -- category button, idle
 local RED      = { 255,   0,   0, 255 }   -- the pure red the category variants are cut from
 
 T.RegisterPreset("crimson", {
-	name = "Crimson",
+	name = "Nacho Cheese Doritos",
 
 	metrics = {
 		-- 865 wide, and the screen less 356 tall.
