@@ -561,36 +561,8 @@ function PS:LoadItems()
 						continue
 					end
 					
-					-- Colour path. Pinned here rather than inferred at each call site.
-					--
-					-- The two paths clear each other: ApplyModelSettings sets one and
-					-- explicitly resets the other, to stop a previously equipped model's
-					-- colour bleeding through. That means "undeclared" is not a neutral
-					-- state — whichever branch ends up running wipes the other channel.
-					--
-					-- Defaults to render modulation (SetColor). $color2 proxy support is
-					-- inconsistent across addon models while modulation works on all of
-					-- them, so it is the path that degrades gracefully on an unknown
-					-- model. The colour defaults to neutral white, which under modulation
-					-- means untinted — the model's own appearance, not a colour nobody
-					-- picked.
-					--
-					-- Deliberately not behind PS.Config.Debug. A missing flag is a content
-					-- error in an item file, and the person running the server is the one
-					-- who has to go fix it.
-					if ITEM.UseColor2Proxy == nil and ITEM.TYPE ~= "swep" and ITEM.TYPE ~= "trail" then
+					if ITEM.UseColor2Proxy == nil then
 						ITEM.UseColor2Proxy = false
-
-						if ITEM.TYPE ~= "playermodel" then
-							ITEM.DefaultModifications = ITEM.DefaultModifications or {}
-							if ITEM.DefaultModifications.color == nil then
-								ITEM.DefaultModifications.color = Color(255, 255, 255, 255)
-							end
-						end
-
-						MsgC(Color(255, 120, 40), string.format(
-							"[POINTSHOP] %s does not set UseColor2Proxy - defaulting to SetColor modulation with a neutral colour. Set it explicitly (true or false) in %s\n",
-							ITEM.ID, ITEM.__luaFile))
 					end
 
 					-- precache
