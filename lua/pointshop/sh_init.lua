@@ -578,16 +578,9 @@ function PS:LoadItems()
 					-- Deliberately not behind PS.Config.Debug. A missing flag is a content
 					-- error in an item file, and the person running the server is the one
 					-- who has to go fix it.
-					if ITEM.UseColor2Proxy == nil then
+					if ITEM.UseColor2Proxy == nil and ITEM.TYPE ~= "swep" and ITEM.TYPE ~= "trail" then
 						ITEM.UseColor2Proxy = false
 
-						-- The neutral colour is only seeded for the types that key off
-						-- `color` — accessories and trails. Playermodels key off
-						-- `playercolor`, and seeding that is exactly the destructive case
-						-- PS_GetCustomization's fallback was fixed for: a player's colour
-						-- exists independently of the item, so inventing one repaints them.
-						-- For a playermodel the flag alone is the fix; the colour is left
-						-- to whatever they already have.
 						if ITEM.TYPE ~= "playermodel" then
 							ITEM.DefaultModifications = ITEM.DefaultModifications or {}
 							if ITEM.DefaultModifications.color == nil then
