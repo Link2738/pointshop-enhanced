@@ -616,6 +616,7 @@ function PS:LoadItems()
 					SanitizeTable = true, CanPlayerBuy = true, CanPlayerSell = true,
 					CanPlayerEquip = true, CanPlayerHolster = true,
 					ApplyModelSettings = true, ApplyAccessorySettings = true,
+					OnSpawn = true, OnRemove = true,
 				}
 				
 				for prop, val in pairs(item) do
@@ -626,7 +627,10 @@ function PS:LoadItems()
 					hook.Add(prop, 'PS_Item_' .. item.ID .. '_' .. prop, function(...)
 							for _, ply in pairs(player.GetAll()) do
 								if ply:PS_HasItemEquipped(item.ID) then
-									item[prop](item, ply, ply.PS_Items[item.ID].Modifiers, unpack({...}))
+									local data = ply.PS_Items[item.ID]
+									if data then
+										item[prop](item, ply, data.Modifiers, ...)
+									end
 								end
 							end
 						end)

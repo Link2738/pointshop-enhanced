@@ -32,6 +32,11 @@ function BASE:OnEquip(ply, modifications)
         return
     end
 
+    if not weapons.Get(self.ClassName) then
+        ErrorNoHalt("[PointShop SWEP] Weapon class '" .. self.ClassName .. "' does not exist (missing addon?).\n")
+        return
+    end
+
     -- Optionally skip if the player already has it (avoids double-equip on respawn)
     if not self.AllowDuplicate and ply:HasWeapon(self.ClassName) then return end
 
@@ -52,12 +57,11 @@ function BASE:OnHolster(ply, modifications)
     ply:StripWeapon(self.ClassName)
 end
 
--- Re-give on spawn (called by PS_PlayerSpawn via OnEquip after a 1-second delay,
--- meaning it runs AFTER the gamemode has set up the player's default loadout).
--- Return false here to suppress re-giving on spawn if you want equip-only behaviour.
-function BASE:OnSpawn(ply)
+-- Re-give on spawn and team change (called by PS_PlayerSpawn / OnPlayerChangedTeam
+-- after a delay, meaning it runs AFTER the gamemode has set up the player's loadout).
+function BASE:OnSpawn(ply, modifications)
     if self.GiveOnSpawn == false then return end
-    self:OnEquip(ply)
+    self:OnEquip(ply, modifications)
 end
 
 -- No clientside model needed for weapons.

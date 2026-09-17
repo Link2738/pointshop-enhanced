@@ -250,7 +250,7 @@ function PANEL:DrawOtherModels()
 		if not ITEM then return end
 
 		if ITEM.NoPreview then return end -- don't show
-		if ITEM.WeaponClass then return end -- hack for weapons
+		if ITEM.TYPE == "swep" or ITEM.TYPE == "trail" then return end
 
 		if not ITEM.Attachment and not ITEM.Bone then -- must be a playermodel?
 			self:SetModel(ITEM.Model)

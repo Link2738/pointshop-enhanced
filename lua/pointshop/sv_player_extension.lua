@@ -76,7 +76,12 @@ function Player:PS_PlayerSpawn()
 			-- whose equip hook IS their mechanism -- a weapon gives itself, a powerup
 			-- shrinks the player, a trail attaches itself.
 			if ITEM and item.Equipped and not PS.IsLoadoutItem(ITEM) then
-				ITEM:OnEquip(self, LoadModifiers(self, item_id, item))
+				local mods = LoadModifiers(self, item_id, item)
+				if ITEM.OnSpawn then
+					ITEM:OnSpawn(self, mods)
+				else
+					ITEM:OnEquip(self, mods)
+				end
 			end
 		end
 
@@ -951,6 +956,18 @@ hook.Add("OnPlayerChangedTeam", "PS_AppearanceTeamChange", function(ply, oldTeam
 		if PS.RevalidateOverlay then PS:RevalidateOverlay(ply) end
 
 		local applied = ply:PS_ResolvePlayerModel()
+
+		for item_id, item in pairs(ply.PS_Items) do
+			local ITEM = PS.Items[item_id]
+			if ITEM and item.Equipped and not PS.IsLoadoutItem(ITEM) then
+				local mods = LoadModifiers(ply, item_id, item)
+				if ITEM.OnSpawn then
+					ITEM:OnSpawn(ply, mods)
+				else
+					ITEM:OnEquip(ply, mods)
+				end
+			end
+		end
 
 		if PS.Config.Debug then
 			print(string.format("[PS] Team change %d -> %d for %s: %s",
